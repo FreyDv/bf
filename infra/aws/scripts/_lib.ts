@@ -31,7 +31,7 @@ export interface App {
   migrations: boolean;
 }
 
-/** Apps from scripts/apps.mjs (the single source of truth), optionally narrowed to the given names. */
+/** Apps from scripts/apps.mjs (the single source of truth), optionally narrowed to the given names. v1*/
 export function apps(only: string[] = []): App[] {
   const cwd = process.cwd();
   process.chdir(repoRoot); // apps.mjs scans ./apps
