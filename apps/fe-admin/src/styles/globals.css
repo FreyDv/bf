@@ -1,0 +1,5 @@
+/* @bf/ui/globals.css already imports tailwindcss, tw-animate-css and the theme tokens. */
+@import '@bf/ui/globals.css';
+
+/* Scan the shared UI package so its utility classes are generated for this app. */
+@source '../../../../packages/ui/src';

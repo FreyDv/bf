@@ -1,0 +1,47 @@
+{
+  "name": "@bf/storage",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Object storage port + S3 adapter (MinIO locally, AWS S3 in production)",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./port": {
+      "types": "./dist/port.d.ts",
+      "default": "./dist/port.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "test": "jest --passWithNoTests"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "catalog:",
+    "@aws-sdk/lib-storage": "catalog:",
+    "@aws-sdk/s3-request-presigner": "catalog:",
+    "@nestjs/common": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@bf/config": "workspace:*",
+    "@swc/core": "catalog:",
+    "@swc/jest": "catalog:",
+    "@types/jest": "catalog:",
+    "@types/node": "catalog:",
+    "eslint": "catalog:",
+    "jest": "catalog:",
+    "tsup": "catalog:",
+    "typescript": "catalog:"
+  }
+}

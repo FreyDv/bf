@@ -1,0 +1,7 @@
+# One topic per line. Blank lines and "#" comments are ignored.
+orders.order.created
+orders.order.confirmed
+orders.order.created.dlq
+orders.order.confirmed.dlq
+orders.order.cancelled
+orders.order.cancelled.dlq

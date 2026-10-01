@@ -1,0 +1,53 @@
+{
+  "name": "@bf/db",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Drizzle/pg pool factory, NestJS DrizzleModule and per-app drizzle-kit config helper",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./config": {
+      "types": "./dist/config.d.ts",
+      "default": "./dist/config.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "test": "jest --passWithNoTests"
+  },
+  "dependencies": {
+    "@nestjs/common": "catalog:",
+    "dotenv": "catalog:",
+    "pg": "catalog:",
+    "zod": "catalog:"
+  },
+  "peerDependencies": {
+    "drizzle-kit": "*",
+    "drizzle-orm": "*"
+  },
+  "devDependencies": {
+    "@bf/config": "workspace:*",
+    "@swc/core": "catalog:",
+    "@swc/jest": "catalog:",
+    "@types/jest": "catalog:",
+    "@types/node": "catalog:",
+    "@types/pg": "catalog:",
+    "drizzle-kit": "catalog:",
+    "drizzle-orm": "catalog:",
+    "eslint": "catalog:",
+    "jest": "catalog:",
+    "tsup": "catalog:",
+    "typescript": "catalog:"
+  }
+}

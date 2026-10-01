@@ -1,0 +1,47 @@
+{
+  "name": "@bf/llm",
+  "version": "0.0.0",
+  "private": true,
+  "description": "LLM port + OpenAI GPT API adapter (chat, structured output, embeddings)",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./port": {
+      "types": "./dist/port.d.ts",
+      "default": "./dist/port.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "test": "jest --passWithNoTests",
+    "smoke": "tsx scripts/smoke.ts"
+  },
+  "dependencies": {
+    "@nestjs/common": "catalog:",
+    "openai": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@bf/config": "workspace:*",
+    "@swc/core": "catalog:",
+    "@swc/jest": "catalog:",
+    "@types/jest": "catalog:",
+    "@types/node": "catalog:",
+    "eslint": "catalog:",
+    "jest": "catalog:",
+    "tsup": "catalog:",
+    "tsx": "catalog:",
+    "typescript": "catalog:"
+  }
+}

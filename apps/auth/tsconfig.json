@@ -1,0 +1,10 @@
+{
+  "extends": "@bf/config/tsconfig/nest.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "paths": { "@/*": ["./src/*"] },
+    "types": ["node", "jest"],
+    "declaration": false
+  },
+  "include": ["src", "test", "scripts", "drizzle.config.ts"]
+}

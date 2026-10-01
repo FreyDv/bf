@@ -1,0 +1,51 @@
+{
+  "users": [
+    {
+      "name": "bf",
+      "password_hash": "HMkIstgrde9puVJYz77qZJJsFxVHdnNyiyEgZircYA3A5Udu",
+      "hashing_algorithm": "rabbit_password_hashing_sha256",
+      "tags": ["administrator"],
+      "limits": {}
+    }
+  ],
+  "vhosts": [
+    { "name": "bf" }
+  ],
+  "permissions": [
+    { "user": "bf", "vhost": "bf", "configure": ".*", "write": ".*", "read": ".*" }
+  ],
+  "topic_permissions": [],
+  "parameters": [],
+  "global_parameters": [],
+  "policies": [],
+  "exchanges": [
+    {
+      "name": "bf.events",
+      "vhost": "bf",
+      "type": "topic",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    }
+  ],
+  "queues": [
+    {
+      "name": "bf.orders",
+      "vhost": "bf",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": { "x-queue-type": "quorum" }
+    }
+  ],
+  "bindings": [
+    {
+      "source": "bf.events",
+      "vhost": "bf",
+      "destination": "bf.orders",
+      "destination_type": "queue",
+      "routing_key": "orders.#",
+      "arguments": {}
+    }
+  ]
+}

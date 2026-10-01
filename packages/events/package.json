@@ -1,0 +1,53 @@
+{
+  "name": "@bf/events",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Integration events: zod envelope, transactional outbox/inbox table factories, outbox publisher",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./envelope": {
+      "types": "./dist/envelope.d.ts",
+      "default": "./dist/envelope.js"
+    },
+    "./tables": {
+      "types": "./dist/tables.d.ts",
+      "default": "./dist/tables.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "test": "jest --passWithNoTests"
+  },
+  "dependencies": {
+    "@bf/shared": "workspace:*",
+    "@nestjs/common": "catalog:",
+    "zod": "catalog:"
+  },
+  "peerDependencies": {
+    "drizzle-orm": "*"
+  },
+  "devDependencies": {
+    "@bf/config": "workspace:*",
+    "@swc/core": "catalog:",
+    "@swc/jest": "catalog:",
+    "@types/jest": "catalog:",
+    "@types/node": "catalog:",
+    "drizzle-orm": "catalog:",
+    "eslint": "catalog:",
+    "jest": "catalog:",
+    "tsup": "catalog:",
+    "typescript": "catalog:"
+  }
+}

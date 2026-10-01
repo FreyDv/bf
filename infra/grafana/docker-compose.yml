@@ -1,0 +1,53 @@
+services:
+  grafana:
+    image: grafana/grafana:12.1.1
+    container_name: bf-grafana
+    hostname: grafana
+    restart: unless-stopped
+    labels:
+      - observability
+      - ui
+      - grafana
+    ports:
+      - ${GRAFANA_PORT:-3100}:3000
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./provisioning:/etc/grafana/provisioning:ro
+    environment:
+      # Dev shortcut: no login, everyone is Admin.
+      GF_AUTH_ANONYMOUS_ENABLED: 'true'
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: 'true'
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-bf}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-bf}
+      GF_USERS_ALLOW_SIGN_UP: 'false'
+      GF_ANALYTICS_REPORTING_ENABLED: 'false'
+      GF_ANALYTICS_CHECK_FOR_UPDATES: 'false'
+    env_file:
+      - .env
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://localhost:3000/api/health | grep -q ok']
+      start_period: 30s
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - grafana_network
+      - bf_network
+
+networks:
+  grafana_network:
+    driver: bridge
+    labels:
+      - observability
+      - grafana
+  bf_network:
+    external: true
+
+volumes:
+  grafana-data:
+    driver: local
+    labels:
+      - observability
+      - data
+      - grafana

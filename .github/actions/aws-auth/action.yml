@@ -1,0 +1,22 @@
+name: aws auth
+description: >
+  Loads AWS_REGION and BF_ENV from infra/aws/lib/config.ts into $GITHUB_ENV and assumes one of the bf-gha-* roles
+  over OIDC. Requires a prior actions/checkout and `permissions: id-token: write`. No AWS keys are stored in GitHub.
+inputs:
+  role:
+    description: bf-gha-plan | bf-gha-infra | bf-gha-app | bf-gha-snapshot
+    required: true
+  account-id:
+    description: AWS account id (repo variable AWS_ACCOUNT_ID — not a secret)
+    required: true
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v4
+      with: { node-version-file: .nvmrc }
+    - shell: bash
+      run: node infra/aws/scripts/gh-env.ts >> "$GITHUB_ENV"
+    - uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: arn:aws:iam::${{ inputs.account-id }}:role/${{ inputs.role }}
+        aws-region: ${{ env.AWS_REGION }}

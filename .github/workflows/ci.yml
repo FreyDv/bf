@@ -1,0 +1,246 @@
+name: ci
+
+# Pull-request gate. Every stage runs per app, but only for apps affected by the change
+# (scripts/apps.mjs → turbo graph: a change in packages/shared re-checks every dependent app).
+#   discover → [ prettier · eslint · tsc · unit ] per app
+#            → migrations drift per DB-backed app     (fresh postgres, apply, db:generate must be clean)
+#            → e2e per app that has test:e2e          (postgres · redis · minio)
+#            → docker build per app                   (no push — proves the Dockerfile still works)
+#            → ci-ok                                  (the single required status check for branch protection)
+# Shared packages, repo-wide prettier, env + contracts drift run once in `packages`.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TURBO_TELEMETRY_DISABLED: '1'
+  NEXT_TELEMETRY_DISABLED: '1'
+
+jobs:
+  discover:
+    name: discover apps
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.apps.outputs.changed }}
+      migrations: ${{ steps.apps.outputs.migrations }}
+      e2e: ${{ steps.apps.outputs.e2e }}
+      docker: ${{ steps.apps.outputs.docker }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version-file: .nvmrc, cache: pnpm }
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - id: apps
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event.before }}
+        run: node scripts/ci/discover.ts ci
+
+  packages:
+    name: packages · prettier · env + contracts drift
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version-file: .nvmrc, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: turbo-${{ runner.os }}-${{ github.sha }}
+          restore-keys: turbo-${{ runner.os }}-
+      - name: prettier (whole repo)
+        run: pnpm format:check
+      - name: build packages
+        run: pnpm turbo run build --cache-dir=.turbo --filter='./packages/*'
+      - name: eslint · tsc · unit (packages)
+        run: pnpm turbo run lint typecheck test --cache-dir=.turbo --continue --filter='./packages/*'
+      - name: tsc (repo scripts) · eslint · tsc · cdk synth (infra/aws)
+        run: |
+          pnpm typecheck:scripts
+          pnpm turbo run lint typecheck --cache-dir=.turbo --filter=@bf/infra-aws
+          pnpm --filter @bf/infra-aws run synth
+      - name: env drift (.env.example vs zod schemas)
+        run: |
+          pnpm turbo run build --cache-dir=.turbo --filter='./apps/*'
+          node scripts/setup-env.mjs && node scripts/check-env-drift.mjs
+      - name: contracts drift (nestjs-trpc generate → packages/contracts must be committed)
+        run: |
+          pnpm turbo run contracts:generate --cache-dir=.turbo --concurrency=1
+          git diff --exit-code -- packages/contracts/src
+
+  app:
+    name: ${{ matrix.name }} · prettier · eslint · tsc · unit
+    needs: discover
+    if: needs.discover.outputs.changed != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.discover.outputs.changed) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version-file: .nvmrc, cache: pnpm }
+      - run: pnpm install --frozen-lockfile --filter "${{ matrix.name }}..."
+      - uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: turbo-${{ runner.os }}-${{ matrix.name }}-${{ github.sha }}
+          restore-keys: |
+            turbo-${{ runner.os }}-${{ matrix.name }}-
+            turbo-${{ runner.os }}-
+      - name: prettier
+        run: pnpm prettier --check "${{ matrix.path }}"
+      - name: build (app + workspace deps)
+        run: pnpm turbo run build --cache-dir=.turbo --filter="${{ matrix.name }}"
+      - name: eslint
+        run: pnpm turbo run lint --cache-dir=.turbo --filter="${{ matrix.name }}"
+      - name: tsc
+        run: pnpm turbo run typecheck --cache-dir=.turbo --filter="${{ matrix.name }}"
+      - name: deps (dependency-cruiser)
+        if: matrix.kind == 'nest'
+        run: pnpm turbo run deps --cache-dir=.turbo --filter="${{ matrix.name }}"
+      - name: unit
+        if: matrix.unit
+        run: pnpm turbo run test --cache-dir=.turbo --filter="${{ matrix.name }}"
+
+  migrations:
+    name: ${{ matrix.name }} · migrations drift
+    needs: discover
+    if: needs.discover.outputs.migrations != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.discover.outputs.migrations) }}
+    services:
+      postgres:
+        image: postgres:17.5
+        env: { POSTGRES_DB: bf, POSTGRES_USER: bf, POSTGRES_PASSWORD: bf }
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U bf -d bf" --health-interval 3s --health-timeout 2s --health-retries 10
+    env:
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: '5432'
+      POSTGRES_USER: bf
+      POSTGRES_PASSWORD: bf
+      POSTGRES_DB: ${{ matrix.name }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version-file: .nvmrc, cache: pnpm }
+      - run: pnpm install --frozen-lockfile --filter "${{ matrix.name }}..."
+      - run: pnpm turbo run build --filter='./packages/*'
+      - name: infra init SQL (databases + roles) — same file as docker
+        run: PGPASSWORD=bf psql -h localhost -U bf -d bf -v DBNAME=bf -f infra/postgres/postgres-init/01-init.sql
+      - name: drizzle-kit check (migration folder consistency)
+        run: pnpm --filter "${{ matrix.name }}" db:check
+      - name: apply migrations to a fresh database
+        run: pnpm --filter "${{ matrix.name }}" db:migrate
+      - name: drift — schema edits must have committed migrations
+        run: |
+          pnpm --filter "${{ matrix.name }}" db:generate
+          git diff --exit-code -- "${{ matrix.path }}/drizzle"
+
+  e2e:
+    name: ${{ matrix.name }} · e2e
+    needs: [discover, app]
+    if: needs.discover.outputs.e2e != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.discover.outputs.e2e) }}
+    services:
+      postgres:
+        image: postgres:17.5
+        env: { POSTGRES_DB: bf, POSTGRES_USER: bf, POSTGRES_PASSWORD: bf }
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U bf -d bf" --health-interval 3s --health-timeout 2s --health-retries 10
+      redis:
+        image: redis:7.4.5
+        ports: ['6379:6379']
+    env:
+      NODE_ENV: test
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: '5432'
+      POSTGRES_USER: bf
+      POSTGRES_PASSWORD: bf
+      POSTGRES_DB: ${{ matrix.name }}
+      S3_ENDPOINT: http://localhost:9000
+      S3_REGION: us-east-1
+      S3_ACCESS_KEY_ID: bfadmin
+      S3_SECRET_ACCESS_KEY: bfbfbfbf
+      S3_BUCKET: bf-order
+      AUTH_URL: http://localhost:3001
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version-file: .nvmrc, cache: pnpm }
+      - run: pnpm install --frozen-lockfile --filter "${{ matrix.name }}..."
+      - name: MinIO (start, wait until healthy, create the bucket)
+        run: node scripts/ci/minio.ts
+      - run: pnpm turbo run build --filter="${{ matrix.name }}"
+      - run: node scripts/setup-env.mjs
+      - run: PGPASSWORD=bf psql -h localhost -U bf -d bf -v DBNAME=bf -f infra/postgres/postgres-init/01-init.sql
+      - name: migrate own database
+        if: matrix.migrations
+        run: pnpm --filter "${{ matrix.name }}" db:migrate
+      - name: seed
+        if: matrix.seed
+        run: pnpm --filter "${{ matrix.name }}" db:seed
+      - name: e2e
+        run: pnpm --filter "${{ matrix.name }}" test:e2e
+
+  docker:
+    name: ${{ matrix.name }} · docker build
+    needs: discover
+    if: needs.discover.outputs.docker != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.discover.outputs.docker) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: compose file is valid
+        run: node scripts/setup-env.mjs && docker compose config -q
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          build-args: APP=${{ matrix.name }}
+          push: false
+          tags: bf/${{ matrix.name }}:${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+
+  ci-ok:
+    # Branch protection needs exactly one required check; matrices change shape per PR, so gate on this.
+    name: ci ok
+    needs: [discover, packages, app, migrations, e2e, docker]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version-file: .nvmrc }
+      - name: every stage succeeded or was skipped
+        env:
+          NEEDS: ${{ toJson(needs) }}
+        run: node scripts/ci/ci-ok.ts

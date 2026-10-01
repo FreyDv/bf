@@ -1,0 +1,42 @@
+name: db snapshot
+
+# Aurora cluster snapshot + S3 export of the production database. Called by deploy.yml and infra.yml before every
+# release (workflow_call), or run by hand from the Actions tab. Only needs bf-gha-snapshot (snapshot/export, nothing else).
+
+on:
+  workflow_call:
+    inputs:
+      label:
+        type: string
+        default: manual
+  workflow_dispatch:
+    inputs:
+      label:
+        description: label embedded in the snapshot name (git sha, "manual", "before-upgrade", …)
+        type: string
+        default: manual
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: db-snapshot
+  cancel-in-progress: false
+
+jobs:
+  snapshot:
+    name: snapshot → S3
+    runs-on: ubuntu-latest
+    environment: prod # must equal `env` in infra/aws/lib/config.ts (the role trusts this environment)
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version-file: .nvmrc, cache: pnpm }
+      - run: pnpm install --frozen-lockfile --ignore-scripts --filter "@bf/infra-aws..."
+      - uses: ./.github/actions/aws-auth
+        with: { role: bf-gha-snapshot, account-id: '${{ vars.AWS_ACCOUNT_ID }}' }
+      - env:
+          LABEL: ${{ inputs.label }}
+        run: node infra/aws/scripts/db-snapshot.ts "$LABEL"

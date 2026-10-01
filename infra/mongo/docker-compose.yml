@@ -1,0 +1,89 @@
+services:
+  mongo:
+    image: mongo:8.0.12
+    container_name: bf-mongo
+    hostname: mongo
+    restart: unless-stopped
+    labels:
+      - db
+      - mongo
+    ports:
+      - ${MONGO_PORT:-27017}:27017
+    volumes:
+      - mongo-data:/data/db
+      - mongo-config:/data/configdb
+      # Creates MONGO_USER with readWrite on MONGO_DB on first start.
+      - ./mongo-init:/docker-entrypoint-initdb.d:ro
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME:-root}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:-root}
+      MONGO_INITDB_DATABASE: ${MONGO_DB:-bf}
+      MONGO_DB: ${MONGO_DB:-bf}
+      MONGO_USER: ${MONGO_USER:-bf}
+      MONGO_PASSWORD: ${MONGO_PASSWORD:-bf}
+    env_file:
+      - .env
+    healthcheck:
+      test: ['CMD-SHELL', 'mongosh --quiet --eval "db.adminCommand(''ping'').ok" | grep -q 1']
+      start_period: 10s
+      interval: 3s
+      timeout: 2s
+      retries: 10
+    networks:
+      - mongo_network
+      - bf_network
+
+  mongo-express:
+    image: mongo-express:1.0.2-20
+    container_name: bf-mongo-express
+    hostname: mongo-express
+    restart: unless-stopped
+    labels:
+      - ui
+      - mongo
+      - mongo-express
+    ports:
+      - ${MONGO_EXPRESS_PORT:-8081}:8081
+    environment:
+      ME_CONFIG_BASICAUTH: 'false'
+      ME_CONFIG_MONGODB_ENABLE_ADMIN: 'true'
+      ME_CONFIG_MONGODB_ADMINUSERNAME: ${MONGO_ROOT_USERNAME:-root}
+      ME_CONFIG_MONGODB_ADMINPASSWORD: ${MONGO_ROOT_PASSWORD:-root}
+      ME_CONFIG_MONGODB_URL: mongodb://${MONGO_ROOT_USERNAME:-root}:${MONGO_ROOT_PASSWORD:-root}@mongo:27017/
+    env_file:
+      - .env
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://localhost:8081/ > /dev/null || exit 1']
+      start_period: 10s
+      interval: 3s
+      timeout: 2s
+      retries: 10
+    depends_on:
+      mongo:
+        condition: service_healthy
+    networks:
+      - mongo_network
+      - bf_network
+
+networks:
+  mongo_network:
+    driver: bridge
+    labels:
+      - db
+      - mongo
+  bf_network:
+    external: true
+
+volumes:
+  mongo-data:
+    driver: local
+    labels:
+      - db
+      - data
+      - mongo
+  mongo-config:
+    driver: local
+    labels:
+      - db
+      - config
+      - mongo

@@ -1,0 +1,102 @@
+{
+  "name": "@bf/shared",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Cross-cutting NestJS building blocks + framework-free DDD primitives",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./ddd": {
+      "types": "./dist/ddd/index.d.ts",
+      "default": "./dist/ddd/index.js"
+    },
+    "./interfaces": {
+      "types": "./dist/interfaces/index.d.ts",
+      "default": "./dist/interfaces/index.js"
+    },
+    "./constants": {
+      "types": "./dist/constants/index.d.ts",
+      "default": "./dist/constants/index.js"
+    },
+    "./decorators": {
+      "types": "./dist/decorators/index.d.ts",
+      "default": "./dist/decorators/index.js"
+    },
+    "./guards": {
+      "types": "./dist/guards/index.d.ts",
+      "default": "./dist/guards/index.js"
+    },
+    "./filters": {
+      "types": "./dist/filters/index.d.ts",
+      "default": "./dist/filters/index.js"
+    },
+    "./interceptors": {
+      "types": "./dist/interceptors/index.d.ts",
+      "default": "./dist/interceptors/index.js"
+    },
+    "./middleware": {
+      "types": "./dist/middleware/index.d.ts",
+      "default": "./dist/middleware/index.js"
+    },
+    "./logger": {
+      "types": "./dist/logger/index.d.ts",
+      "default": "./dist/logger/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "test": "jest --passWithNoTests"
+  },
+  "dependencies": {
+    "@nestjs/common": "catalog:",
+    "@nestjs/core": "catalog:",
+    "@nestjs/jwt": "catalog:",
+    "@nestjs/throttler": "catalog:",
+    "nestjs-cls": "catalog:",
+    "nestjs-pino": "catalog:",
+    "pino-http": "catalog:",
+    "reflect-metadata": "catalog:",
+    "rxjs": "catalog:",
+    "uuid": "catalog:"
+  },
+  "peerDependencies": {
+    "drizzle-orm": "*",
+    "pg": "*"
+  },
+  "peerDependenciesMeta": {
+    "drizzle-orm": {
+      "optional": true
+    },
+    "pg": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@bf/config": "workspace:*",
+    "@swc/core": "catalog:",
+    "@swc/jest": "catalog:",
+    "@types/express": "catalog:",
+    "@types/jest": "catalog:",
+    "@types/node": "catalog:",
+    "@types/pg": "catalog:",
+    "drizzle-orm": "catalog:",
+    "eslint": "catalog:",
+    "express": "catalog:",
+    "jest": "catalog:",
+    "pg": "catalog:",
+    "pino-pretty": "catalog:",
+    "tsup": "catalog:",
+    "typescript": "catalog:"
+  }
+}

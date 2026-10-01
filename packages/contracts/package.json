@@ -1,0 +1,64 @@
+{
+  "name": "@bf/contracts",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Contract-first tRPC contracts: zod schemas (hand-written) + generated router types per service",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./common": {
+      "types": "./dist/common/index.d.ts",
+      "default": "./dist/common/index.js"
+    },
+    "./auth": {
+      "types": "./dist/auth/index.d.ts",
+      "default": "./dist/auth/index.js"
+    },
+    "./order": {
+      "types": "./dist/order/index.d.ts",
+      "default": "./dist/order/index.js"
+    },
+    "./course": {
+      "types": "./dist/course/index.d.ts",
+      "default": "./dist/course/index.js"
+    },
+    "./billing": {
+      "types": "./dist/billing/index.d.ts",
+      "default": "./dist/billing/index.js"
+    },
+    "./admin": {
+      "types": "./dist/admin/index.d.ts",
+      "default": "./dist/admin/index.js"
+    },
+    "./ai": {
+      "types": "./dist/ai/index.d.ts",
+      "default": "./dist/ai/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "test": "echo 'no tests (types + zod schemas only)'"
+  },
+  "dependencies": {
+    "@trpc/server": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@bf/config": "workspace:*",
+    "@types/node": "catalog:",
+    "eslint": "catalog:",
+    "tsup": "catalog:",
+    "typescript": "catalog:"
+  }
+}

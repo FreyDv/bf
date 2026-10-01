@@ -1,0 +1,75 @@
+# Requires infra/kafka (kafka:9092) and infra/postgres to be reachable on bf_network.
+# depends_on cannot cross compose files, so connect-init retries instead.
+services:
+  debezium:
+    image: quay.io/debezium/connect:3.2
+    container_name: bf-debezium
+    hostname: debezium
+    restart: unless-stopped
+    labels:
+      - cdc
+      - debezium
+      - kafka-connect
+    mem_limit: 1g
+    ports:
+      - ${DEBEZIUM_PORT:-8083}:8083
+    environment:
+      BOOTSTRAP_SERVERS: ${DEBEZIUM_BOOTSTRAP_SERVERS:-kafka:9092}
+      GROUP_ID: bf-connect
+      CONFIG_STORAGE_TOPIC: _connect_configs
+      OFFSET_STORAGE_TOPIC: _connect_offsets
+      STATUS_STORAGE_TOPIC: _connect_status
+      CONFIG_STORAGE_REPLICATION_FACTOR: 1
+      OFFSET_STORAGE_REPLICATION_FACTOR: 1
+      STATUS_STORAGE_REPLICATION_FACTOR: 1
+      KEY_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+      VALUE_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+      CONNECT_KEY_CONVERTER_SCHEMAS_ENABLE: 'false'
+      CONNECT_VALUE_CONVERTER_SCHEMAS_ENABLE: 'false'
+      HEAP_OPTS: ${DEBEZIUM_HEAP_OPTS:--Xms256m -Xmx512m}
+    env_file:
+      - .env
+    healthcheck:
+      test: ['CMD-SHELL', 'curl -fs http://localhost:8083/connectors > /dev/null || exit 1']
+      start_period: 30s
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - debezium_network
+      - bf_network
+
+  connect-init:
+    image: curlimages/curl:8.14.1
+    container_name: bf-connect-init
+    hostname: connect-init
+    restart: 'no'
+    labels:
+      - cdc
+      - debezium
+      - init
+    volumes:
+      - ./connectors:/connectors:ro
+      - ./connect-init:/connect-init:ro
+    environment:
+      CONNECT_URL: http://debezium:8083
+      CONNECT_RETRIES: ${DEBEZIUM_REGISTER_RETRIES:-60}
+      CONNECT_RETRY_INTERVAL: 5
+    env_file:
+      - .env
+    entrypoint: ['/bin/sh', '/connect-init/register-connectors.sh']
+    depends_on:
+      debezium:
+        condition: service_healthy
+    networks:
+      - debezium_network
+      - bf_network
+
+networks:
+  debezium_network:
+    driver: bridge
+    labels:
+      - cdc
+      - debezium
+  bf_network:
+    external: true

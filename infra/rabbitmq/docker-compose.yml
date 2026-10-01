@@ -1,0 +1,46 @@
+services:
+  rabbitmq:
+    image: rabbitmq:4.1.3-management
+    container_name: bf-rabbitmq
+    hostname: rabbitmq # data dir is derived from hostname; keep it stable
+    restart: unless-stopped
+    labels:
+      - broker
+      - rabbitmq
+    ports:
+      - ${RABBITMQ_PORT:-5672}:5672
+      - ${RABBITMQ_MANAGEMENT_PORT:-15672}:15672
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+      # vhost "bf", user bf/bf (administrator), exchange bf.events, queue bf.orders.
+      - ./rabbitmq-init/definitions.json:/etc/rabbitmq/definitions.json:ro
+    environment:
+      RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: -rabbitmq_management load_definitions "/etc/rabbitmq/definitions.json"
+    env_file:
+      - .env
+    healthcheck:
+      test: ['CMD', 'rabbitmq-diagnostics', '-q', 'ping']
+      start_period: 30s
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - rabbitmq_network
+      - bf_network
+
+networks:
+  rabbitmq_network:
+    driver: bridge
+    labels:
+      - broker
+      - rabbitmq
+  bf_network:
+    external: true
+
+volumes:
+  rabbitmq-data:
+    driver: local
+    labels:
+      - broker
+      - data
+      - rabbitmq

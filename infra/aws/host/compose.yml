@@ -1,0 +1,195 @@
+# Production stack on the single EC2 host. Uploaded to S3 and started by `pnpm aws:host-deploy`
+# (infra/aws/scripts/host-deploy.ts); never built here — images come from ECR (deploy.yml / push-images.ts).
+#
+#   internet ─► caddy :80/:443 ─► api | fe-main | fe-admin        (the only published ports)
+#   api ─► auth, order, course, billing, admin, ai                (compose network only, no `ports:`)
+#   containers ─► internet (OpenAI, S3, …) through the docker bridge NAT; nothing can connect back in
+#
+# Variables come from /opt/bf/.env, written on every deploy:
+#   non-secret  SSM parameter /bf/prod/host-env   (ECR_PREFIX, AWS_REGION, LOG_GROUP, *_DOMAIN, POSTGRES_HOST, …)
+#   secret      Secrets Manager bf/prod/*         (POSTGRES_PASSWORD, JWT_*, OPENAI_API_KEY)
+name: bf
+
+x-service: &service
+  restart: unless-stopped
+  networks: [bf]
+  logging:
+    driver: awslogs
+    options:
+      awslogs-region: ${AWS_REGION}
+      awslogs-group: ${LOG_GROUP}
+      tag: '{{.Name}}' # one log stream per container name: bf-auth-1, bf-order-1, …
+
+x-nest: &nest
+  <<: *service
+  mem_limit: 384m
+
+x-nest-env: &nest-env
+  NODE_ENV: production
+  LOG_LEVEL: info
+  CORS_ORIGINS: https://${MAIN_DOMAIN},https://${ADMIN_DOMAIN}
+  JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY}
+
+# Aurora Serverless v2 pauses only when NO connection is open:
+#   DB_POOL_MIN=0             an idle pool closes every connection (default 2 would keep the cluster awake)
+#   DB_CONNECT_TIMEOUT_MS     the first query after a pause waits ~15 s for the cluster to resume
+#   NODE_EXTRA_CA_CERTS       RDS CA bundle (downloaded at first boot); `sslmode=require` verifies the certificate
+x-db-env: &db-env
+  POSTGRES_HOST: ${POSTGRES_HOST}
+  POSTGRES_PORT: '5432'
+  POSTGRES_USER: ${POSTGRES_USER}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+  POSTGRES_SSL: ${POSTGRES_SSL:-true}
+  DB_POOL_MIN: '0'
+  DB_CONNECT_TIMEOUT_MS: '30000'
+  NODE_EXTRA_CA_CERTS: /etc/ssl/rds-ca.pem
+
+x-db-volumes: &db-volumes
+  - ${RDS_CA_FILE:-/opt/bf/rds-ca.pem}:/etc/ssl/rds-ca.pem:ro
+
+services:
+  caddy:
+    <<: *service
+    image: caddy:2-alpine
+    ports: ['80:80', '443:443', '443:443/udp']
+    environment:
+      MAIN_DOMAIN: ${MAIN_DOMAIN}
+      API_DOMAIN: ${API_DOMAIN}
+      ADMIN_DOMAIN: ${ADMIN_DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data # certificates: keep across deploys (Let's Encrypt rate limits)
+      - caddy_config:/config
+    depends_on: [api, fe-main, fe-admin]
+
+  api:
+    <<: *nest
+    image: ${ECR_PREFIX}/api:${IMAGE_TAG:-prod}
+    environment:
+      <<: *nest-env
+      PORT: '3000'
+      SERVICE_NAME: api
+      API_BASE_URL: https://${API_DOMAIN}
+      UPSTREAMS: auth=http://auth:3001,order=http://order:3002,course=http://course:3003,billing=http://billing:3004,admin=http://admin:3005,ai=http://ai:3006
+      PUBLIC_PATHS: /auth/api/auth/
+      ROUTE_ROLES: admin=admin
+
+  auth:
+    <<: *nest
+    image: ${ECR_PREFIX}/auth:${IMAGE_TAG:-prod}
+    volumes: *db-volumes
+    environment:
+      <<: [*nest-env, *db-env]
+      PORT: '3001'
+      SERVICE_NAME: auth
+      API_BASE_URL: http://auth:3001
+      POSTGRES_DB: auth
+      JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY}
+
+  order:
+    <<: *nest
+    image: ${ECR_PREFIX}/order:${IMAGE_TAG:-prod}
+    volumes: *db-volumes
+    environment:
+      <<: [*nest-env, *db-env]
+      PORT: '3002'
+      SERVICE_NAME: order
+      API_BASE_URL: http://order:3002
+      POSTGRES_DB: order
+      AUTH_URL: http://auth:3001
+      # no S3_ENDPOINT / keys: @bf/storage uses the instance role (IMDS, hop limit 2)
+      S3_REGION: ${AWS_REGION}
+      S3_BUCKET: ${S3_BUCKET}
+
+  course:
+    <<: *nest
+    image: ${ECR_PREFIX}/course:${IMAGE_TAG:-prod}
+    volumes: *db-volumes
+    environment:
+      <<: [*nest-env, *db-env]
+      PORT: '3003'
+      SERVICE_NAME: course
+      API_BASE_URL: http://course:3003
+      POSTGRES_DB: course
+
+  billing:
+    <<: *nest
+    image: ${ECR_PREFIX}/billing:${IMAGE_TAG:-prod}
+    volumes: *db-volumes
+    environment:
+      <<: [*nest-env, *db-env]
+      PORT: '3004'
+      SERVICE_NAME: billing
+      API_BASE_URL: http://billing:3004
+      POSTGRES_DB: billing
+      ORDER_URL: http://order:3002
+
+  admin:
+    <<: *nest
+    image: ${ECR_PREFIX}/admin:${IMAGE_TAG:-prod}
+    volumes: *db-volumes
+    environment:
+      <<: [*nest-env, *db-env]
+      PORT: '3005'
+      SERVICE_NAME: admin
+      API_BASE_URL: http://admin:3005
+      POSTGRES_DB: admin
+      AUTH_URL: http://auth:3001
+      ORDER_URL: http://order:3002
+      COURSE_URL: http://course:3003
+      BILLING_URL: http://billing:3004
+      AI_URL: http://ai:3006
+
+  ai:
+    <<: *nest
+    image: ${ECR_PREFIX}/ai:${IMAGE_TAG:-prod}
+    environment:
+      <<: *nest-env
+      PORT: '3006'
+      SERVICE_NAME: ai
+      API_BASE_URL: http://ai:3006
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_MODEL: gpt-4o-mini
+
+  # NEXT_PUBLIC_* are baked into the fe images at build time (GitHub Environment variables)
+  fe-main:
+    <<: *service
+    image: ${ECR_PREFIX}/fe-main:${IMAGE_TAG:-prod}
+    mem_limit: 512m
+    environment: { NODE_ENV: production, PORT: '3000' }
+
+  fe-admin:
+    <<: *service
+    image: ${ECR_PREFIX}/fe-admin:${IMAGE_TAG:-prod}
+    mem_limit: 384m
+    environment: { NODE_ENV: production, PORT: '3000' }
+
+  # One-shot (`docker compose run --rm -e DATABASES="auth order …" db-init`): creates each app's database if missing.
+  db-init:
+    <<: *service
+    restart: 'no'
+    profiles: [tools]
+    image: postgres:17-alpine
+    environment:
+      PGHOST: ${POSTGRES_HOST}
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DEFAULT_DB:-bf}
+      PGSSLMODE: ${PGSSLMODE:-require}
+      PGCONNECT_TIMEOUT: '60'
+      DATABASES: ''
+    command:
+      - sh
+      - -c
+      - |
+        for d in $$DATABASES; do
+          if psql -Atc "SELECT 1 FROM pg_database WHERE datname = '$$d'" | grep -q 1; then echo "db $$d exists"
+          else psql -c "CREATE DATABASE \"$$d\"" && echo "db $$d created"; fi
+        done
+
+networks:
+  bf:
+
+volumes:
+  caddy_data:
+  caddy_config:

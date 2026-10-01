@@ -1,0 +1,35 @@
+{
+  "name": "fe-admin",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --port 4001",
+    "build": "next build",
+    "start": "next start --port 4001",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@bf/ui": "workspace:*",
+    "@tanstack/react-query": "^5.85.0",
+    "lucide-react": "^0.542.0",
+    "next": "catalog:",
+    "next-themes": "^0.4.6",
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "zod": "catalog:",
+    "@bf/contracts": "workspace:*",
+    "@trpc/client": "catalog:"
+  },
+  "devDependencies": {
+    "@bf/config": "workspace:*",
+    "@tailwindcss/postcss": "catalog:",
+    "@types/node": "catalog:",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "eslint": "catalog:",
+    "tailwindcss": "catalog:",
+    "typescript": "catalog:"
+  }
+}

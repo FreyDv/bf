@@ -1,0 +1,94 @@
+services:
+  postgres:
+    image: postgres:17.5
+    container_name: bf-postgres
+    hostname: postgres
+    restart: unless-stopped
+    labels:
+      - db
+      - postgres
+    # wal_level=logical + replication slots are required by Debezium (pgoutput).
+    command: postgres -c wal_level=logical -c max_wal_senders=10 -c max_replication_slots=10
+    ports:
+      - ${POSTGRES_PORT:-5432}:5432
+    shm_size: 256mb
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
+      - type: tmpfs
+        target: /dev/shm
+        tmpfs:
+          size: 268435456 # 256 MiB
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-bf}
+      POSTGRES_USER: ${POSTGRES_USER:-bf}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bf}
+    env_file:
+      - .env
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-bf} -d ${POSTGRES_DB:-bf}']
+      start_period: 10s
+      interval: 3s
+      timeout: 2s
+      retries: 10
+    networks:
+      - postgres_network
+      - bf_network
+
+  pgadmin:
+    image: dpage/pgadmin4:9.6
+    container_name: bf-pgadmin
+    hostname: pgadmin
+    restart: unless-stopped
+    labels:
+      - ui
+      - postgres
+      - pgadmin
+    ports:
+      - ${PGADMIN_PORT:-5050}:80
+    volumes:
+      - pgadmin-data:/var/lib/pgadmin
+      # Pre-registers the "bf" server (password must be typed once: POSTGRES_PASSWORD).
+      - ./pgadmin-init/servers.json:/pgadmin4/servers.json:ro
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@bf.dev}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-bf}
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: 'False'
+    env_file:
+      - .env
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://localhost:80/misc/ping || exit 1']
+      start_period: 10s
+      interval: 3s
+      timeout: 2s
+      retries: 10
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - postgres_network
+      - bf_network
+
+networks:
+  postgres_network:
+    driver: bridge
+    labels:
+      - db
+      - postgres
+  bf_network:
+    external: true
+
+volumes:
+  postgres-data:
+    driver: local
+    labels:
+      - db
+      - data
+      - postgres
+  pgadmin-data:
+    driver: local
+    labels:
+      - ui
+      - data
+      - pgadmin

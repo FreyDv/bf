@@ -1,0 +1,51 @@
+services:
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    container_name: bf-prometheus
+    hostname: prometheus
+    restart: unless-stopped
+    labels:
+      - observability
+      - metrics
+      - prometheus
+    ports:
+      - ${PROMETHEUS_PORT:-9090}:9090
+    volumes:
+      - prometheus-data:/prometheus
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-7d}
+      - --web.enable-lifecycle
+    # Lets prometheus scrape the apps running on the host (api/worker/gateway).
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    env_file:
+      - .env
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://localhost:9090/-/healthy > /dev/null || exit 1']
+      start_period: 10s
+      interval: 3s
+      timeout: 2s
+      retries: 10
+    networks:
+      - prometheus_network
+      - bf_network
+
+networks:
+  prometheus_network:
+    driver: bridge
+    labels:
+      - observability
+      - prometheus
+  bf_network:
+    external: true
+
+volumes:
+  prometheus-data:
+    driver: local
+    labels:
+      - observability
+      - data
+      - prometheus

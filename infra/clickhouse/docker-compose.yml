@@ -1,0 +1,96 @@
+services:
+  clickhouse:
+    image: clickhouse/clickhouse-server:25.8
+    container_name: bf-clickhouse
+    hostname: clickhouse
+    restart: unless-stopped
+    labels:
+      - db
+      - clickhouse
+    mem_limit: 2g
+    ports:
+      - ${CLICKHOUSE_HTTP_PORT:-8123}:8123 # HTTP
+      - ${CLICKHOUSE_NATIVE_PORT:-19000}:9000 # native TCP (host port != 9000 to avoid minio)
+      - ${CLICKHOUSE_METRICS_PORT:-9363}:9363 # prometheus metrics
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse/
+      - clickhouse-logs:/var/log/clickhouse-server/
+    cap_add:
+      - SYS_NICE
+      - NET_ADMIN
+      - IPC_LOCK
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    environment:
+      CLICKHOUSE_DB: ${CLICKHOUSE_DB:-bf}
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-bf}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-bf}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    env_file:
+      - .env
+    healthcheck:
+      test: ['CMD-SHELL', 'wget --spider -q localhost:8123/ping']
+      start_period: 30s
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - clickhouse_network
+      - bf_network
+
+  clickhouse-ui:
+    # No stable tag verified for ch-ui at the time of writing; pin one once confirmed.
+    image: ghcr.io/caioricciuti/ch-ui:latest
+    container_name: bf-clickhouse-ui
+    hostname: clickhouse-ui
+    restart: unless-stopped
+    labels:
+      - ui
+      - clickhouse
+      - ch-ui
+    ports:
+      - ${CLICKHOUSE_UI_PORT:-5521}:5521
+    environment:
+      # ch-ui queries ClickHouse from the browser, so this must be host-reachable.
+      VITE_CLICKHOUSE_URL: http://localhost:${CLICKHOUSE_HTTP_PORT:-8123}
+      VITE_CLICKHOUSE_USER: ${CLICKHOUSE_USER:-bf}
+      VITE_CLICKHOUSE_PASS: ${CLICKHOUSE_PASSWORD:-bf}
+    env_file:
+      - .env
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://localhost:5521/ > /dev/null || exit 1']
+      start_period: 10s
+      interval: 3s
+      timeout: 2s
+      retries: 10
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+    networks:
+      - clickhouse_network
+      - bf_network
+
+networks:
+  clickhouse_network:
+    driver: bridge
+    labels:
+      - db
+      - clickhouse
+  bf_network:
+    external: true
+
+volumes:
+  clickhouse-data:
+    driver: local
+    labels:
+      - db
+      - data
+      - clickhouse
+  clickhouse-logs:
+    driver: local
+    labels:
+      - db
+      - logs
+      - clickhouse

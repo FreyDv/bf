@@ -1,0 +1,94 @@
+services:
+  redis:
+    build:
+      context: ./
+      dockerfile: Dockerfile
+    image: bf/redis:7.4.5
+    container_name: bf-redis
+    hostname: redis
+    restart: unless-stopped
+    labels:
+      - db
+      - redis
+    ports:
+      - ${REDIS_PORT:-6379}:6379
+    volumes:
+      - redis-data:/data
+    environment:
+      REDIS_USERNAME: ${REDIS_USERNAME:-bf}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-bf}
+      REDIS_MAXMEMORY: ${REDIS_MAXMEMORY:-1gb}
+    env_file:
+      - .env
+    healthcheck:
+      # $$ -> literal $ so the container's own env is used.
+      test:
+        [
+          'CMD-SHELL',
+          'redis-cli --user "$$REDIS_USERNAME" -a "$$REDIS_PASSWORD" --no-auth-warning PING | grep -q PONG',
+        ]
+      start_period: 10s
+      interval: 3s
+      timeout: 2s
+      retries: 10
+    networks:
+      - redis_network
+      - bf_network
+
+  redisinsight:
+    image: redis/redisinsight:2.70
+    container_name: bf-redisinsight
+    hostname: redisinsight
+    restart: unless-stopped
+    labels:
+      - ui
+      - redis
+      - redisinsight
+    ports:
+      - ${REDISINSIGHT_PORT:-5540}:5540
+    volumes:
+      - redisinsight-data:/data
+    environment:
+      # Pre-configured connection (RedisInsight >= 2.50 RI_REDIS_* vars).
+      RI_REDIS_HOST: redis
+      RI_REDIS_PORT: 6379
+      RI_REDIS_ALIAS: bf
+      RI_REDIS_USERNAME: ${REDIS_USERNAME:-bf}
+      RI_REDIS_PASSWORD: ${REDIS_PASSWORD:-bf}
+    env_file:
+      - .env
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://localhost:5540/api/health || exit 1']
+      start_period: 10s
+      interval: 3s
+      timeout: 2s
+      retries: 10
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - redis_network
+      - bf_network
+
+networks:
+  redis_network:
+    driver: bridge
+    labels:
+      - db
+      - redis
+  bf_network:
+    external: true
+
+volumes:
+  redis-data:
+    driver: local
+    labels:
+      - db
+      - data
+      - redis
+  redisinsight-data:
+    driver: local
+    labels:
+      - ui
+      - data
+      - redisinsight

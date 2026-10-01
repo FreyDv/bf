@@ -1,0 +1,62 @@
+name: preview
+
+# What will merging this PR do to AWS? Two sticky comments, updated on every push:
+#   1. "Release plan": which apps get built/deployed, which migrations will run (no AWS access needed)
+#   2. "Infra diff":   `cdk diff` of infra/aws against the deployed stack, computed with the READ-ONLY role
+#                      bf-gha-plan; nothing is applied. Skipped if the PR doesn't touch infra/aws.
+# PRs from forks get no OIDC token, so they're skipped.
+
+on:
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: preview-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+
+env:
+  BASE: ${{ github.event.pull_request.base.sha }}
+  GH_TOKEN: ${{ github.token }}
+
+jobs:
+  release-plan:
+    name: release plan
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version-file: .nvmrc, cache: pnpm }
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: node scripts/ci/release-plan.ts release-plan.md
+      - run: node scripts/pr-comment.ts bf-release-plan release-plan.md "${{ github.event.pull_request.number }}"
+
+  infra-diff:
+    name: infra diff
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version-file: .nvmrc, cache: pnpm }
+      - id: touched
+        run: node scripts/ci/changed.ts infra/aws .github/workflows/infra.yml
+      - if: steps.touched.outputs.changed == 'true'
+        run: pnpm install --frozen-lockfile --ignore-scripts --filter "@bf/infra-aws..."
+      - if: steps.touched.outputs.changed == 'true'
+        uses: ./.github/actions/aws-auth
+        with: { role: bf-gha-plan, account-id: '${{ vars.AWS_ACCOUNT_ID }}' }
+      - if: steps.touched.outputs.changed == 'true'
+        run: node infra/aws/scripts/plan.ts infra-diff.md
+      # also after a failed diff: the script comments "preview failed" when the file is missing
+      - if: always() && steps.touched.outputs.changed == 'true'
+        run: node scripts/pr-comment.ts bf-infra-diff infra-diff.md "${{ github.event.pull_request.number }}"

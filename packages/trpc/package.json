@@ -1,0 +1,52 @@
+{
+  "name": "@bf/trpc",
+  "version": "0.0.0",
+  "private": true,
+  "description": "tRPC glue for NestJS services: TrpcServerModule (nestjs-trpc + request context) and TrpcClientModule (typed @trpc/client per upstream)",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "test": "jest --passWithNoTests"
+  },
+  "dependencies": {
+    "@bf/contracts": "workspace:*",
+    "@bf/shared": "workspace:*",
+    "@nestjs/common": "catalog:",
+    "@nestjs/config": "catalog:",
+    "@trpc/client": "catalog:",
+    "@trpc/server": "catalog:",
+    "nestjs-cls": "catalog:",
+    "nestjs-trpc": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@bf/config": "workspace:*",
+    "@nestjs/core": "catalog:",
+    "@swc/core": "catalog:",
+    "@swc/jest": "catalog:",
+    "@types/express": "catalog:",
+    "@types/jest": "catalog:",
+    "@types/node": "catalog:",
+    "eslint": "catalog:",
+    "express": "catalog:",
+    "jest": "catalog:",
+    "reflect-metadata": "catalog:",
+    "rxjs": "catalog:",
+    "tsup": "catalog:",
+    "typescript": "catalog:"
+  }
+}

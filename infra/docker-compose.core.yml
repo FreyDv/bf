@@ -1,0 +1,17 @@
+# Minimum infra needed to run the apps from the host (`pnpm dev`):
+#   docker compose -f infra/docker-compose.core.yml up -d
+# Kafka/Debezium are not part of the MVP path any more (no consumer) — use infra/docker-compose.yml for the full stack.
+# To run the apps themselves in Docker too, use the root docker-compose.yml (`pnpm stack:up`).
+name: bf
+
+include:
+  - path: postgres/docker-compose.yml
+  - path: minio/docker-compose.yml
+  - path: otel/docker-compose.yml
+
+networks:
+  bf_network:
+    name: bf_network
+    # Included files declare bf_network as external; the explicit `false` here overrides
+    # that in the merged model so this root file creates the network itself.
+    external: false

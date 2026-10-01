@@ -1,0 +1,10 @@
+{
+  "extends": "@bf/config/tsconfig/react.json",
+  "compilerOptions": {
+    "paths": {
+      "@bf/ui/*": ["./src/*"]
+    },
+    "jsx": "react-jsx"
+  },
+  "include": ["src"]
+}

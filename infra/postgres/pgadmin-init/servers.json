@@ -1,0 +1,14 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "bf (docker)",
+      "Group": "Servers",
+      "Host": "postgres",
+      "Port": 5432,
+      "MaintenanceDB": "bf",
+      "Username": "bf",
+      "SSLMode": "prefer",
+      "Comment": "Local dev postgres. Password: POSTGRES_PASSWORD from infra/postgres/.env (bf)."
+    }
+  }
+}

@@ -1,0 +1,130 @@
+name: deploy
+
+# Continuous delivery to the single AWS environment (prod): one EC2 host running docker compose.
+# Merge to main → release of the affected apps; "Run workflow" → any/all apps.
+#   discover → snapshot (Aurora snapshot + S3 export, before anything changes)
+#            → images   (build + push only the affected apps; ECR repository created on demand)   [role bf-gha-app]
+#            → rollout  (upload infra/aws/host/* to S3, then on the host through SSM:
+#                        pull images → create missing databases → `drizzle-kit migrate` → `docker compose up -d`)
+# No app list anywhere: scripts/apps.mjs scans apps/*. Region, env and domains live in infra/aws/lib/config.ts;
+# the repo variable AWS_ACCOUNT_ID selects the account (roles: infra/aws/lib/github-stack.ts).
+# Every step is a TypeScript script you can also run from a laptop (see infra/aws/README.md).
+# Infra itself (VPC, Aurora, the machine, DNS) is infra.yml; its diff is shown on the PR by preview.yml.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      apps:
+        description: 'apps to deploy: "changed" (since previous main commit), "all", or a comma list (auth,order)'
+        type: string
+        default: all
+      skip_migrations:
+        description: skip the migration step
+        type: boolean
+        default: false
+      skip_snapshot:
+        description: skip the pre-release DB snapshot (not recommended)
+        type: boolean
+        default: false
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  TURBO_TELEMETRY_DISABLED: '1'
+
+jobs:
+  discover:
+    name: discover apps
+    runs-on: ubuntu-latest
+    outputs:
+      images: ${{ steps.apps.outputs.images }}
+      migrate: ${{ steps.apps.outputs.migrate }}
+      release: ${{ steps.apps.outputs.release }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version-file: .nvmrc, cache: pnpm }
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - id: apps
+        env:
+          SELECT: ${{ github.event_name == 'push' && 'changed' || github.event.inputs.apps }}
+          BASE: ${{ github.event.before }}
+        run: node scripts/ci/discover.ts deploy
+
+  snapshot:
+    name: db snapshot
+    needs: discover
+    if: needs.discover.outputs.release == 'true' && github.event.inputs.skip_snapshot != 'true'
+    uses: ./.github/workflows/db-snapshot.yml
+    with:
+      label: ${{ github.sha }}
+
+  images:
+    name: ${{ matrix.name }} · build & push
+    needs: discover
+    if: needs.discover.outputs.images != '[]'
+    runs-on: ubuntu-latest
+    environment: prod # keep equal to `env` in infra/aws/lib/config.ts
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.discover.outputs.images) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version-file: .nvmrc, cache: pnpm }
+      - run: pnpm install --frozen-lockfile --ignore-scripts --filter "@bf/infra-aws..."
+      - uses: ./.github/actions/aws-auth
+        with: { role: bf-gha-app, account-id: '${{ vars.AWS_ACCOUNT_ID }}' }
+      - id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+      - name: ECR repository exists (created on first deploy of a new app)
+        run: node infra/aws/scripts/push-images.ts --ensure-repo "${{ matrix.name }}"
+      - name: build args (NEXT_PUBLIC_* from infra/aws/lib/config.ts)
+        id: args
+        run: node infra/aws/scripts/build-args.ts "${{ matrix.name }}" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          build-args: ${{ steps.args.outputs.args }}
+          platforms: linux/arm64
+          push: true
+          # <sha> for traceability, <env> as the floating tag infra/aws/host/compose.yml points at
+          tags: |
+            ${{ steps.ecr.outputs.registry }}/bf-${{ env.BF_ENV }}/${{ matrix.name }}:${{ github.sha }}
+            ${{ steps.ecr.outputs.registry }}/bf-${{ env.BF_ENV }}/${{ matrix.name }}:${{ env.BF_ENV }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+
+  rollout:
+    name: migrate & roll out on the host
+    needs: [discover, snapshot, images]
+    # snapshot and images must have succeeded or been skipped on purpose — a failed snapshot blocks the release
+    if: always() && needs.discover.outputs.release == 'true' && (needs.images.result == 'success' || needs.images.result == 'skipped') && (needs.snapshot.result == 'success' || needs.snapshot.result == 'skipped')
+    runs-on: ubuntu-latest
+    environment: prod # keep equal to `env` in infra/aws/lib/config.ts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version-file: .nvmrc, cache: pnpm }
+      - run: pnpm install --frozen-lockfile --ignore-scripts --filter "@bf/infra-aws..."
+      - uses: ./.github/actions/aws-auth
+        with: { role: bf-gha-app, account-id: '${{ vars.AWS_ACCOUNT_ID }}' }
+      - env:
+          MIGRATE: ${{ github.event.inputs.skip_migrations == 'true' && 'none' || needs.discover.outputs.migrate }}
+        run: node infra/aws/scripts/host-deploy.ts --migrate "$MIGRATE"

@@ -1,0 +1,54 @@
+services:
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.132.0
+    container_name: bf-otel-collector
+    hostname: otel-collector
+    restart: unless-stopped
+    labels:
+      - observability
+      - tracing
+      - otel
+    ports:
+      - ${OTEL_GRPC_PORT:-4317}:4317 # OTLP gRPC
+      - ${OTEL_HTTP_PORT:-4318}:4318 # OTLP HTTP
+      # 8889 (prometheus exporter) and 13133 (health) stay inside bf_network.
+    volumes:
+      - ./otel-collector-config.yml:/etc/otelcol-contrib/config.yaml:ro
+    command: ['--config=/etc/otelcol-contrib/config.yaml']
+    env_file:
+      - .env
+    # No healthcheck: the image is built FROM scratch (no shell/curl to run one).
+    # The health_check extension answers on http://otel-collector:13133 for external probes.
+    depends_on:
+      - jaeger
+    networks:
+      - otel_network
+      - bf_network
+
+  jaeger:
+    image: jaegertracing/jaeger:2.9.0
+    container_name: bf-jaeger
+    hostname: jaeger
+    restart: unless-stopped
+    labels:
+      - observability
+      - tracing
+      - jaeger
+    ports:
+      - ${JAEGER_UI_PORT:-16686}:16686
+      # 4317/4318 are NOT published; the collector talks to jaeger:4317 over the network.
+    env_file:
+      - .env
+    # No healthcheck: distroless image, nothing to exec. Health endpoint: http://jaeger:13133
+    networks:
+      - otel_network
+      - bf_network
+
+networks:
+  otel_network:
+    driver: bridge
+    labels:
+      - observability
+      - otel
+  bf_network:
+    external: true

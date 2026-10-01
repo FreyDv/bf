@@ -1,0 +1,71 @@
+services:
+  nats:
+    image: nats:2.11.8-alpine
+    container_name: bf-nats
+    hostname: nats
+    restart: unless-stopped
+    labels:
+      - broker
+      - nats
+    command: ['--name', 'bf-nats', '--jetstream', '--store_dir', '/data', '-m', '8222']
+    ports:
+      - ${NATS_PORT:-4222}:4222
+      - ${NATS_MONITOR_PORT:-8222}:8222
+    volumes:
+      - nats-data:/data
+    env_file:
+      - .env
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://localhost:8222/healthz | grep -q ok']
+      start_period: 10s
+      interval: 3s
+      timeout: 2s
+      retries: 10
+    networks:
+      - nats_network
+      - bf_network
+
+  nats-box:
+    image: natsio/nats-box:0.18.0
+    container_name: bf-nats-box
+    hostname: nats-box
+    restart: unless-stopped
+    labels:
+      - broker
+      - nats
+      - tools
+    # Shell in with: docker exec -it nats-box sh   (nats CLI is pre-pointed at NATS_URL)
+    command: ['sleep', 'infinity']
+    environment:
+      NATS_URL: nats://nats:4222
+    env_file:
+      - .env
+    healthcheck:
+      test: ['CMD-SHELL', 'nats --server nats://nats:4222 server check connection > /dev/null']
+      start_period: 10s
+      interval: 3s
+      timeout: 2s
+      retries: 10
+    depends_on:
+      nats:
+        condition: service_healthy
+    networks:
+      - nats_network
+      - bf_network
+
+networks:
+  nats_network:
+    driver: bridge
+    labels:
+      - broker
+      - nats
+  bf_network:
+    external: true
+
+volumes:
+  nats-data:
+    driver: local
+    labels:
+      - broker
+      - data
+      - nats

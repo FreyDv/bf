@@ -1,0 +1,36 @@
+{
+  "name": "@bf/infra-aws",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "AWS infrastructure (CDK) and operational scripts (AWS SDK v3) for the single-host bf deployment",
+  "scripts": {
+    "cdk": "cdk",
+    "synth": "cdk synth --quiet",
+    "diff": "cdk diff bf-prod",
+    "deploy": "cdk deploy bf-prod --require-approval never",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix"
+  },
+  "dependencies": {
+    "@aws-sdk/client-cloudformation": "^3.864.0",
+    "@aws-sdk/client-ec2": "^3.864.0",
+    "@aws-sdk/client-ecr": "^3.864.0",
+    "@aws-sdk/client-kms": "^3.864.0",
+    "@aws-sdk/client-rds": "^3.864.0",
+    "@aws-sdk/client-s3": "catalog:",
+    "@aws-sdk/client-secrets-manager": "^3.864.0",
+    "@aws-sdk/client-ssm": "^3.864.0",
+    "@aws-sdk/client-sts": "^3.864.0",
+    "aws-cdk": "^2.1143.0",
+    "aws-cdk-lib": "^2.272.0",
+    "constructs": "^10.8.1"
+  },
+  "devDependencies": {
+    "@bf/config": "workspace:*",
+    "@types/node": "catalog:",
+    "eslint": "catalog:",
+    "typescript": "catalog:"
+  }
+}

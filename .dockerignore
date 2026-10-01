@@ -1,0 +1,9 @@
+**/node_modules
+**/dist
+**/.next
+**/.turbo
+**/coverage
+**/.env
+infra/**/data
+.git
+.idea

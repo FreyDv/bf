@@ -1,0 +1,95 @@
+# Single-node, security disabled: the default dev setup.
+# For the 3-node TLS cluster use docker-compose.cluster.yml instead.
+services:
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:${ELASTIC_STACK_VERSION:-8.19.2}
+    container_name: bf-elasticsearch
+    hostname: elasticsearch
+    restart: unless-stopped
+    labels:
+      - db
+      - search
+      - elasticsearch
+    mem_limit: 2g
+    ports:
+      - ${ELASTIC_PORT:-9200}:9200
+    volumes:
+      - elastic-data:/usr/share/elasticsearch/data
+    environment:
+      - node.name=elasticsearch
+      - cluster.name=${ELASTIC_CLUSTER_NAME:-bf}
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - xpack.license.self_generated.type=${ELASTIC_LICENSE:-basic}
+      - bootstrap.memory_lock=true
+      - ES_JAVA_OPTS=${ELASTIC_JAVA_OPTS:--Xms1g -Xmx1g}
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    env_file:
+      - .env
+    healthcheck:
+      test: ['CMD-SHELL', 'curl -fs http://localhost:9200/_cluster/health > /dev/null || exit 1']
+      start_period: 30s
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - elastic_network
+      - bf_network
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:${ELASTIC_STACK_VERSION:-8.19.2}
+    container_name: bf-kibana
+    hostname: kibana
+    restart: unless-stopped
+    labels:
+      - ui
+      - elasticsearch
+      - kibana
+    mem_limit: 1g
+    ports:
+      - ${KIBANA_PORT:-5601}:5601
+    volumes:
+      - kibana-data:/usr/share/kibana/data
+    environment:
+      - SERVERNAME=kibana
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    env_file:
+      - .env
+    healthcheck:
+      test: ['CMD-SHELL', 'curl -fs http://localhost:5601/api/status > /dev/null || exit 1']
+      start_period: 30s
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    networks:
+      - elastic_network
+      - bf_network
+
+networks:
+  elastic_network:
+    driver: bridge
+    labels:
+      - db
+      - elasticsearch
+  bf_network:
+    external: true
+
+volumes:
+  elastic-data:
+    driver: local
+    labels:
+      - db
+      - data
+      - elasticsearch
+  kibana-data:
+    driver: local
+    labels:
+      - ui
+      - data
+      - kibana

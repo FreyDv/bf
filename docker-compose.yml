@@ -1,0 +1,169 @@
+# Whole platform in one command:  pnpm stack:up   (= docker compose up --build -d)
+#
+# Infra (postgres, redis, minio) comes from infra/*, apps are built from docker/*.Dockerfile.
+# Each app takes its committed .env.example as the base env (dev-only JWT keys included) and the
+# container-network overrides below (hostnames instead of localhost). Nothing else to prepare —
+# except `pnpm setup:env` once, because the included infra compose files read infra/<svc>/.env.
+#
+#   api       http://localhost:3000   edge: /<service>/*  (auth, order, course, billing, admin, ai)
+#   fe-main   http://localhost:4000   fe-admin http://localhost:4001
+#   Services are also published on their own ports (3001…3006) for debugging.
+name: bf
+
+include:
+  - path: infra/postgres/docker-compose.yml
+  - path: infra/redis/docker-compose.yml
+  - path: infra/minio/docker-compose.yml
+
+x-nest: &nest
+  restart: unless-stopped
+  networks: [bf_network]
+  depends_on:
+    migrate:
+      condition: service_completed_successfully
+
+x-pg: &pg-env
+  POSTGRES_HOST: postgres
+  POSTGRES_PORT: '5432'
+  POSTGRES_USER: ${POSTGRES_USER:-bf}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bf}
+
+services:
+  migrate:
+    build: { context: ., dockerfile: docker/migrate.Dockerfile }
+    image: bf/migrate
+    container_name: bf-migrate
+    restart: 'no'
+    environment: *pg-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [bf_network]
+
+  api:
+    <<: *nest
+    build: { context: ., dockerfile: docker/nest.Dockerfile, args: { APP: api } }
+    image: bf/api
+    container_name: bf-api
+    env_file: apps/api/.env.example
+    environment:
+      CORS_ORIGINS: http://localhost:4000,http://localhost:4001
+      UPSTREAMS: auth=http://auth:3001,order=http://order:3002,course=http://course:3003,billing=http://billing:3004,admin=http://admin:3005,ai=http://ai:3006
+    ports: ['3000:3000']
+    depends_on: [auth, order, course, billing, admin, ai]
+
+  auth:
+    <<: *nest
+    build: { context: ., dockerfile: docker/nest.Dockerfile, args: { APP: auth } }
+    image: bf/auth
+    container_name: bf-auth
+    env_file: apps/auth/.env.example
+    environment:
+      <<: *pg-env
+      POSTGRES_DB: auth
+    ports: ['3001:3001']
+
+  order:
+    <<: *nest
+    build: { context: ., dockerfile: docker/nest.Dockerfile, args: { APP: order } }
+    image: bf/order
+    container_name: bf-order
+    env_file: apps/order/.env.example
+    environment:
+      <<: *pg-env
+      POSTGRES_DB: order
+      AUTH_URL: http://auth:3001
+      S3_ENDPOINT: http://minio:9000
+    ports: ['3002:3002']
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      minio: { condition: service_healthy }
+
+  course:
+    <<: *nest
+    build: { context: ., dockerfile: docker/nest.Dockerfile, args: { APP: course } }
+    image: bf/course
+    container_name: bf-course
+    env_file: apps/course/.env.example
+    environment:
+      <<: *pg-env
+      POSTGRES_DB: course
+    ports: ['3003:3003']
+
+  billing:
+    <<: *nest
+    build: { context: ., dockerfile: docker/nest.Dockerfile, args: { APP: billing } }
+    image: bf/billing
+    container_name: bf-billing
+    env_file: apps/billing/.env.example
+    environment:
+      <<: *pg-env
+      POSTGRES_DB: billing
+      ORDER_URL: http://order:3002
+    ports: ['3004:3004']
+
+  admin:
+    <<: *nest
+    build: { context: ., dockerfile: docker/nest.Dockerfile, args: { APP: admin } }
+    image: bf/admin
+    container_name: bf-admin
+    env_file: apps/admin/.env.example
+    environment:
+      <<: *pg-env
+      POSTGRES_DB: admin
+      AUTH_URL: http://auth:3001
+      ORDER_URL: http://order:3002
+      COURSE_URL: http://course:3003
+      BILLING_URL: http://billing:3004
+      AI_URL: http://ai:3006
+    ports: ['3005:3005']
+
+  ai:
+    build: { context: ., dockerfile: docker/nest.Dockerfile, args: { APP: ai } }
+    image: bf/ai
+    container_name: bf-ai
+    restart: unless-stopped
+    env_file: apps/ai/.env.example
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    ports: ['3006:3006']
+    networks: [bf_network]
+
+  fe-main:
+    build:
+      context: .
+      dockerfile: docker/next.Dockerfile
+      args:
+        APP: fe-main
+        NEXT_PUBLIC_APP_NAME: bf
+        NEXT_PUBLIC_APP_URL: http://localhost:4000
+        NEXT_PUBLIC_API_URL: http://localhost:3000
+    image: bf/fe-main
+    container_name: bf-fe-main
+    restart: unless-stopped
+    ports: ['4000:3000']
+    depends_on: [api]
+    networks: [bf_network]
+
+  fe-admin:
+    build:
+      context: .
+      dockerfile: docker/next.Dockerfile
+      args:
+        APP: fe-admin
+        NEXT_PUBLIC_APP_NAME: bf admin
+        NEXT_PUBLIC_APP_URL: http://localhost:4001
+        NEXT_PUBLIC_API_URL: http://localhost:3000
+        NEXT_PUBLIC_DEV_TOKEN_SUB: admin
+    image: bf/fe-admin
+    container_name: bf-fe-admin
+    restart: unless-stopped
+    ports: ['4001:3000']
+    depends_on: [api]
+    networks: [bf_network]
+
+networks:
+  bf_network:
+    name: bf_network
+    # Included files declare bf_network as external; `false` here makes this file create it.
+    external: false

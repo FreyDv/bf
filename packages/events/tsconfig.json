@@ -1,0 +1,5 @@
+{
+  "extends": "@bf/config/tsconfig/package.json",
+  "compilerOptions": { "rootDir": "./src", "outDir": "./dist", "types": ["node", "jest"] },
+  "include": ["src"]
+}

@@ -1,0 +1,68 @@
+{
+  "name": "bf",
+  "private": true,
+  "packageManager": "pnpm@10.15.0",
+  "engines": {
+    "node": ">=26",
+    "pnpm": ">=10"
+  },
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "lint:fix": "turbo run lint:fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "turbo run typecheck",
+    "typecheck:scripts": "tsc -p scripts",
+    "test": "turbo run test",
+    "test:e2e": "turbo run test:e2e",
+    "deps": "turbo run deps",
+    "db:generate": "turbo run db:generate",
+    "db:check": "turbo run db:check",
+    "db:migrate": "turbo run db:migrate",
+    "db:seed": "turbo run db:seed",
+    "contracts:generate": "turbo run contracts:generate",
+    "contracts:check": "turbo run contracts:generate && git diff --exit-code -- packages/contracts/src",
+    "infra:up": "docker compose -f infra/docker-compose.yml up -d",
+    "infra:down": "docker compose -f infra/docker-compose.yml down",
+    "infra:core": "docker compose -f infra/docker-compose.core.yml up -d",
+    "stack:up": "docker compose up --build -d",
+    "stack:down": "docker compose down",
+    "gen:jwt-keys": "node scripts/gen-jwt-keys.mjs",
+    "setup:env": "node scripts/setup-env.mjs",
+    "env:check": "node scripts/check-env-drift.mjs",
+    "apps": "node scripts/apps.mjs",
+    "aws:diff": "pnpm --filter @bf/infra-aws run diff",
+    "aws:deploy": "pnpm --filter @bf/infra-aws run deploy",
+    "aws:host-deploy": "node infra/aws/scripts/host-deploy.ts",
+    "db:allow-me": "node infra/aws/scripts/db-allow-me.ts",
+    "db:url": "node infra/aws/scripts/db-url.ts"
+  },
+  "devDependencies": {
+    "@bf/config": "workspace:*",
+    "@types/node": "catalog:",
+    "prettier": "catalog:",
+    "turbo": "^2.5.6",
+    "typescript": "catalog:"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@nestjs/core",
+      "@swc/core",
+      "esbuild",
+      "sharp"
+    ],
+    "overrides": {
+      "@nestjs/common": "^12.0.1",
+      "@nestjs/core": "^12.0.1"
+    },
+    "peerDependencyRules": {
+      "allowedVersions": {
+        "nestjs-trpc>@nestjs/common": "12",
+        "nestjs-trpc>@nestjs/core": "12",
+        "nestjs-trpc>rxjs": "7"
+      }
+    }
+  }
+}

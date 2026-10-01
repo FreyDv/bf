@@ -1,0 +1,123 @@
+services:
+  kafka:
+    image: apache/kafka:3.9.1
+    container_name: bf-kafka
+    hostname: kafka
+    restart: unless-stopped
+    labels:
+      - broker
+      - kafka
+    mem_limit: 1g
+    ports:
+      # Host clients use localhost:${KAFKA_HOST_PORT}; in-network clients use kafka:9092.
+      - ${KAFKA_HOST_PORT:-29092}:${KAFKA_HOST_PORT:-29092}
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    environment:
+      # --- KRaft single node (broker + controller) ---
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,PLAINTEXT_HOST://:${KAFKA_HOST_PORT:-29092}
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:${KAFKA_HOST_PORT:-29092}
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      # --- single-node replication ---
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      # Topics are created explicitly by kafka-init (kafka-init/topics.txt).
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'false'
+      KAFKA_HEAP_OPTS: ${KAFKA_HEAP_OPTS:--Xms256m -Xmx512m}
+    env_file:
+      - .env
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          '/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 > /dev/null 2>&1',
+        ]
+      start_period: 30s
+      interval: 10s
+      timeout: 10s # JVM tool startup; 5s is too tight
+      retries: 10
+    networks:
+      - kafka_network
+      - bf_network
+
+  kafka-init:
+    image: apache/kafka:3.9.1
+    container_name: bf-kafka-init
+    hostname: kafka-init
+    restart: 'no'
+    labels:
+      - broker
+      - kafka
+      - init
+    volumes:
+      - ./kafka-init:/kafka-init:ro
+    environment:
+      KAFKA_BOOTSTRAP_SERVER: kafka:9092
+      KAFKA_TOPIC_PARTITIONS: ${KAFKA_TOPIC_PARTITIONS:-3}
+      KAFKA_TOPIC_REPLICATION_FACTOR: 1
+    env_file:
+      - .env
+    entrypoint: ['/bin/bash', '/kafka-init/create-topics.sh']
+    depends_on:
+      kafka:
+        condition: service_healthy
+    networks:
+      - kafka_network
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:v0.7.2
+    container_name: bf-kafka-ui
+    hostname: kafka-ui
+    restart: unless-stopped
+    labels:
+      - ui
+      - kafka
+      - kafka-ui
+    ports:
+      - ${KAFKA_UI_PORT:-8085}:8080
+    environment:
+      KAFKA_CLUSTERS_0_NAME: bf
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+      # Shows Kafka Connect (Debezium) in the UI when infra/debezium is running.
+      KAFKA_CLUSTERS_0_KAFKACONNECT_0_NAME: debezium
+      KAFKA_CLUSTERS_0_KAFKACONNECT_0_ADDRESS: http://debezium:8083
+      DYNAMIC_CONFIG_ENABLED: 'true'
+    env_file:
+      - .env
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://localhost:8080/actuator/health | grep -q UP']
+      start_period: 30s
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    depends_on:
+      kafka:
+        condition: service_healthy
+    networks:
+      - kafka_network
+      - bf_network
+
+networks:
+  kafka_network:
+    driver: bridge
+    labels:
+      - broker
+      - kafka
+  bf_network:
+    external: true
+
+volumes:
+  kafka-data:
+    driver: local
+    labels:
+      - broker
+      - data
+      - kafka
