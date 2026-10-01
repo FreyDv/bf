@@ -1,20 +1,27 @@
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@bf/ui/components/card';
+import Image from 'next/image';
 
 import { Shell } from '@/components/shell';
 
 export default function HomePage() {
   return (
     <Shell>
-      <Card>
-        <CardHeader>
-          <CardTitle>Welcome</CardTitle>
-          <CardDescription>Public site skeleton. Nothing is wired up yet.</CardDescription>
-        </CardHeader>
-        <CardContent className="text-sm text-muted-foreground">
-          Pages will call the services through the edge (<code>api</code>) over tRPC, typed by{' '}
-          <code>@bf/contracts</code>.
-        </CardContent>
-      </Card>
+      <section className="flex flex-col items-center gap-6 text-center">
+        <h1 className="text-4xl font-bold tracking-tight sm:text-5xl">Привет, Валерия! 🍰</h1>
+        <p className="max-w-xl text-lg text-muted-foreground">
+          Скоро здесь появится сайт для продажи пирожных. Совсем немного терпения — и будет очень
+          вкусно.
+        </p>
+        <div className="relative aspect-[4/3] w-full overflow-hidden rounded-2xl shadow-lg">
+          <Image
+            src="/cakes.jpg"
+            alt="Шоколадный торт с кремовыми розетками"
+            fill
+            priority
+            sizes="(min-width: 768px) 768px, 100vw"
+            className="object-cover"
+          />
+        </div>
+      </section>
     </Shell>
   );
 }
