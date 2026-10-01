@@ -25,7 +25,7 @@ env:
 jobs:
   discover:
     name: discover apps
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     outputs:
       changed: ${{ steps.apps.outputs.changed }}
       migrations: ${{ steps.apps.outputs.migrations }}
@@ -45,7 +45,7 @@ jobs:
 
   packages:
     name: packages · prettier · env + contracts drift
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -81,7 +81,7 @@ jobs:
     name: ${{ matrix.name }} · prettier · eslint · tsc · unit
     needs: discover
     if: needs.discover.outputs.changed != '[]'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     strategy:
       fail-fast: false
       matrix:
@@ -118,7 +118,7 @@ jobs:
     name: ${{ matrix.name }} · migrations drift
     needs: discover
     if: needs.discover.outputs.migrations != '[]'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     strategy:
       fail-fast: false
       matrix:
@@ -158,7 +158,7 @@ jobs:
     name: ${{ matrix.name }} · e2e
     needs: [discover, app]
     if: needs.discover.outputs.e2e != '[]'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     strategy:
       fail-fast: false
       matrix:
@@ -210,7 +210,7 @@ jobs:
     name: ${{ matrix.name }} · docker build
     needs: discover
     if: needs.discover.outputs.docker != '[]'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     strategy:
       fail-fast: false
       matrix:
@@ -235,7 +235,7 @@ jobs:
     name: ci ok
     needs: [discover, packages, app, migrations, e2e, docker]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

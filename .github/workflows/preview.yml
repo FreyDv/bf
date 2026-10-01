@@ -27,7 +27,7 @@ jobs:
   release-plan:
     name: release plan
     if: github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
@@ -41,7 +41,7 @@ jobs:
   infra-diff:
     name: infra diff
     if: github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }

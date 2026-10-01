@@ -39,7 +39,7 @@ jobs:
     name: cdk deploy
     needs: snapshot
     if: always() && (needs.snapshot.result == 'success' || needs.snapshot.result == 'skipped')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     environment: prod # keep equal to `env` in infra/aws/lib/config.ts
     steps:
       - uses: actions/checkout@v4
