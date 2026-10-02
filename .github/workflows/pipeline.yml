@@ -415,7 +415,8 @@ jobs:
   approve:
     name: approve production deploy
     needs: [discover, ci-ok]
-    if: github.event_name != 'pull_request' && (needs.discover.outputs.release == 'true' || needs.discover.outputs.infra == 'true')
+    # explicit status check: the implicit success() also looks at skipped ancestors (the PR-only plan jobs) and would skip this
+    if: ${{ !cancelled() && needs.ci-ok.result == 'success' && github.event_name != 'pull_request' && (needs.discover.outputs.release == 'true' || needs.discover.outputs.infra == 'true') }}
     runs-on: ubuntu-24.04-arm
     # a separate environment: the AWS roles trust `prod`, so approvals must not sit on it (every job would ask)
     environment: prod-approval
@@ -425,7 +426,7 @@ jobs:
   snapshot:
     name: db snapshot
     needs: [discover, approve]
-    if: github.event.inputs.skip_snapshot != 'true'
+    if: ${{ !cancelled() && needs.approve.result == 'success' && github.event.inputs.skip_snapshot != 'true' }}
     permissions:
       id-token: write
       contents: read
@@ -453,7 +454,7 @@ jobs:
   images:
     name: ${{ matrix.name }} · build & push
     needs: [discover, approve]
-    if: needs.discover.outputs.images != '[]'
+    if: ${{ !cancelled() && needs.approve.result == 'success' && needs.discover.outputs.images != '[]' }}
     runs-on: ubuntu-24.04-arm # native arm64 (the host is Graviton): no QEMU emulation
     environment: prod # keep equal to `env` in infra/aws/lib/config.ts
     permissions:
@@ -514,7 +515,7 @@ jobs:
   smoke:
     name: smoke test (public URLs)
     needs: rollout
-    if: needs.rollout.result == 'success'
+    if: ${{ !cancelled() && needs.rollout.result == 'success' }}
     runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
