@@ -27,7 +27,9 @@ export function hostSetupCommands(registry: string, bucket: string): string[] {
     `curl -fsSL https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem -o ${dir}/rds-ca.pem`,
     // a REPLACED machine comes back by itself: if a bundle was ever uploaded, start the apps from it
     `if aws s3 ls s3://${bucket}/${names.hostBundlePrefix}compose.yml; then`,
-    ...hostDeployCommands({ bucket, databases: [], migrate: [] }).map((c) => `  ${c}`),
+    ...hostDeployCommands({ bucket, databases: [], migrate: [], rollback: false }).map(
+      (c) => `  ${c}`,
+    ),
     'fi',
   ];
 }
@@ -39,6 +41,11 @@ export interface HostDeployOptions {
   databases: string[];
   /** Apps whose `drizzle-kit migrate` runs before the containers are replaced. */
   migrate: string[];
+  /**
+   * Keep `:previous` images and go back to them when the new ones are not healthy (default). First boot turns it off:
+   * there is nothing to go back to, and user data must not change with every release, or CDK replaces the machine.
+   */
+  rollback?: boolean;
 }
 
 /** .env = non-secret values rendered by the stack + the secrets, read here so they never travel through SSM. */
@@ -67,31 +74,44 @@ export function hostRefreshSecretsCommands(): string[] {
   ];
 }
 
+// keep what runs now as `:previous` so a failed release can go back (images are pulled under the floating tag)
+const PREVIOUS_IMAGES = [
+  'previous=$(docker compose ps --format "{{.Image}}" | sort -u || true)',
+  'for ref in $previous; do docker tag "$ref" "${ref%:*}:previous" || true; done',
+];
+
+// `--wait` blocks until every container with a healthcheck is healthy; otherwise restore the previous images.
+// Migrations are NOT undone: keep them backwards compatible (expand, then contract).
+const UP_WITH_ROLLBACK = [
+  'if ! docker compose up -d --wait --wait-timeout 180 --remove-orphans; then',
+  '  echo "release unhealthy, rolling back to the previous images" >&2',
+  '  docker compose ps',
+  '  for ref in $previous; do docker tag "${ref%:*}:previous" "$ref" || true; done',
+  '  docker compose up -d --remove-orphans',
+  '  docker compose ps',
+  '  exit 1',
+  'fi',
+];
+
 /** One release: fetch bundle → write .env → pull images → create databases → migrate → (re)start containers. */
-export function hostDeployCommands({ bucket, databases, migrate }: HostDeployOptions): string[] {
+export function hostDeployCommands({
+  bucket,
+  databases,
+  migrate,
+  rollback = true,
+}: HostDeployOptions): string[] {
   return [
     `export HOME=/root AWS_DEFAULT_REGION=${config.region}`,
     `cd ${dir}`,
     `aws s3 cp s3://${bucket}/${names.hostBundlePrefix} . --recursive --only-show-errors`,
     ...hostEnvCommands(),
-    // keep what runs now as `:previous` so a failed release can go back (images are pulled under the floating tag)
-    'previous=$(docker compose ps --format "{{.Image}}" | sort -u || true)',
-    'for ref in $previous; do docker tag "$ref" "${ref%:*}:previous" || true; done',
+    ...(rollback ? PREVIOUS_IMAGES : []),
     'docker compose pull --quiet',
     ...(databases.length
       ? [`docker compose run --rm -T -e DATABASES="${databases.join(' ')}" db-init`]
       : []),
     ...migrate.map((app) => `docker compose run --rm --no-deps -T ${app} npx drizzle-kit migrate`),
-    // `--wait` blocks until every container with a healthcheck is healthy; otherwise restore the previous images.
-    // Migrations are NOT undone: keep them backwards compatible (expand, then contract).
-    'if ! docker compose up -d --wait --wait-timeout 180 --remove-orphans; then',
-    '  echo "release unhealthy, rolling back to the previous images" >&2',
-    '  docker compose ps',
-    '  for ref in $previous; do docker tag "${ref%:*}:previous" "$ref" || true; done',
-    '  docker compose up -d --remove-orphans',
-    '  docker compose ps',
-    '  exit 1',
-    'fi',
+    ...(rollback ? UP_WITH_ROLLBACK : ['docker compose up -d --remove-orphans']),
     // compose does not notice an edited Caddyfile (bind mount): reload it, or restart if Caddy is still booting
     'docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile || docker compose restart caddy',
     'docker image prune -f',
