@@ -61,6 +61,8 @@ main(async () => {
   console.log(`snapshot available: ${snapshotArn}`);
 
   const account = await accountId();
+  // ExportTaskIdentifier is capped at 60 characters (the snapshot id, with a full commit sha, is not).
+  const exportTaskId = `${names.snapshotPrefix}${label.slice(0, 32).replace(/-+$/, '')}-${timestamp}`;
   const exportTarget = `s3://${names.snapshotBucket(account)}/${config.env}/${snapshotId}/`;
   try {
     const { KeyMetadata } = await new KMSClient(sdk).send(
@@ -68,7 +70,7 @@ main(async () => {
     );
     await rds.send(
       new StartExportTaskCommand({
-        ExportTaskIdentifier: snapshotId,
+        ExportTaskIdentifier: exportTaskId,
         SourceArn: snapshotArn,
         S3BucketName: names.snapshotBucket(account),
         S3Prefix: `${config.env}/${snapshotId}`,
