@@ -12,7 +12,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "deps": "depcruise src --config .dependency-cruiser.cjs",
     "test": "NODE_OPTIONS=--experimental-vm-modules jest --passWithNoTests",
-    "test:e2e": "NODE_OPTIONS=--experimental-vm-modules jest --config test/jest-e2e.config.cjs --runInBand",
+    "test:e2e": "NODE_OPTIONS=--experimental-vm-modules jest --config test/jest-e2e.config.cjs --runInBand --passWithNoTests",
     "contracts:generate": "node ../../scripts/trpc-generate.mjs ai"
   },
   "dependencies": {
