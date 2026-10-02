@@ -4,8 +4,8 @@ import { execFileSync } from 'node:child_process';
 
 import { main } from './_gh.ts';
 
-const SERVER_IMAGE = 'minio/minio:RELEASE.2025-07-23T15-54-02Z';
-const CLIENT_IMAGE = 'minio/mc:RELEASE.2025-07-21T05-28-08Z';
+const SERVER_IMAGE = 'cgr.dev/chainguard/minio:latest';
+const CLIENT_IMAGE = 'cgr.dev/chainguard/minio-client:latest';
 const ENDPOINT = 'http://localhost:9000';
 
 const docker = (...args: string[]) => execFileSync('docker', args, { stdio: 'inherit' });
