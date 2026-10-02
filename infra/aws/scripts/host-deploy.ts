@@ -7,35 +7,13 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { DescribeInstancesCommand, EC2Client } from '@aws-sdk/client-ec2';
 import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
-import { GetCommandInvocationCommand, SendCommandCommand, SSMClient } from '@aws-sdk/client-ssm';
 
-import { accountId, apps, awsDir, flag, main, sdk, sleep, summary } from './_lib.ts';
+import { accountId, apps, awsDir, findHost, flag, main, runOnHost, sdk, summary } from './_lib.ts';
 import { names } from '../lib/config.ts';
 import { HOST_SCRIPT_HEADER, hostDeployCommands } from '../lib/host-commands.ts';
 
 const bundleDir = join(awsDir, 'host');
-const TIMEOUT_SECONDS = 1800;
-
-/** The running instance tagged bf:env=<env>. */
-async function findHost(): Promise<string> {
-  const { Reservations = [] } = await new EC2Client(sdk).send(
-    new DescribeInstancesCommand({
-      Filters: [
-        { Name: `tag:${names.hostTag.key}`, Values: [names.hostTag.value] },
-        { Name: 'instance-state-name', Values: ['running'] },
-      ],
-    }),
-  );
-  const ids = Reservations.flatMap((r) => r.Instances ?? []).map((i) => i.InstanceId!);
-  if (ids.length !== 1) {
-    throw new Error(
-      `expected exactly one running host, found ${ids.length} — is ${names.stack} deployed?`,
-    );
-  }
-  return ids[0]!;
-}
 
 async function uploadBundle(bucket: string) {
   const s3 = new S3Client(sdk);
@@ -49,37 +27,6 @@ async function uploadBundle(bucket: string) {
     );
     console.log(`uploaded ${file} → s3://${bucket}/${names.hostBundlePrefix}${file}`);
   }
-}
-
-/** Sends the script and polls until it finishes; returns the invocation (status + output). */
-async function runOnHost(instanceId: string, commands: string[]) {
-  const ssm = new SSMClient(sdk);
-  const { Command } = await ssm.send(
-    new SendCommandCommand({
-      InstanceIds: [instanceId],
-      DocumentName: 'AWS-RunShellScript',
-      Comment: 'bf host deploy',
-      TimeoutSeconds: 60,
-      Parameters: { commands, executionTimeout: [String(TIMEOUT_SECONDS)] },
-    }),
-  );
-  const commandId = Command!.CommandId!;
-  console.log(`ssm command ${commandId} on ${instanceId} — waiting…`);
-
-  const deadline = Date.now() + (TIMEOUT_SECONDS + 120) * 1000;
-  while (Date.now() < deadline) {
-    await sleep(5000);
-    const invocation = await ssm
-      .send(new GetCommandInvocationCommand({ CommandId: commandId, InstanceId: instanceId }))
-      .catch((error: Error) => {
-        if (error.name === 'InvocationDoesNotExist') return undefined; // not registered yet
-        throw error;
-      });
-    if (invocation && !['Pending', 'InProgress', 'Delayed'].includes(invocation.Status ?? '')) {
-      return invocation;
-    }
-  }
-  throw new Error(`ssm command ${commandId} did not finish in time`);
 }
 
 main(async () => {

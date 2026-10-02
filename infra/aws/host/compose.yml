@@ -1,5 +1,5 @@
 # Production stack on the single EC2 host. Uploaded to S3 and started by `pnpm aws:host-deploy`
-# (infra/aws/scripts/host-deploy.ts); never built here — images come from ECR (deploy.yml / push-images.ts).
+# (infra/aws/scripts/host-deploy.ts); never built here — images come from ECR (pipeline.yml / push-images.ts).
 #
 #   internet ─► caddy :80/:443 ─► api | fe-main | fe-admin        (the only published ports)
 #   api ─► auth, order, course, billing, admin, ai                (compose network only, no `ports:`)
@@ -20,9 +20,37 @@ x-service: &service
       awslogs-group: ${LOG_GROUP}
       tag: '{{.Name}}' # one log stream per container name: bf-auth-1, bf-order-1, …
 
+# Container health = the process answers on /health/live. Never /health or /health/ready: those run `select 1`
+# and would keep Aurora from pausing (there is deliberately no DB health check anywhere).
+# `docker compose up --wait` (lib/host-commands.ts) blocks on these and rolls back when one stays unhealthy.
+x-healthcheck: &healthcheck
+  interval: 10s
+  timeout: 5s
+  retries: 6
+  start_period: 30s
+
 x-nest: &nest
   <<: *service
   mem_limit: 384m
+  healthcheck:
+    <<: *healthcheck
+    test:
+      - CMD
+      - node
+      - -e
+      - |-
+        fetch('http://127.0.0.1:' + process.env.PORT + '/health/live').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))
+
+x-next: &next
+  <<: *service
+  healthcheck:
+    <<: *healthcheck
+    test:
+      - CMD
+      - node
+      - -e
+      - |-
+        fetch('http://127.0.0.1:' + process.env.PORT + '/').then((r) => process.exit(r.status < 500 ? 0 : 1), () => process.exit(1))
 
 x-nest-env: &nest-env
   NODE_ENV: production
@@ -153,13 +181,13 @@ services:
 
   # NEXT_PUBLIC_* are baked into the fe images at build time (GitHub Environment variables)
   fe-main:
-    <<: *service
+    <<: *next
     image: ${ECR_PREFIX}/fe-main:${IMAGE_TAG:-prod}
     mem_limit: 512m
     environment: { NODE_ENV: production, PORT: '3000' }
 
   fe-admin:
-    <<: *service
+    <<: *next
     image: ${ECR_PREFIX}/fe-admin:${IMAGE_TAG:-prod}
     mem_limit: 384m
     environment: { NODE_ENV: production, PORT: '3000' }

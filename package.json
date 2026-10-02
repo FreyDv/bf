@@ -33,11 +33,13 @@
     "setup:env": "node scripts/setup-env.mjs",
     "env:check": "node scripts/check-env-drift.mjs",
     "apps": "node scripts/apps.mjs",
+    "repo:settings": "node scripts/ci/repo-settings.ts",
     "aws:diff": "pnpm --filter @bf/infra-aws run diff",
     "aws:deploy": "pnpm --filter @bf/infra-aws run deploy",
     "aws:host-deploy": "node infra/aws/scripts/host-deploy.ts",
     "db:allow-me": "node infra/aws/scripts/db-allow-me.ts",
-    "db:url": "node infra/aws/scripts/db-url.ts"
+    "db:url": "node infra/aws/scripts/db-url.ts",
+    "db:rotate-password": "node infra/aws/scripts/db-rotate-password.ts"
   },
   "devDependencies": {
     "@bf/config": "workspace:*",
