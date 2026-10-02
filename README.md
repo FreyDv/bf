@@ -76,10 +76,11 @@ Request path: browser → `api` (JWT verified with `JWT_PUBLIC_KEY`, client `X-U
 No app list anywhere: `scripts/apps.mjs` scans `apps/*` and the workflows fan out per affected app
 (turbo graph + `docker/`, `.github/`, `scripts/` as global triggers).
 
-- `ci.yml` (PR): per app **prettier → eslint → tsc → unit**, **migrations drift** (fresh Postgres, `db:generate` must be clean), **e2e**, **docker build**; `ci ok` is the single required check.
-- `deploy.yml` (merge to `main` → the single AWS env, "Run workflow" → chosen apps): **DB snapshot** → per app **build & push** → **rollout** on the single EC2 host (`drizzle-kit migrate`, then `docker compose up -d`, through SSM).
-- `preview.yml` (PR): comments the release plan and the `cdk diff` of the infra before you merge. `infra.yml` applies infra changes; `db-snapshot.yml` snapshots Aurora to S3. Setup: `infra/aws/README.md`.
-- `infra.yml`: `cdk deploy` only when `infra/aws/**` changes.
+- `pipeline.yml` is the **only** workflow for the path PR → production, so one run shows everything:
+  - **CI** (PR and `main`): repo-wide prettier, packages, `infra/aws` (tsc · eslint · `cdk synth`), env drift, contracts drift; per affected app **static** (prettier · eslint · tsc · deps), **unit**, **migrations drift**, **e2e**, **docker build**. `ci ok` is the single required check.
+  - **PR comments** (sticky, updated on every push): **release plan** (what a merge deploys), **infra diff** (`cdk diff`; fails on a removed/replaced stateful resource unless the PR has the label `allow-destructive`), **test report** (unit + e2e, failures included).
+  - **Production** (merge to `main`, or "Run workflow" for chosen apps / `infra`): `ci ok` → **approve** (one click, once `prod-approval` has a reviewer) → **DB snapshot** → `cdk deploy` (only if the stack changed) ∥ per app **build & push** → **rollout** (`drizzle-kit migrate`, `docker compose up --wait`, automatic rollback to the previous images when a container is unhealthy) → **smoke test** of the public URLs. Containers are checked on `/health/live` only; there is deliberately no DB health check (Aurora must be able to pause).
+- `db-snapshot.yml` snapshots Aurora to S3 (called by the pipeline, or run by hand). One-time GitHub settings (branch protection on `ci ok`, the `prod-approval` environment, the label): `node scripts/ci/repo-settings.ts --apply`. AWS setup: `infra/aws/README.md`.
 - Workflow logic lives in TypeScript (`scripts/ci/*.ts`, `infra/aws/scripts/*.ts`), run with plain `node` — the same commands work locally.
 
 Decisions: `docs/ADR.md` (#16–20 cover the split). Infra details: `infra/README.md`. AWS: `infra/aws/README.md`.

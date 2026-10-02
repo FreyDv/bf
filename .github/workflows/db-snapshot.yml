@@ -1,6 +1,6 @@
 name: db snapshot
 
-# Aurora cluster snapshot + S3 export of the production database. Called by deploy.yml and infra.yml before every
+# Aurora cluster snapshot + S3 export of the production database. Called by pipeline.yml once before every
 # release (workflow_call), or run by hand from the Actions tab. Only needs bf-gha-snapshot (snapshot/export, nothing else).
 
 on:

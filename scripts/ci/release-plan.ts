@@ -31,7 +31,7 @@ main(() => {
     lines.push('No deployable app is affected — **no images are built**.');
   } else {
     lines.push(
-      'Order: 📸 DB snapshot → 🐳 build & push → 🗄️ migrate → 🚀 compose up on the host',
+      'Order: 📸 DB snapshot → 🐳 build & push → 🗄️ migrate → 🚀 compose up on the host (rolls back if a container stays unhealthy) → 💨 smoke test',
       '',
       '| App | Migrations |',
       '|---|---|',

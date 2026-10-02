@@ -77,14 +77,28 @@ containers get it through `NODE_EXTRA_CA_CERTS`.
 
 ```bash
 pnpm db:allow-me                    # opens 5432 for your CURRENT public IP only (replaces the previous one)
-pnpm -s db:url order                # postgresql://bf:<password>@db.malinina.ca:5432/order?sslmode=require
-psql "$(pnpm -s db:url order)"
+pnpm -s db:url order                # in a terminal: both strings, labelled
+pnpm -s db:url order --pg           # postgresql://bf:<password>@db.malinina.ca:5432/order?sslmode=require
+pnpm -s db:url order --jdbc         # jdbc:postgresql://db.malinina.ca:5432/order?user=bf&password=<password>&sslmode=require
+psql "$(pnpm -s db:url order)"      # captured by $(…) it prints only the --pg form
 pnpm db:allow-me --revoke           # close it again
 ```
 
 The URL never changes; re-run `db:allow-me` when your IP does. For everyone else the port does not answer.
 `db.malinina.ca` is a CNAME, so the certificate name does not match it: `sslmode=require` works (psql, GUI clients);
 tools that verify the hostname (Node `pg`, `drizzle-kit`) need the AWS endpoint — `pnpm -s db:url order --native`.
+`--pg` is for `psql`, `pg` and `drizzle-kit`; `--jdbc` is for DataGrip / WebStorm / DBeaver (paste it into the URL field; user and
+password are inside it). Flags combine in any order (`--jdbc --native`).
+
+Rotate the database password (new random value → Aurora → Secrets Manager → containers recreated through SSM):
+
+```bash
+pnpm db:rotate-password                  # asks first; --yes skips the prompt
+pnpm db:rotate-password --restart-only   # only the container step, if it failed after the password had changed
+```
+
+The new value is stored as `AWSPENDING` and promoted to `AWSCURRENT` only after Aurora accepted it, so a failure leaves the
+old password working. The old value stays reachable as `AWSPREVIOUS`. Your own DB sessions need `pnpm -s db:url` again.
 
 Shell on the machine (no SSH, no key pair): `aws ssm start-session --target <HostInstanceId stack output>`.
 
@@ -139,16 +153,19 @@ Secrets Manager, read there so secrets never travel through SSM) → `docker com
 
 No AWS keys in GitHub: workflows get short-lived credentials by OIDC, **one role per concern** (`lib/github-stack.ts`).
 
-| Workflow          | Trigger                            | Role (what it may do)                                                       | What                                                                 |
-| ----------------- | ---------------------------------- | --------------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| `ci.yml`          | PR, push `main`                    | none                                                                        | per affected app: prettier → eslint → tsc → unit; drift; e2e; docker |
-| `preview.yml`     | PR                                 | `bf-gha-plan` — read-only                                                   | sticky PR comments: **release plan** and **infra diff** (`cdk diff`) |
-| `infra.yml`       | `infra/aws/**` on `main`; dispatch | `bf-gha-infra` — may only assume the CDK deploy roles (CFN = `bf-cfn-exec`) | snapshot → `cdk deploy bf-prod`                                      |
-| `deploy.yml`      | push `main`; dispatch (apps=…)     | `bf-gha-app` — ECR push, upload host bundle, SSM command on the tagged host | snapshot → build+push affected apps → `host-deploy.ts`               |
-| `db-snapshot.yml` | called by the two above; dispatch  | `bf-gha-snapshot` — cluster snapshot + export, nothing else                 | Aurora snapshot + Parquet export to S3; keeps the last 10            |
+| Job (in `pipeline.yml`)           | Runs on                          | Role (what it may do)                                                       | What                                                                                                                  |
+| --------------------------------- | -------------------------------- | --------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| CI jobs, `plan-release`, `report` | PR, push `main`                  | none                                                                        | checks per affected app; sticky PR comments: release plan, test report                                                |
+| `plan-infra`                      | PR touching the stack            | `bf-gha-plan` — read-only                                                   | sticky PR comment: `cdk diff`; fails on a destroyed stateful resource unless the PR has the label `allow-destructive` |
+| `approve`                         | push `main`; dispatch            | none (environment `prod-approval`, required reviewer)                       | one approval per run before anything touches AWS                                                                      |
+| `infra`                           | stack changed; dispatch infra=✓  | `bf-gha-infra` — may only assume the CDK deploy roles (CFN = `bf-cfn-exec`) | `cdk deploy bf-prod`                                                                                                  |
+| `images`, `rollout`               | push `main`; dispatch (apps=…)   | `bf-gha-app` — ECR push, upload host bundle, SSM command on the tagged host | build+push affected apps → `host-deploy.ts` (waits for healthy containers, rolls back otherwise)                      |
+| `smoke`                           | after `rollout`                  | none                                                                        | `smoke.ts`: the public URLs answer                                                                                    |
+| `db-snapshot.yml` (`snapshot`)    | called by the pipeline; dispatch | `bf-gha-snapshot` — cluster snapshot + export, nothing else                 | Aurora snapshot + Parquet export to S3; keeps the last 10; once per run                                               |
 
 Workflow steps are one-line calls of the same scripts (`scripts/ci/*.ts`, `infra/aws/scripts/*.ts`), so anything CI
-does can be reproduced locally. A change to `host/compose.yml` or `host/Caddyfile` alone also triggers a rollout.
+does can be reproduced locally. A change to `host/compose.yml` or `host/Caddyfile` alone also triggers a rollout (not a `cdk deploy`: the stack only changes with `lib/`, `bin/`, `cdk.json`, `package.json`).
+Migrations are not rolled back with the images, so keep them backwards compatible (expand, then contract).
 The stack `bf-github` is never deployed by GitHub — re-run `bootstrap.ts` after editing `lib/github-stack.ts`.
 
 ### Restoring from a pre-release snapshot

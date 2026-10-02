@@ -215,7 +215,7 @@ export class GithubStack extends Stack {
     // ---------------------------------------------------------------- GitHub roles (one per concern)
     const cdkRoles = `arn:aws:iam::${account}:role/cdk-hnb659fds-*-role-${account}-${Aws.REGION}`;
 
-    // preview.yml — `cdk diff`: reads the deployed template, can change nothing
+    // pipeline.yml (plan-infra, pull requests) — `cdk diff`: reads the deployed template, can change nothing
     const plan = githubRole('GhaPlanRole', 'bf-gha-plan', 'pull_request');
     plan.addManagedPolicy(
       iam.ManagedPolicy.fromAwsManagedPolicyName('job-function/ViewOnlyAccess'),
@@ -231,11 +231,11 @@ export class GithubStack extends Stack {
     );
     allow(plan, ['sts:AssumeRole'], [`arn:aws:iam::${account}:role/cdk-hnb659fds-lookup-role-*`]);
 
-    // infra.yml — `cdk deploy`: may only hand the work to the CDK roles; CloudFormation acts with bf-cfn-exec
+    // pipeline.yml (infra) — `cdk deploy`: may only hand the work to the CDK roles; CloudFormation acts with bf-cfn-exec
     const infra = githubRole('GhaInfraRole', 'bf-gha-infra', `environment:${config.env}`);
     allow(infra, ['sts:AssumeRole'], [cdkRoles]);
 
-    // deploy.yml — push images, upload the host bundle, run the deploy on the machine. No CloudFormation.
+    // pipeline.yml (images, rollout) — push images, upload the host bundle, run the deploy on the machine. No CloudFormation.
     const app = githubRole('GhaAppRole', 'bf-gha-app', `environment:${config.env}`);
     allow(
       app,
@@ -265,7 +265,7 @@ export class GithubStack extends Stack {
       StringEquals: { [`ssm:resourceTag/${names.hostTag.key}`]: names.hostTag.value },
     });
 
-    // db-snapshot.yml — cluster snapshot + export to S3 before each release
+    // db-snapshot.yml (called by pipeline.yml) — cluster snapshot + export to S3 before each release
     const snapshot = githubRole('GhaSnapshotRole', 'bf-gha-snapshot', `environment:${config.env}`);
     const preSnapshots = arn('rds', `cluster-snapshot:${names.snapshotPrefix}*`);
     allow(

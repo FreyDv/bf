@@ -1,0 +1,523 @@
+name: pipeline
+
+# The whole path from a pull request to production in ONE workflow, so a run shows everything that happens.
+#
+#   pull_request                                    push main                       Run workflow
+#   ───────────────────────────────────────────     ────────────────────────────    ─────────────────────
+#   discover ─┬ format · packages · infra-check     the same CI checks              (CI is skipped; deploys
+#             │ env-drift · contracts-drift         + discover (what to release)     the apps you choose)
+#             ├ per app: static · unit · migrations · e2e · docker
+#             ├ plan-release   sticky PR comment: what a merge deploys
+#             ├ plan-infra     sticky PR comment: `cdk diff` (read-only role); fails on a destroyed stateful
+#             │                resource unless the PR has the label `allow-destructive`
+#             └ report         sticky PR comment: unit + e2e results (from the jest.json artifacts)
+#                    └──► ci-ok  (the single required check)
+#                              └──► approve ─► snapshot ─► infra ─┐
+#                                          └─► images (per app) ──┴─► rollout ─► smoke
+#
+# `approve` waits for ONE human approval per run once the environment `prod-approval` has a required reviewer
+# (node scripts/ci/repo-settings.ts --apply sets that up, plus branch protection on `ci ok`).
+# `rollout` pulls the images, migrates and runs `docker compose up --wait`; it rolls back to the previous images
+# when a container does not become healthy. Every deploy step is a TypeScript script you can also run from a laptop
+# (infra/aws/README.md). No app list anywhere: scripts/apps.mjs scans apps/*.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      apps:
+        description: 'apps to deploy: "changed" (since previous main commit), "all", or a comma list (auth,order)'
+        type: string
+        default: all
+      infra:
+        description: also deploy the CDK stack bf-prod
+        type: boolean
+        default: false
+      skip_migrations:
+        description: skip the migration step
+        type: boolean
+        default: false
+      skip_snapshot:
+        description: skip the pre-release DB snapshot (not recommended)
+        type: boolean
+        default: false
+
+# PR runs are superseded by the next push; runs on main queue up and are never cancelled mid-deploy.
+concurrency:
+  group: pipeline-${{ github.event_name == 'pull_request' && github.event.pull_request.number || 'main' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  TURBO_TELEMETRY_DISABLED: '1'
+  NEXT_TELEMETRY_DISABLED: '1'
+
+jobs:
+  # ══════════════════════════════════════════════════════════════ what does this run have to do?
+  discover:
+    name: discover
+    runs-on: ubuntu-24.04-arm
+    outputs:
+      changed: ${{ steps.ci.outputs.changed }}
+      unit: ${{ steps.ci.outputs.unit }}
+      migrations: ${{ steps.ci.outputs.migrations }}
+      e2e: ${{ steps.ci.outputs.e2e }}
+      docker: ${{ steps.ci.outputs.docker }}
+      images: ${{ steps.deploy.outputs.images }}
+      migrate: ${{ steps.deploy.outputs.migrate }}
+      release: ${{ steps.deploy.outputs.release }}
+      # does infra/aws (the CDK stack) change? PR: for the diff; main: for the deploy
+      infra: ${{ steps.deploy.outputs.infra || steps.ci.outputs.infra }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: ./.github/actions/setup
+        with: { ignore-scripts: 'true' }
+      - id: ci
+        if: github.event_name != 'workflow_dispatch'
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event.before }}
+        run: node scripts/ci/discover.ts ci
+      - id: deploy
+        if: github.event_name != 'pull_request'
+        env:
+          SELECT: ${{ github.event_name == 'push' && 'changed' || github.event.inputs.apps }}
+          INFRA: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.infra || '' }}
+          BASE: ${{ github.event.before }}
+        run: node scripts/ci/discover.ts deploy
+
+  # ══════════════════════════════════════════════════════════════ CI: repository-wide checks
+  format:
+    name: prettier (whole repo)
+    if: github.event_name != 'workflow_dispatch'
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with: { ignore-scripts: 'true' }
+      - run: pnpm format:check
+
+  packages:
+    name: packages · build · eslint · tsc · unit
+    if: github.event_name != 'workflow_dispatch'
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with: { turbo-cache: packages }
+      - run: pnpm turbo run build --cache-dir=.turbo --filter='./packages/*'
+      - run: pnpm turbo run lint typecheck test --cache-dir=.turbo --continue --filter='./packages/*'
+
+  infra-check:
+    name: infra/aws · tsc · eslint · cdk synth
+    if: github.event_name != 'workflow_dispatch'
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with: { turbo-cache: infra }
+      - run: pnpm typecheck:scripts
+      - run: pnpm turbo run lint typecheck --cache-dir=.turbo --filter=@bf/infra-aws
+      - run: pnpm --filter @bf/infra-aws run synth
+
+  env-drift:
+    name: env drift (.env.example vs zod schemas)
+    if: github.event_name != 'workflow_dispatch'
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with: { turbo-cache: env-drift }
+      - run: pnpm turbo run build --cache-dir=.turbo --filter='./packages/*' --filter='./apps/*'
+      - run: node scripts/setup-env.mjs && node scripts/check-env-drift.mjs
+
+  contracts-drift:
+    name: contracts drift (nestjs-trpc generate must be committed)
+    if: github.event_name != 'workflow_dispatch'
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with: { turbo-cache: contracts }
+      - run: pnpm turbo run build --cache-dir=.turbo --filter='./packages/*'
+      - run: pnpm turbo run contracts:generate --cache-dir=.turbo --concurrency=1
+      - run: git diff --exit-code -- packages/contracts/src
+
+  # ══════════════════════════════════════════════════════════════ CI: per affected app
+  static:
+    name: ${{ matrix.name }} · prettier · eslint · tsc
+    needs: discover
+    if: github.event_name != 'workflow_dispatch' && needs.discover.outputs.changed != '[]'
+    runs-on: ubuntu-24.04-arm
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.discover.outputs.changed) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with:
+          filter: ${{ matrix.name }}...
+          turbo-cache: ${{ matrix.name }}
+      - run: pnpm prettier --check "${{ matrix.path }}"
+      - name: build (app + workspace deps)
+        run: pnpm turbo run build --cache-dir=.turbo --filter="${{ matrix.name }}"
+      - run: pnpm turbo run lint --cache-dir=.turbo --filter="${{ matrix.name }}"
+      - run: pnpm turbo run typecheck --cache-dir=.turbo --filter="${{ matrix.name }}"
+      - name: deps (dependency-cruiser)
+        if: matrix.kind == 'nest'
+        run: pnpm turbo run deps --cache-dir=.turbo --filter="${{ matrix.name }}"
+
+  unit:
+    name: ${{ matrix.name }} · unit
+    needs: discover
+    if: github.event_name != 'workflow_dispatch' && needs.discover.outputs.unit != '[]'
+    runs-on: ubuntu-24.04-arm
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.discover.outputs.unit) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with:
+          filter: ${{ matrix.name }}...
+          turbo-cache: ${{ matrix.name }}
+      - run: pnpm turbo run build --cache-dir=.turbo --filter="${{ matrix.name }}^..."
+      - name: jest (JSON result for the PR test report)
+        run: pnpm --filter "${{ matrix.name }}" test --json --outputFile="$GITHUB_WORKSPACE/jest.json"
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: report-unit-${{ matrix.name }}
+          path: jest.json
+          if-no-files-found: ignore
+          retention-days: 7
+
+  migrations:
+    name: ${{ matrix.name }} · migrations drift
+    needs: discover
+    if: github.event_name != 'workflow_dispatch' && needs.discover.outputs.migrations != '[]'
+    runs-on: ubuntu-24.04-arm
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.discover.outputs.migrations) }}
+    services:
+      postgres:
+        image: postgres:17.5
+        env: { POSTGRES_DB: bf, POSTGRES_USER: bf, POSTGRES_PASSWORD: bf }
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U bf -d bf" --health-interval 3s --health-timeout 2s --health-retries 10
+    env:
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: '5432'
+      POSTGRES_USER: bf
+      POSTGRES_PASSWORD: bf
+      POSTGRES_DB: ${{ matrix.name }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with: { filter: '${{ matrix.name }}...' }
+      - run: pnpm turbo run build --filter="${{ matrix.name }}^..."
+      - name: infra init SQL (databases + roles) — same file as docker
+        run: PGPASSWORD=bf psql -h localhost -U bf -d bf -v DBNAME=bf -f infra/postgres/postgres-init/01-init.sql
+      - name: drizzle-kit check (migration folder consistency)
+        run: pnpm --filter "${{ matrix.name }}" db:check
+      - name: apply migrations to a fresh database
+        run: pnpm --filter "${{ matrix.name }}" db:migrate
+      - name: drift — schema edits must have committed migrations
+        run: |
+          pnpm --filter "${{ matrix.name }}" db:generate
+          git diff --exit-code -- "${{ matrix.path }}/drizzle"
+
+  e2e:
+    name: ${{ matrix.name }} · e2e
+    needs: discover
+    if: github.event_name != 'workflow_dispatch' && needs.discover.outputs.e2e != '[]'
+    runs-on: ubuntu-24.04-arm
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.discover.outputs.e2e) }}
+    services:
+      postgres:
+        image: postgres:17.5
+        env: { POSTGRES_DB: bf, POSTGRES_USER: bf, POSTGRES_PASSWORD: bf }
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U bf -d bf" --health-interval 3s --health-timeout 2s --health-retries 10
+      redis:
+        image: redis:7.4.5
+        ports: ['6379:6379']
+    env:
+      NODE_ENV: test
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: '5432'
+      POSTGRES_USER: bf
+      POSTGRES_PASSWORD: bf
+      POSTGRES_DB: ${{ matrix.name }}
+      S3_ENDPOINT: http://localhost:9000
+      S3_REGION: us-east-1
+      S3_ACCESS_KEY_ID: bfadmin
+      S3_SECRET_ACCESS_KEY: bfbfbfbf
+      S3_BUCKET: bf-order
+      AUTH_URL: http://localhost:3001
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with: { filter: '${{ matrix.name }}...' }
+      - name: MinIO (start, wait until healthy, create the bucket)
+        run: node scripts/ci/minio.ts
+      - run: pnpm turbo run build --filter="${{ matrix.name }}"
+      - run: node scripts/setup-env.mjs
+      - run: PGPASSWORD=bf psql -h localhost -U bf -d bf -v DBNAME=bf -f infra/postgres/postgres-init/01-init.sql
+      - name: migrate own database
+        if: matrix.migrations
+        run: pnpm --filter "${{ matrix.name }}" db:migrate
+      - name: seed
+        if: matrix.seed
+        run: pnpm --filter "${{ matrix.name }}" db:seed
+      - name: jest e2e (JSON result for the PR test report)
+        run: pnpm --filter "${{ matrix.name }}" test:e2e --json --outputFile="$GITHUB_WORKSPACE/jest.json"
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: report-e2e-${{ matrix.name }}
+          path: jest.json
+          if-no-files-found: ignore
+          retention-days: 7
+
+  docker:
+    name: ${{ matrix.name }} · docker build
+    needs: discover
+    if: github.event_name != 'workflow_dispatch' && needs.discover.outputs.docker != '[]'
+    runs-on: ubuntu-24.04-arm
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.discover.outputs.docker) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: compose file is valid
+        run: node scripts/setup-env.mjs && docker compose config -q
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          build-args: APP=${{ matrix.name }}
+          push: false
+          tags: bf/${{ matrix.name }}:${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+
+  # ══════════════════════════════════════════════════════════════ pull request: what will merging do?
+  plan-release:
+    name: release plan → PR comment
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      pull-requests: write
+    env:
+      BASE: ${{ github.event.pull_request.base.sha }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: ./.github/actions/setup
+        with: { ignore-scripts: 'true' }
+      - run: node scripts/ci/release-plan.ts release-plan.md
+      - run: node scripts/pr-comment.ts bf-release-plan release-plan.md "${{ github.event.pull_request.number }}"
+
+  plan-infra:
+    name: infra diff → PR comment
+    needs: discover
+    # forks get no OIDC token; nothing to diff when infra/aws is untouched
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && needs.discover.outputs.infra == 'true'
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with: { filter: '@bf/infra-aws...', ignore-scripts: 'true' }
+      - uses: ./.github/actions/aws-auth
+        with: { role: bf-gha-plan, account-id: '${{ vars.AWS_ACCOUNT_ID }}' }
+      - run: node infra/aws/scripts/plan.ts infra-diff.md
+      # also after a failed diff: the script comments "preview failed" when the file is missing
+      - if: always()
+        run: node scripts/pr-comment.ts bf-infra-diff infra-diff.md "${{ github.event.pull_request.number }}"
+
+  report:
+    name: test report → PR comment
+    needs: [discover, unit, e2e]
+    if: ${{ !cancelled() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && needs.discover.result == 'success' }}
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with: { ignore-scripts: 'true' }
+      - uses: actions/download-artifact@v4
+        continue-on-error: true # no matching artifact = no tests ran
+        with:
+          pattern: report-*
+          path: reports
+      - run: node scripts/ci/test-report.ts reports test-report.md
+      - run: node scripts/pr-comment.ts bf-test-report test-report.md "${{ github.event.pull_request.number }}"
+
+  # ══════════════════════════════════════════════════════════════ the gate
+  ci-ok:
+    # Branch protection needs exactly one required check; matrices change shape per PR, so gate on this.
+    name: ci ok
+    needs:
+      - discover
+      - format
+      - packages
+      - infra-check
+      - env-drift
+      - contracts-drift
+      - static
+      - unit
+      - migrations
+      - e2e
+      - docker
+      - plan-release
+      - plan-infra
+    if: always()
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version-file: .nvmrc }
+      - name: every stage succeeded or was skipped
+        env:
+          NEEDS: ${{ toJson(needs) }}
+        run: node scripts/ci/ci-ok.ts
+
+  # ══════════════════════════════════════════════════════════════ production (push to main, Run workflow)
+  approve:
+    name: approve production deploy
+    needs: [discover, ci-ok]
+    if: github.event_name != 'pull_request' && (needs.discover.outputs.release == 'true' || needs.discover.outputs.infra == 'true')
+    runs-on: ubuntu-24.04-arm
+    # a separate environment: the AWS roles trust `prod`, so approvals must not sit on it (every job would ask)
+    environment: prod-approval
+    steps:
+      - run: echo "approved — apps ${{ needs.discover.outputs.images }}, migrate ${{ needs.discover.outputs.migrate }}, infra ${{ needs.discover.outputs.infra }}"
+
+  snapshot:
+    name: db snapshot
+    needs: [discover, approve]
+    if: github.event.inputs.skip_snapshot != 'true'
+    permissions:
+      id-token: write
+      contents: read
+    uses: ./.github/workflows/db-snapshot.yml
+    with:
+      label: ${{ github.sha }}
+
+  infra:
+    name: cdk deploy
+    needs: [discover, approve, snapshot]
+    if: always() && needs.approve.result == 'success' && needs.discover.outputs.infra == 'true' && !contains(fromJSON('["failure","cancelled"]'), needs.snapshot.result)
+    runs-on: ubuntu-24.04-arm
+    environment: prod # keep equal to `env` in infra/aws/lib/config.ts
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with: { filter: '@bf/infra-aws...', ignore-scripts: 'true' }
+      - uses: ./.github/actions/aws-auth
+        with: { role: bf-gha-infra, account-id: '${{ vars.AWS_ACCOUNT_ID }}' }
+      - run: pnpm aws:deploy
+
+  images:
+    name: ${{ matrix.name }} · build & push
+    needs: [discover, approve]
+    if: needs.discover.outputs.images != '[]'
+    runs-on: ubuntu-24.04-arm # native arm64 (the host is Graviton): no QEMU emulation
+    environment: prod # keep equal to `env` in infra/aws/lib/config.ts
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.discover.outputs.images) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with: { filter: '@bf/infra-aws...', ignore-scripts: 'true' }
+      - uses: ./.github/actions/aws-auth
+        with: { role: bf-gha-app, account-id: '${{ vars.AWS_ACCOUNT_ID }}' }
+      - id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+      - name: ECR repository exists (created on first deploy of a new app)
+        run: node infra/aws/scripts/push-images.ts --ensure-repo "${{ matrix.name }}"
+      - name: build args (NEXT_PUBLIC_* from infra/aws/lib/config.ts)
+        id: args
+        run: node infra/aws/scripts/build-args.ts "${{ matrix.name }}" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          build-args: ${{ steps.args.outputs.args }}
+          platforms: linux/arm64
+          push: true
+          # <sha> for traceability, <env> as the floating tag infra/aws/host/compose.yml points at
+          tags: |
+            ${{ steps.ecr.outputs.registry }}/bf-${{ env.BF_ENV }}/${{ matrix.name }}:${{ github.sha }}
+            ${{ steps.ecr.outputs.registry }}/bf-${{ env.BF_ENV }}/${{ matrix.name }}:${{ env.BF_ENV }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+
+  rollout:
+    name: migrate & roll out on the host
+    needs: [discover, approve, snapshot, infra, images]
+    # snapshot, infra and images must have succeeded or been skipped on purpose — a failure in any of them blocks the release
+    if: always() && needs.approve.result == 'success' && needs.discover.outputs.release == 'true' && !contains(fromJSON('["failure","cancelled"]'), needs.snapshot.result) && !contains(fromJSON('["failure","cancelled"]'), needs.infra.result) && !contains(fromJSON('["failure","cancelled"]'), needs.images.result)
+    runs-on: ubuntu-24.04-arm
+    environment: prod # keep equal to `env` in infra/aws/lib/config.ts
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with: { filter: '@bf/infra-aws...', ignore-scripts: 'true' }
+      - uses: ./.github/actions/aws-auth
+        with: { role: bf-gha-app, account-id: '${{ vars.AWS_ACCOUNT_ID }}' }
+      - env:
+          MIGRATE: ${{ github.event.inputs.skip_migrations == 'true' && 'none' || needs.discover.outputs.migrate }}
+        run: node infra/aws/scripts/host-deploy.ts --migrate "$MIGRATE"
+
+  smoke:
+    name: smoke test (public URLs)
+    needs: rollout
+    if: needs.rollout.result == 'success'
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with: { filter: '@bf/infra-aws...', ignore-scripts: 'true' }
+      - run: node infra/aws/scripts/smoke.ts

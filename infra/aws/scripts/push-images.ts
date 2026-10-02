@@ -1,7 +1,7 @@
-// Local equivalent of the deploy.yml `images` job: builds every app (or the given ones) for linux/arm64 and pushes
+// Local equivalent of the pipeline.yml `images` job: builds every app (or the given ones) for linux/arm64 and pushes
 // it to ECR with the tags <tag> and <env> (the floating tag compose.yml points at). Creates missing repositories.
 // Usage: node infra/aws/scripts/push-images.ts <tag> [app ...]        (needs docker buildx + AWS credentials)
-//        node infra/aws/scripts/push-images.ts --ensure-repo <app>    (only create the repository; used by deploy.yml)
+//        node infra/aws/scripts/push-images.ts --ensure-repo <app>    (only create the repository; used by pipeline.yml)
 import {
   CreateRepositoryCommand,
   DescribeRepositoriesCommand,
