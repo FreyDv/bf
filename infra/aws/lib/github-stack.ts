@@ -279,8 +279,10 @@ export class GithubStack extends Stack {
       [arn('rds', `cluster:${names.dbCluster}`), preSnapshots],
     );
     allow(snapshot, ['rds:DeleteDBClusterSnapshot', 'rds:StartExportTask'], [preSnapshots]);
+    // RDS checks the pass on behalf of the caller, so the service is rds.amazonaws.com; export.rds… is the
+    // service that assumes the role (its trust policy), kept here too.
     allow(snapshot, ['iam:PassRole'], [rdsExport.roleArn], {
-      StringEquals: { 'iam:PassedToService': 'export.rds.amazonaws.com' },
+      StringEquals: { 'iam:PassedToService': ['rds.amazonaws.com', 'export.rds.amazonaws.com'] },
     });
     allow(
       snapshot,
