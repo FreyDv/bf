@@ -165,5 +165,3 @@ services:
 networks:
   bf_network:
     name: bf_network
-    # Included files declare bf_network as external; `false` here makes this file create it.
-    external: false

@@ -77,7 +77,7 @@ networks:
       - db
       - redis
   bf_network:
-    external: true
+    name: bf_network
 
 volumes:
   redis-data:

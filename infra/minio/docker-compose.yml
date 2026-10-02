@@ -61,7 +61,7 @@ networks:
       - s3
       - minio
   bf_network:
-    external: true
+    name: bf_network
 
 volumes:
   minio-data:

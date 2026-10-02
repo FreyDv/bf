@@ -142,7 +142,7 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version-file: .nvmrc, cache: pnpm }
       - run: pnpm install --frozen-lockfile --filter "${{ matrix.name }}..."
-      - run: pnpm turbo run build --filter='./packages/*'
+      - run: pnpm turbo run build --filter="${{ matrix.name }}^..."
       - name: infra init SQL (databases + roles) — same file as docker
         run: PGPASSWORD=bf psql -h localhost -U bf -d bf -v DBNAME=bf -f infra/postgres/postgres-init/01-init.sql
       - name: drizzle-kit check (migration folder consistency)

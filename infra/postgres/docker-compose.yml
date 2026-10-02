@@ -77,7 +77,7 @@ networks:
       - db
       - postgres
   bf_network:
-    external: true
+    name: bf_network
 
 volumes:
   postgres-data:
