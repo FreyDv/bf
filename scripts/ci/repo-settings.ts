@@ -1,8 +1,6 @@
 // One-time GitHub repository settings that the pipeline relies on (they live in GitHub, not in the repo):
 //   - branch protection on main: the single status check `ci ok` must pass before a PR can merge
 //     (no force-push, no deletion; admins can still push directly, review is not required — this is a solo repo)
-//   - environment `prod-approval`: the deploy stages wait for ONE approval per run (the AWS roles trust `prod`,
-//     so approval lives on this separate environment that only the `approve` job uses)
 //   - label `allow-destructive`: lets a PR that removes/replaces a stateful resource pass the infra diff check
 // Usage: node scripts/ci/repo-settings.ts            (print what would change)
 //        node scripts/ci/repo-settings.ts --apply    (needs `gh` logged in with admin rights on the repository)
@@ -24,7 +22,6 @@ const api = (method: string, path: string, body?: object) =>
 
 main(() => {
   const repo = gh(['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner']).trim();
-  const me = JSON.parse(gh(['api', 'user'])) as { id: number; login: string };
 
   const protection = {
     required_status_checks: { strict: false, contexts: ['ci ok'] },
@@ -34,20 +31,13 @@ main(() => {
     allow_force_pushes: false,
     allow_deletions: false,
   };
-  const approval = {
-    reviewers: [{ type: 'User', id: me.id }],
-    prevent_self_review: false,
-    deployment_branch_policy: null,
-  };
 
   console.log(`repository ${repo}`);
   console.log(`- main: require status check "ci ok", no force-push, no deletion`);
-  console.log(`- environment prod-approval: required reviewer ${me.login}`);
   console.log('- label allow-destructive');
   if (!apply) return console.log('\n(dry run — pass --apply)');
 
   api('PUT', `repos/${repo}/branches/main/protection`, protection);
-  api('PUT', `repos/${repo}/environments/prod-approval`, approval);
   try {
     api('POST', `repos/${repo}/labels`, {
       name: 'allow-destructive',
