@@ -45,6 +45,8 @@ catalog:
   '@aws-sdk/lib-storage': ^3.864.0
   '@aws-sdk/client-ecs': ^3.864.0
   '@aws-sdk/client-application-auto-scaling': ^3.864.0
+  '@aws-sdk/client-rds': ^3.864.0
+  '@aws-sdk/client-cloudwatch': ^3.864.0
   openai: ^5.16.0
   nestjs-trpc: ^2.13.0
   '@trpc/server': ^11.19.0

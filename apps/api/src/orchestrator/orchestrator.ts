@@ -1,6 +1,6 @@
 import { awakeDependents, closure } from './service-graph';
 
-import type { Bounds, EcsApi, ServiceState } from './ecs-api';
+import type { Bounds, EcsApi, ServiceState, TaskSize } from './ecs-api';
 import type { ServiceGraph } from './service-graph';
 import type { ServiceStateCache } from './state-cache';
 
@@ -39,6 +39,8 @@ export interface ServiceView {
   alwaysOn: boolean;
   bounds?: Bounds;
   taskDefinition?: string;
+  /** Size of one task (from the task definition); missing when ECS has no revision for the service yet. */
+  task?: TaskSize;
 }
 
 export interface WakeResult {
@@ -59,6 +61,8 @@ export interface Orchestrator {
   invalidate(service?: string): void;
   list(): Promise<ServiceView[]>;
   wake(service: string): Promise<void>;
+  /** Wakes every managed service that is asleep (the dashboard's "wake all"). */
+  wakeAll(): Promise<void>;
   sleep(service: string): Promise<void>;
   setCooldown(service: string, seconds: number): Promise<void>;
   setBounds(service: string, min: number, max: number): Promise<void>;
@@ -91,6 +95,9 @@ export class NoopOrchestrator implements Orchestrator {
     return Promise.resolve([]);
   }
   wake(): Promise<void> {
+    return Promise.resolve();
+  }
+  wakeAll(): Promise<void> {
     return Promise.resolve();
   }
   sleep(): Promise<void> {
@@ -308,6 +315,7 @@ export class EcsOrchestrator implements Orchestrator {
       this.cache.get(this.names, 0),
       this.api.getBounds(this.names),
     ]);
+    const sizes = await this.taskSizes([...states.values()]);
     return this.names.map((name) => {
       const s = states.get(name);
       if (!s) {
@@ -331,8 +339,31 @@ export class EcsOrchestrator implements Orchestrator {
         alwaysOn: this.opts.alwaysOn.includes(name),
         bounds: bounds[name],
         taskDefinition: s.taskDefinition,
+        task: s.taskDefinition ? sizes.get(s.taskDefinition) : undefined,
       };
     });
+  }
+
+  /** Task sizes by task definition ARN; a lookup that fails only leaves that service without a size. */
+  private async taskSizes(states: ServiceState[]): Promise<Map<string, TaskSize>> {
+    const arns = [...new Set(states.map((s) => s.taskDefinition).filter((a): a is string => !!a))];
+    const out = new Map<string, TaskSize>();
+    await Promise.all(
+      arns.map(async (arn) => {
+        try {
+          out.set(arn, await this.api.describeTaskDefinition(arn));
+        } catch (error) {
+          this.logger.warn(
+            event({
+              event: 'task_definition_failed',
+              taskDefinition: arn,
+              error: String((error as Error).message ?? error),
+            }),
+          );
+        }
+      }),
+    );
+    return out;
   }
 
   async wake(service: string): Promise<void> {
@@ -342,6 +373,17 @@ export class EcsOrchestrator implements Orchestrator {
       if (!s || s.desiredCount < 1) await this.startService(n);
     }
     this.recordActivity(service);
+  }
+
+  async wakeAll(): Promise<void> {
+    const states = await this.cache.get(this.names);
+    await Promise.all(
+      this.names.map(async (n) => {
+        const s = states.get(n);
+        if (!s || s.desiredCount < 1) await this.startService(n);
+        this.recordActivity(n);
+      }),
+    );
   }
 
   async sleep(service: string): Promise<void> {

@@ -1,13 +1,16 @@
 import { Logger, Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
+import { DatabasesRouter } from './databases.router';
+import { DB_API, SdkRdsApi } from './db-api';
 import { ECS_API, SdkEcsApi } from './ecs-api';
 import { EcsOrchestrator, NoopOrchestrator, ORCHESTRATOR } from './orchestrator';
-import { ServicesController } from './services.controller';
+import { ServicesRouter } from './services.router';
 import { ServiceStateCache } from './state-cache';
 import { SweepService } from './sweep.service';
 import { WakeMiddleware } from './wake.middleware';
 
+import type { DbApi } from './db-api';
 import type { EcsApi } from './ecs-api';
 import type { Orchestrator, OrchestratorOptions } from './orchestrator';
 import type { Env } from '../app/env.schema';
@@ -56,11 +59,18 @@ export function optionsFromEnv(config: ConfigService<Env, true>): OrchestratorOp
 /**
  * Scale-to-zero orchestrator for the services behind the edge. `ORCHESTRATOR=none` (local, default): a no-op,
  * no AWS SDK client is created. `ORCHESTRATOR=ecs`: wakes services on demand (WakeMiddleware), puts idle ones to
- * sleep (SweepService) and exposes the admin surface (/_services). See infra/aws/README.md.
+ * sleep (SweepService) and exposes the admin surface as tRPC routers (`/_services/trpc`, contract
+ * `@bf/contracts/api`). See infra/aws/README.md. On ECS the same surface lists the account's Aurora clusters
+ * (`databases.list`), discovered through the SDK.
  */
 @Module({
-  controllers: [ServicesController],
   providers: [
+    {
+      provide: DB_API,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService<Env, true>): DbApi | null =>
+        config.get('ORCHESTRATOR', { infer: true }) === 'ecs' ? new SdkRdsApi() : null,
+    },
     {
       provide: ECS_API,
       inject: [ConfigService],
@@ -94,6 +104,8 @@ export function optionsFromEnv(config: ConfigService<Env, true>): OrchestratorOp
     },
     WakeMiddleware,
     SweepService,
+    ServicesRouter,
+    DatabasesRouter,
   ],
   exports: [ORCHESTRATOR, WakeMiddleware],
 })

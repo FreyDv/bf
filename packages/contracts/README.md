@@ -12,7 +12,8 @@ src/
     index.ts        export * from './schemas'; export type { AppRouter as <Service>Router }
 ```
 
-Entry points: `@bf/contracts/common`, `@bf/contracts/auth`, `@bf/contracts/order`,
+Entry points: `@bf/contracts/common`, `@bf/contracts/api` (the edge's own procedures: orchestrator +
+database status, mounted at `/_services/trpc`), `@bf/contracts/auth`, `@bf/contracts/order`,
 `@bf/contracts/course`, `@bf/contracts/billing`, `@bf/contracts/admin`, `@bf/contracts/ai`.
 
 ## Rules

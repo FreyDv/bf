@@ -1,6 +1,6 @@
 'use client';
 
-import { LayoutDashboard } from 'lucide-react';
+import { LayoutDashboard, Server } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useTheme } from 'next-themes';
@@ -25,7 +25,10 @@ import { ThemeSwitcher } from '@bf/ui/components/theme-switcher';
 
 import { env } from '@/config/env';
 
-const nav = [{ href: '/', label: 'Dashboard', icon: LayoutDashboard }];
+const nav = [
+  { href: '/', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/infra', label: 'Infra', icon: Server },
+];
 
 function ThemeControl() {
   const { theme, setTheme } = useTheme();

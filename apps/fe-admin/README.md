@@ -11,7 +11,14 @@ pnpm --filter fe-admin dev         # http://localhost:4001
 
 Other scripts: `build`, `start`, `lint`, `lint:fix`, `typecheck` (all wired into Turbo).
 
-On first load the app requests a dev token pair from `auth` (`POST /auth/api/auth/dev-token`, roles `admin,user`) and stores the access token in `localStorage` under `bf-admin:dev-token`. Use "Retry" on an error card to drop a stale token and re-authenticate. Orders are read/written via `client.orders.*` (`@bf/contracts/order`) at `${API}/order/trpc`.
+On first load the app requests a dev token pair from `auth` (`POST /auth/api/auth/dev-token`, roles `admin,user`) and stores the access token in `localStorage` under `bf-admin:dev-token` (`src/lib/auth-token.ts`; the tRPC client's fetch sends it and, on a 401, drops it and replays once). The dev-token endpoint is disabled in production: put a real admin access token under the same key to use the UI there.
+
+## Pages
+
+| Path     | What                                                                                                                                                                                                                                                                                                                                                                |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/`      | Dashboard with a button to the infra page                                                                                                                                                                                                                                                                                                                           |
+| `/infra` | ECS services behind the edge (status, running/desired tasks, vCPU and memory per task, last activity), **Wake up** per service and **Wake up all**, every Aurora cluster with status and current ACU. tRPC to the edge's own router (`src/lib/trpc.ts`, `@bf/contracts/api` at `${API}/_services/trpc`); refreshes every 10 s. Empty locally (`ORCHESTRATOR=none`). |
 
 ## Environment
 

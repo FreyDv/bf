@@ -1,6 +1,6 @@
 import { defineConfig } from 'tsup';
 
-const services = ['auth', 'order', 'course', 'billing', 'admin', 'ai'] as const;
+const services = ['api', 'auth', 'order', 'course', 'billing', 'admin', 'ai'] as const;
 
 export default defineConfig({
   entry: {

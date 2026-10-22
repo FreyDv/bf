@@ -182,10 +182,15 @@ export class Service extends Construct {
     }
   }
 
-  /** What the orchestrator inside `api` may do: wake/sleep services of THIS cluster, nothing else. */
+  /**
+   * What the orchestrator inside `api` may do: wake/sleep services of THIS cluster, read task sizes and the
+   * Aurora clusters' status/capacity for the admin infra dashboard, nothing else.
+   */
   private grantOrchestrator(role: iam.Role, clusterArn: string) {
     const services = `arn:aws:ecs:${Aws.REGION}:${Aws.ACCOUNT_ID}:service/${names.cluster}/*`;
     const tasks = `arn:aws:ecs:${Aws.REGION}:${Aws.ACCOUNT_ID}:task/${names.cluster}/*`;
+    // the dashboard lists whatever clusters the account has, so no single cluster is named here
+    const dbClusters = `arn:aws:rds:${Aws.REGION}:${Aws.ACCOUNT_ID}:cluster:*`;
     role.addToPolicy(
       new iam.PolicyStatement({
         sid: 'Services',
@@ -211,6 +216,28 @@ export class Service extends Construct {
         sid: 'TaskDetails',
         actions: ['ecs:DescribeTasks'],
         resources: [tasks],
+      }),
+    );
+    // DescribeTaskDefinition has no resource-level permissions
+    role.addToPolicy(
+      new iam.PolicyStatement({
+        sid: 'TaskSizes',
+        actions: ['ecs:DescribeTaskDefinition'],
+        resources: ['*'],
+      }),
+    );
+    role.addToPolicy(
+      new iam.PolicyStatement({
+        sid: 'Database',
+        actions: ['rds:DescribeDBClusters'],
+        resources: [dbClusters],
+      }),
+    );
+    role.addToPolicy(
+      new iam.PolicyStatement({
+        sid: 'DatabaseCapacity',
+        actions: ['cloudwatch:GetMetricStatistics'],
+        resources: ['*'],
       }),
     );
     role.addToPolicy(
