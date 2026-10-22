@@ -13,7 +13,7 @@ runs:
   using: composite
   steps:
     - uses: actions/setup-node@v5
-      with: { node-version-file: .nvmrc }
+      with: { node-version-file: .nvmrc, package-manager-cache: false } # no pnpm needed just to run the scripts
     - shell: bash
       run: node infra/aws/scripts/gh-env.ts >> "$GITHUB_ENV"
     - uses: aws-actions/configure-aws-credentials@v6

@@ -413,7 +413,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
-        with: { node-version-file: .nvmrc }
+        with: { node-version-file: .nvmrc, package-manager-cache: false } # pnpm is not installed in this job
       - name: every stage succeeded or was skipped
         env:
           NEEDS: ${{ toJson(needs) }}
