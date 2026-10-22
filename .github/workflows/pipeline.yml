@@ -77,7 +77,7 @@ jobs:
       # does infra/aws (the CDK stacks) change? PR: for the diff; main: for the deploy
       infra: ${{ steps.deploy.outputs.infra || steps.ci.outputs.infra }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with: { fetch-depth: 0 }
       - uses: ./.github/actions/setup
         with: { ignore-scripts: 'true' }
@@ -100,7 +100,7 @@ jobs:
     if: github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-24.04-arm
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: ./.github/actions/setup
         with: { ignore-scripts: 'true' }
       - run: pnpm format:check
@@ -110,7 +110,7 @@ jobs:
     if: github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-24.04-arm
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: ./.github/actions/setup
         with: { turbo-cache: packages }
       - run: pnpm turbo run build --cache-dir=.turbo --filter='./packages/*'
@@ -124,7 +124,7 @@ jobs:
       # no credentials here: fail the SDK credential chain fast instead of probing the instance metadata endpoint
       AWS_EC2_METADATA_DISABLED: 'true'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: ./.github/actions/setup
         with: { turbo-cache: infra }
       - run: pnpm typecheck:scripts
@@ -137,7 +137,7 @@ jobs:
     if: github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-24.04-arm
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: ./.github/actions/setup
         with: { turbo-cache: env-drift }
       - run: pnpm turbo run build --cache-dir=.turbo --filter='./packages/*' --filter='./apps/*'
@@ -148,7 +148,7 @@ jobs:
     if: github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-24.04-arm
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: ./.github/actions/setup
         with: { turbo-cache: contracts }
       - run: pnpm turbo run build --cache-dir=.turbo --filter='./packages/*'
@@ -166,7 +166,7 @@ jobs:
       matrix:
         include: ${{ fromJson(needs.discover.outputs.changed) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: ./.github/actions/setup
         with:
           filter: ${{ matrix.name }}...
@@ -190,7 +190,7 @@ jobs:
       matrix:
         include: ${{ fromJson(needs.discover.outputs.unit) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: ./.github/actions/setup
         with:
           filter: ${{ matrix.name }}...
@@ -199,7 +199,7 @@ jobs:
       - name: jest (JSON result for the PR test report)
         run: pnpm --filter "${{ matrix.name }}" test --json --outputFile="$GITHUB_WORKSPACE/jest.json"
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: report-unit-${{ matrix.name }}
           path: jest.json
@@ -229,7 +229,7 @@ jobs:
       POSTGRES_PASSWORD: bf
       POSTGRES_DB: ${{ matrix.name }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: ./.github/actions/setup
         with: { filter: '${{ matrix.name }}...' }
       - run: pnpm turbo run build --filter="${{ matrix.name }}^..."
@@ -277,7 +277,7 @@ jobs:
       S3_BUCKET: bf-order
       AUTH_URL: http://localhost:3001
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: ./.github/actions/setup
         with: { filter: '${{ matrix.name }}...' }
       - name: MinIO (start, wait until healthy, create the bucket)
@@ -294,7 +294,7 @@ jobs:
       - name: jest e2e (JSON result for the PR test report)
         run: pnpm --filter "${{ matrix.name }}" test:e2e --json --outputFile="$GITHUB_WORKSPACE/jest.json"
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: report-e2e-${{ matrix.name }}
           path: jest.json
@@ -311,11 +311,11 @@ jobs:
       matrix:
         include: ${{ fromJson(needs.discover.outputs.docker) }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v4
       - name: compose file is valid
         run: node scripts/setup-env.mjs && docker compose config -q
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v7
         with:
           context: .
           file: ${{ matrix.dockerfile }}
@@ -337,7 +337,7 @@ jobs:
       BASE: ${{ github.event.pull_request.base.sha }}
       GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with: { fetch-depth: 0 }
       - uses: ./.github/actions/setup
         with: { ignore-scripts: 'true' }
@@ -358,7 +358,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       PR_NUMBER: ${{ github.event.pull_request.number }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: ./.github/actions/setup
         with: { filter: '@bf/infra-aws...', ignore-scripts: 'true' }
       - uses: ./.github/actions/aws-auth
@@ -379,10 +379,10 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: ./.github/actions/setup
         with: { ignore-scripts: 'true' }
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         continue-on-error: true # no matching artifact = no tests ran
         with:
           pattern: report-*
@@ -411,8 +411,8 @@ jobs:
     if: always()
     runs-on: ubuntu-24.04-arm
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with: { node-version-file: .nvmrc }
       - name: every stage succeeded or was skipped
         env:
@@ -452,7 +452,7 @@ jobs:
       id-token: write
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: ./.github/actions/setup
         with: { filter: '@bf/infra-aws...', ignore-scripts: 'true' }
       - uses: ./.github/actions/aws-auth
@@ -474,7 +474,7 @@ jobs:
       matrix:
         include: ${{ fromJson(needs.discover.outputs.images) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: ./.github/actions/setup
         with: { filter: '@bf/infra-aws...', ignore-scripts: 'true' }
       - uses: ./.github/actions/aws-auth
@@ -483,8 +483,8 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v2
       - name: ECR repository exists (created on first deploy of a new app)
         run: node infra/aws/scripts/push-images.ts --ensure-repo "${{ matrix.name }}"
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/build-push-action@v6
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/build-push-action@v7
         with:
           context: .
           file: ${{ matrix.dockerfile }}
@@ -513,7 +513,7 @@ jobs:
       matrix:
         include: ${{ fromJson(needs.discover.outputs.static) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: ./.github/actions/setup
         with: { turbo-cache: '${{ matrix.name }}' }
       - uses: ./.github/actions/aws-auth
@@ -532,7 +532,7 @@ jobs:
       id-token: write
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: ./.github/actions/setup
         with: { filter: '@bf/infra-aws...', ignore-scripts: 'true' }
       - uses: ./.github/actions/aws-auth
@@ -554,7 +554,7 @@ jobs:
     if: always() && !contains(fromJSON('["failure","cancelled"]'), needs.release.result) && !contains(fromJSON('["failure","cancelled"]'), needs.frontends.result) && (needs.release.result == 'success' || needs.frontends.result == 'success')
     runs-on: ubuntu-24.04-arm
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: ./.github/actions/setup
         with: { filter: '@bf/infra-aws...', ignore-scripts: 'true' }
       - run: node infra/aws/scripts/smoke.ts
