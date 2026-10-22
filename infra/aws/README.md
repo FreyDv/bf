@@ -149,7 +149,7 @@ It runs `cdk bootstrap`, deploys the stack `bf-github` (OIDC provider, roles `bf
 policy. Re-run it after every change to `lib/github-stack.ts` (GitHub never deploys that stack). Then in GitHub:
 
 1. Settings → Secrets and variables → Actions → **Variables**: `AWS_ACCOUNT_ID` (printed by the script). Not a secret.
-2. Settings → Environments → `prod` and `prod-approval` (+ required reviewers) — `node scripts/ci/repo-settings.ts --apply`.
+2. Settings → Environments → `prod` (created by the first deploy job); the label and branch protection — `node scripts/ci/repo-settings.ts --apply`.
 3. Branch protection on `main`: require `ci ok`.
 
 ## Bringing the platform up from nothing
@@ -204,7 +204,7 @@ No AWS keys in GitHub: workflows get short-lived credentials by OIDC, **one role
 | --------------------------------- | -------------------------------- | ---------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
 | CI jobs, `plan-release`, `report` | PR, push `main`                  | none                                                                                                             | checks per affected app; sticky PR comments: release plan, test report                                                |
 | `plan-infra`                      | PR touching `infra/aws`          | `bf-gha-plan` — read-only (+ `ssm:GetParameters` on the image tags)                                              | sticky PR comment: `cdk diff`; fails on a destroyed stateful resource unless the PR has the label `allow-destructive` |
-| `approve`                         | push `main`; dispatch            | none (environment `prod-approval`, required reviewer)                                                            | one approval per run before anything touches AWS                                                                      |
+| `gate`                            | push `main`; dispatch            | none                                                                                                             | `ci ok` is green and there is something to deploy                                                                     |
 | `infra`                           | `infra/aws` changed; dispatch    | `bf-gha-infra` — may only assume the CDK deploy roles (CFN = `bf-cfn-exec`)                                      | `cdk deploy bf-prod bf-prod-apps`                                                                                     |
 | `images`, `frontends`, `release`  | push `main`; dispatch (apps=…)   | `bf-gha-app` — ECR push, S3 on the static buckets + invalidation, ECS task defs/services/RunTask, SSM image tags | build+push → static exports → `ecs-migrate.ts` → `ecs-deploy.ts`                                                      |
 | `smoke`                           | after `release` / `static`       | none                                                                                                             | `smoke.ts`: the public URLs answer, legacy hostnames redirect                                                         |
