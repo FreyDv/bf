@@ -10,12 +10,18 @@ export interface App {
   name: string;
   path: string;
   kind: 'nest' | 'next' | 'other';
+  /** `ecs` = Fargate service, `static` = S3 + CloudFront, null = not deployed. */
+  deploy: 'ecs' | 'static' | null;
   dockerfile: string | null;
   migrations: boolean;
   e2e: boolean;
   unit: boolean;
   seed: boolean;
   envSchema: boolean;
+  port: number | null;
+  envKeys: string[];
+  basePath: string;
+  deps: string[];
 }
 
 export const allApps = (): App[] => discoverApps() as App[];

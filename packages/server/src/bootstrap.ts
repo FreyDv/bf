@@ -62,9 +62,8 @@ export async function bootstrapApp(
   });
   app.useLogger(app.get(Logger));
   app.enableShutdownHooks();
-  app.set('trust proxy', 1);
-
   const config = app.get<ConfigService<BaseEnv, true>>(ConfigService);
+  app.set('trust proxy', config.get('TRUST_PROXY_HOPS', { infer: true }));
   const nodeEnv = config.get('NODE_ENV', { infer: true });
   const origins = config.get('CORS_ORIGINS', { infer: true });
 

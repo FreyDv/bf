@@ -14,6 +14,11 @@
 //   migrations  drizzle.config.ts present
 //   e2e / unit / seed   package.json scripts test:e2e / test / db:seed
 //   envSchema   src/app/env.schema.ts present (→ pnpm env:check)
+//   deploy      how the app reaches production: nest → 'ecs' (Fargate service), next → 'static' (S3 + CloudFront)
+//   port        PORT from .env.example (nest apps)
+//   envKeys     every KEY declared in .env.example (→ which secrets / *_URL the task needs)
+//   deps        other apps this one calls: envKeys <NAME>_URL where <name> is an app (→ wake graph)
+//   basePath    Next `basePath` from next.config.* ('' when none; fe-admin → '/admin')
 import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -22,8 +27,26 @@ const APPS_DIR = 'apps';
 /** A change under one of these prefixes affects every app (images, pipeline, tooling). */
 const GLOBAL_PATHS = ['docker/', '.github/', 'scripts/', '.dockerignore'];
 
+const DEPLOY = { nest: 'ecs', next: 'static', other: null };
+
+/** `KEY=` names of an .env.example (comments and blank lines skipped). */
+function envKeysOf(path) {
+  const file = join(path, '.env.example');
+  if (!existsSync(file)) return [];
+  return readFileSync(file, 'utf8')
+    .split('\n')
+    .map((line) => /^([A-Z][A-Z0-9_]*)=/.exec(line.trim())?.[1])
+    .filter(Boolean);
+}
+
+function basePathOf(path) {
+  const file = readdirSync(path).find((f) => /^next\.config\.(ts|mjs|js)$/.test(f));
+  if (!file) return '';
+  return /basePath:\s*['"]([^'"]+)['"]/.exec(readFileSync(join(path, file), 'utf8'))?.[1] ?? '';
+}
+
 export function discoverApps() {
-  return readdirSync(APPS_DIR, { withFileTypes: true })
+  const apps = readdirSync(APPS_DIR, { withFileTypes: true })
     .filter((d) => d.isDirectory() && existsSync(join(APPS_DIR, d.name, 'package.json')))
     .map((d) => {
       const path = join(APPS_DIR, d.name);
@@ -34,19 +57,39 @@ export function discoverApps() {
         : readdirSync(path).some((f) => /^next\.config\.(ts|mjs|js)$/.test(f))
           ? 'next'
           : 'other';
+      const envKeys = /** @type {string[]} */ (envKeysOf(path));
+      const port = Number(
+        /^PORT=(\d+)/m.exec(
+          existsSync(join(path, '.env.example'))
+            ? readFileSync(join(path, '.env.example'), 'utf8')
+            : '',
+        )?.[1],
+      );
       return {
         name: pkg.name,
         path,
         kind,
+        deploy: DEPLOY[kind],
         dockerfile: kind === 'other' ? null : `docker/${kind}.Dockerfile`,
         migrations: existsSync(join(path, 'drizzle.config.ts')),
         e2e: Boolean(scripts['test:e2e']),
         unit: Boolean(scripts.test),
         seed: Boolean(scripts['db:seed']),
         envSchema: existsSync(join(path, 'src', 'app', 'env.schema.ts')),
+        port: Number.isFinite(port) && port > 0 ? port : null,
+        envKeys,
+        basePath: kind === 'next' ? basePathOf(path) : '',
+        deps: /** @type {string[]} */ ([]),
       };
     })
     .sort((a, b) => a.name.localeCompare(b.name));
+  const names = new Set(apps.map((a) => a.name));
+  for (const app of apps) {
+    app.deps = app.envKeys
+      .map((key) => /^([A-Z0-9]+)_URL$/.exec(key)?.[1]?.toLowerCase() ?? '')
+      .filter((dep) => dep !== '' && dep !== app.name && names.has(dep));
+  }
+  return apps;
 }
 
 function git(args) {

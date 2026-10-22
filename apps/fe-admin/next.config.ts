@@ -1,27 +1,18 @@
-import path from 'node:path';
-
 import type { NextConfig } from 'next';
 
+/**
+ * Static export under `/admin` (one public hostname: `/` fe-main, `/admin/*` fe-admin, `/api/*` the edge).
+ * `next build` writes `out/`, served by S3 + CloudFront in production and by nginx in docker compose
+ * (docker/next.Dockerfile). Consequences: no middleware, no route handlers, `next/image` unoptimized, every route ends
+ * with a slash. Security headers live in the CloudFront response-headers policy / nginx (`headers()` is ignored in export mode).
+ */
 const nextConfig: NextConfig = {
   reactStrictMode: true,
-  // Self-contained build for the ECS Docker image (see Dockerfile).
-  output: 'standalone',
-  // Trace files from the monorepo root so workspace packages end up in .next/standalone.
-  outputFileTracingRoot: path.join(__dirname, '../..'),
+  output: 'export',
+  basePath: '/admin',
+  trailingSlash: true,
+  images: { unoptimized: true },
   transpilePackages: ['@bf/ui', '@bf/contracts'],
-  async headers() {
-    return [
-      {
-        source: '/(.*)',
-        headers: [
-          { key: 'X-Content-Type-Options', value: 'nosniff' },
-          { key: 'X-Frame-Options', value: 'DENY' },
-          { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
-          { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
-        ],
-      },
-    ];
-  },
 };
 
 export default nextConfig;

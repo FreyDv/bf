@@ -5,25 +5,60 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": ["dist/**", ".next/**", "!.next/cache/**"]
+      "outputs": ["dist/**", ".next/**", "!.next/cache/**", "out/**"]
     },
-    "typecheck": { "dependsOn": ["^build"] },
-    "lint": { "dependsOn": ["^build"] },
-    "lint:fix": { "dependsOn": ["^build"], "cache": false },
-    "format": { "cache": false },
+    "typecheck": {
+      "dependsOn": ["^build"]
+    },
+    "lint": {
+      "dependsOn": ["^build"]
+    },
+    "lint:fix": {
+      "dependsOn": ["^build"],
+      "cache": false
+    },
+    "format": {
+      "cache": false
+    },
     "format:check": {},
-    "deps": { "dependsOn": ["^build"] },
-    "test": { "dependsOn": ["^build"], "outputs": ["coverage/**"] },
+    "deps": {
+      "dependsOn": ["^build"]
+    },
+    "test": {
+      "dependsOn": ["^build"],
+      "outputs": ["coverage/**"]
+    },
     "test:e2e": {
       "dependsOn": ["^build"],
       "cache": false,
       "env": ["POSTGRES_*", "REDIS_*", "S3_*"]
     },
-    "contracts:generate": { "dependsOn": ["^build"], "cache": false, "outputs": [] },
-    "db:generate": { "dependsOn": ["^build"], "cache": false },
-    "db:check": { "dependsOn": ["^build"] },
-    "db:migrate": { "dependsOn": ["^build"], "cache": false, "env": ["POSTGRES_*"] },
-    "db:seed": { "dependsOn": ["^build", "db:migrate"], "cache": false, "env": ["POSTGRES_*"] },
-    "dev": { "dependsOn": ["^build"], "persistent": true, "cache": false }
+    "contracts:generate": {
+      "dependsOn": ["^build"],
+      "cache": false,
+      "outputs": []
+    },
+    "db:generate": {
+      "dependsOn": ["^build"],
+      "cache": false
+    },
+    "db:check": {
+      "dependsOn": ["^build"]
+    },
+    "db:migrate": {
+      "dependsOn": ["^build"],
+      "cache": false,
+      "env": ["POSTGRES_*"]
+    },
+    "db:seed": {
+      "dependsOn": ["^build", "db:migrate"],
+      "cache": false,
+      "env": ["POSTGRES_*"]
+    },
+    "dev": {
+      "dependsOn": ["^build"],
+      "persistent": true,
+      "cache": false
+    }
   }
 }

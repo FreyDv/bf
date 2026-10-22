@@ -1,7 +1,12 @@
 import { defineConfig } from 'tsup';
 
 export default defineConfig({
-  entry: { index: 'src/index.ts', config: 'src/config.ts' },
+  entry: {
+    index: 'src/index.ts',
+    config: 'src/config.ts',
+    'ensure-database': 'src/ensure-database.ts',
+    'cli/migrate': 'src/cli/migrate.ts',
+  },
   format: ['cjs'],
   dts: true,
   sourcemap: true,

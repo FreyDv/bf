@@ -11,3 +11,6 @@ coverage/
 .env
 !.env.example
 cdk.out/
+
+# Next.js static export
+out/

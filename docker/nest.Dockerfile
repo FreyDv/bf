@@ -27,6 +27,8 @@ FROM ${NODE_IMAGE} AS runner
 ARG APP
 ENV NODE_ENV=production PORT=3000 APP=${APP}
 RUN addgroup -S app && adduser -S app -G app
+# Amazon RDS certificate bundle: Aurora enforces TLS and the app verifies the server (NODE_EXTRA_CA_CERTS in prod).
+ADD --chmod=644 https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem /etc/ssl/rds-ca.pem
 WORKDIR /app
 COPY --from=build --chown=app:app /out ./
 USER app

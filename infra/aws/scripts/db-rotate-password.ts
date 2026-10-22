@@ -2,7 +2,7 @@
 //   1. generate a new password and store it in Secrets Manager as AWSPENDING (the live secret is untouched)
 //   2. set it on the Aurora cluster and wait until the cluster is available again
 //   3. promote it to AWSCURRENT (the old value stays reachable as AWSPREVIOUS)
-//   4. refresh /opt/bf/.env on the host and recreate the containers that use it (SSM, no SSH)
+//   4. force a new deployment of every DB-backed ECS service (they read the secret at start; sleeping ones on wake)
 // If step 2 fails nothing has changed (the pending version is dropped). If step 4 fails the database and the secret
 // already agree: re-run with --restart-only. Connected clients keep their session until they reconnect; your own
 // psql/DataGrip sessions need the new password: pnpm -s db:url.
@@ -19,9 +19,10 @@ import {
   UpdateSecretVersionStageCommand,
 } from '@aws-sdk/client-secrets-manager';
 
-import { findHost, main, runOnHost, sdk, sleep, summary } from './_lib.ts';
+import { forceNewDeployment } from './_ecs.ts';
+import { main, sdk, sleep, summary } from './_lib.ts';
+import { services } from '../lib/apps.ts';
 import { names } from '../lib/config.ts';
-import { HOST_SCRIPT_HEADER, hostRefreshSecretsCommands } from '../lib/host-commands.ts';
 
 const secrets = new SecretsManagerClient(sdk);
 const rds = new RDSClient(sdk);
@@ -112,17 +113,16 @@ async function rotate() {
 }
 
 async function restartApps() {
-  const result = await runOnHost(
-    await findHost(),
-    [...HOST_SCRIPT_HEADER, ...hostRefreshSecretsCommands()],
-    'bf db password rotation',
-  );
-  if (result.StandardOutputContent) console.log(result.StandardOutputContent);
-  if (result.StandardErrorContent) console.error(result.StandardErrorContent);
-  if (result.Status !== 'Success') {
+  const dbApps = services()
+    .filter((s) => s.hasDb)
+    .map((s) => s.name);
+  try {
+    await forceNewDeployment(dbApps);
+  } catch (error) {
     throw new Error(
-      `container restart ${result.Status} (exit code ${result.ResponseCode}) — the secret and the database already ` +
+      `restart failed (${error instanceof Error ? error.message : String(error)}) — the secret and the database already ` +
         'match; fix the cause and run again with --restart-only',
+      { cause: error },
     );
   }
 }

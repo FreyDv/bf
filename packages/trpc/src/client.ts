@@ -1,6 +1,6 @@
 import { Inject, Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { createTRPCClient, httpBatchLink } from '@trpc/client';
+import { createTRPCClient, httpBatchLink, retryLink } from '@trpc/client';
 import { ClsService } from 'nestjs-cls';
 
 import { CLS_KEYS, HEADERS } from '@bf/shared/constants';
@@ -10,7 +10,7 @@ import { TRPC_BASE_PATH } from './server';
 
 import type { AuthenticatedUser } from '@bf/shared/interfaces';
 import type { DynamicModule } from '@nestjs/common';
-import type { TRPCClient, TRPCLink } from '@trpc/client';
+import type { TRPCClient, TRPCClientError, TRPCLink } from '@trpc/client';
 import type { AnyRouter } from '@trpc/server';
 
 export type TrpcClient<TRouter extends AnyRouter> = TRPCClient<TRouter>;
@@ -19,11 +19,30 @@ export type TrpcClient<TRouter extends AnyRouter> = TRPCClient<TRouter>;
 export const TRPC_CLIENT = (name: string) => Symbol.for(`bf.trpc.client.${name}`);
 export const InjectTrpcClient = (name: string) => Inject(TRPC_CLIENT(name));
 
-export interface TrpcClientModuleOptions {
+export interface ServiceClientOptions {
+  /**
+   * Retry policy for transport failures and HTTP 503 (a sleeping service being woken by the edge answers
+   * 503 + Retry-After until it is up). `false` disables it. Default: 3 attempts, 1 s / 3 s / 5 s apart.
+   */
+  retry?: { attempts?: number; delaysMs?: number[] } | false;
+  /** Custom fetch (tests). */
+  fetch?: typeof fetch;
+}
+
+export interface TrpcClientModuleOptions extends ServiceClientOptions {
   /** Upstream service name (`auth`, `order`, …); also used for the injection token. */
   name: string;
   /** Env var holding the base URL of the upstream (default `<NAME>_URL`, e.g. `AUTH_URL`). */
   urlEnv?: string;
+}
+
+const DEFAULT_RETRY_DELAYS_MS = [1_000, 3_000, 5_000];
+
+/** 503 from the edge/service (starting up) or no HTTP response at all (connection refused, reset, DNS). */
+export function isRetryableError(error: TRPCClientError<AnyRouter>): boolean {
+  const response = (error.meta as { response?: { status?: number } } | undefined)?.response;
+  if (response) return response.status === 503;
+  return error.data === undefined;
 }
 
 /**
@@ -74,13 +93,17 @@ export class TrpcClientModule {
               throw new Error(
                 `${urlEnv} is not set (needed by TrpcClientModule '${options.name}')`,
               );
-            const client = createServiceClient<TRouter>(base, () => {
-              const correlationId = cls?.get<string>(CLS_KEYS.CORRELATION_ID);
-              return {
-                ...(correlationId ? { [HEADERS.CORRELATION_ID]: correlationId } : {}),
-                ...identityHeaders(cls?.get<AuthenticatedUser>(CLS_KEYS.USER)),
-              };
-            });
+            const client = createServiceClient<TRouter>(
+              base,
+              () => {
+                const correlationId = cls?.get<string>(CLS_KEYS.CORRELATION_ID);
+                return {
+                  ...(correlationId ? { [HEADERS.CORRELATION_ID]: correlationId } : {}),
+                  ...identityHeaders(cls?.get<AuthenticatedUser>(CLS_KEYS.USER)),
+                };
+              },
+              { retry: options.retry, fetch: options.fetch },
+            );
             return nestSafe(client);
           },
         },
@@ -94,11 +117,21 @@ export class TrpcClientModule {
 export function createServiceClient<TRouter extends AnyRouter>(
   baseUrl: string,
   headers: () => Record<string, string> | Promise<Record<string, string>> = () => ({}),
+  options: ServiceClientOptions = {},
 ): TrpcClient<TRouter> {
   // Contracts never use a data transformer, so the generic `transformer` requirement is moot.
-  const link = httpBatchLink({
+  const http = httpBatchLink({
     url: new URL(TRPC_BASE_PATH, baseUrl).toString(),
     headers,
+    ...(options.fetch ? { fetch: options.fetch as never } : {}),
   }) as unknown as TRPCLink<TRouter>;
-  return createTRPCClient<TRouter>({ links: [link] });
+  if (options.retry === false) return createTRPCClient<TRouter>({ links: [http] });
+
+  const attempts = options.retry?.attempts ?? DEFAULT_RETRY_DELAYS_MS.length;
+  const delays = options.retry?.delaysMs ?? DEFAULT_RETRY_DELAYS_MS;
+  const retry = retryLink({
+    retry: ({ error, attempts: done }) => done <= attempts && isRetryableError(error),
+    retryDelayMs: (attempt) => delays[Math.min(attempt, delays.length - 1)] ?? 0,
+  }) as unknown as TRPCLink<TRouter>;
+  return createTRPCClient<TRouter>({ links: [retry, http] });
 }
