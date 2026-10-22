@@ -12,12 +12,12 @@ name: pipeline
 #             │                resource unless the PR has the label `allow-destructive`
 #             └ report         sticky PR comment: unit + e2e results (from the jest.json artifacts)
 #                    └──► ci-ok  (the single required check)
-#                              └──► approve ─► snapshot ─► infra ──┬─► static (per frontend) ─┐
+#                              └──► approve ─► snapshot ─► infra ──┬─► frontends (per app) ───┐
 #                                          └─► images (per app) ───┴─► release ──────────────┴─► smoke
 #
 # `approve` waits for ONE human approval per run once the environment `prod-approval` has a required reviewer
 # (node scripts/ci/repo-settings.ts --apply sets that up, plus branch protection on `ci ok`).
-# `images` pushes the Nest images to ECR, `static` exports the Next apps to S3 (+ CloudFront invalidation),
+# `images` pushes the Nest images to ECR, `frontends` exports the Next apps to S3 (+ CloudFront invalidation),
 # `release` runs the migrations as one-off Fargate tasks and rolls the ECS services to the new image (the deployment
 # circuit breaker rolls back when a task never becomes healthy). Every deploy step is a TypeScript script you can also
 # run from a laptop (infra/aws/README.md). No app list anywhere: scripts/apps.mjs scans apps/*.
@@ -498,7 +498,7 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
 
-  static:
+  frontends:
     name: ${{ matrix.name }} · export & upload
     needs: [discover, approve, snapshot, infra]
     # the buckets and the distribution come from bf-prod, so a failed infra deploy blocks this
@@ -523,9 +523,9 @@ jobs:
 
   release:
     name: migrate & roll out (ECS)
-    needs: [discover, approve, snapshot, infra, images, static]
-    # snapshot, infra, images and static must have succeeded or been skipped on purpose — a failure in any of them blocks the release
-    if: always() && needs.approve.result == 'success' && needs.discover.outputs.release == 'true' && !contains(fromJSON('["failure","cancelled"]'), needs.snapshot.result) && !contains(fromJSON('["failure","cancelled"]'), needs.infra.result) && !contains(fromJSON('["failure","cancelled"]'), needs.images.result) && !contains(fromJSON('["failure","cancelled"]'), needs.static.result)
+    needs: [discover, approve, snapshot, infra, images, frontends]
+    # snapshot, infra, images and frontends must have succeeded or been skipped on purpose — a failure in any of them blocks the release
+    if: always() && needs.approve.result == 'success' && needs.discover.outputs.release == 'true' && !contains(fromJSON('["failure","cancelled"]'), needs.snapshot.result) && !contains(fromJSON('["failure","cancelled"]'), needs.infra.result) && !contains(fromJSON('["failure","cancelled"]'), needs.images.result) && !contains(fromJSON('["failure","cancelled"]'), needs.frontends.result)
     runs-on: ubuntu-24.04-arm
     environment: prod # keep equal to `env` in infra/aws/lib/config.ts
     permissions:
@@ -549,9 +549,9 @@ jobs:
 
   smoke:
     name: smoke test (public URLs)
-    needs: [release, static]
+    needs: [release, frontends]
     # after whichever of the two ran; a failed one blocks it
-    if: always() && !contains(fromJSON('["failure","cancelled"]'), needs.release.result) && !contains(fromJSON('["failure","cancelled"]'), needs.static.result) && (needs.release.result == 'success' || needs.static.result == 'success')
+    if: always() && !contains(fromJSON('["failure","cancelled"]'), needs.release.result) && !contains(fromJSON('["failure","cancelled"]'), needs.frontends.result) && (needs.release.result == 'success' || needs.frontends.result == 'success')
     runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
