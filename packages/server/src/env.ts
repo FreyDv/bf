@@ -35,6 +35,8 @@ export const baseEnvSchema = z.object({
   API_BASE_URL: z.string().url().default('http://localhost:3000'),
   CORS_ORIGINS: csv,
   REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
+  /** Proxies in front of the app (`trust proxy`): 1 behind a single reverse proxy, 2 behind CloudFront + ALB. */
+  TRUST_PROXY_HOPS: z.coerce.number().int().min(0).default(1),
   THROTTLE_TTL: z.coerce.number().int().positive().default(60_000),
   THROTTLE_LIMIT: z.coerce.number().int().positive().default(1000),
   /** base64(PEM) RS256 public key — every service verifies tokens locally with it. */

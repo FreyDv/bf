@@ -1,5 +1,6 @@
-// Local equivalent of the pipeline.yml `images` job: builds every app (or the given ones) for linux/arm64 and pushes
-// it to ECR with the tags <tag> and <env> (the floating tag compose.yml points at). Creates missing repositories.
+// Local equivalent of the pipeline.yml `images` job: builds every ECS app (or the given ones) for linux/arm64 and pushes
+// it to ECR with the tags <tag> and <env> (the floating tag a service runs until a release pins a sha). Creates missing
+// repositories. Frontends are not images in production (static-deploy.ts).
 // Usage: node infra/aws/scripts/push-images.ts <tag> [app ...]        (needs docker buildx + AWS credentials)
 //        node infra/aws/scripts/push-images.ts --ensure-repo <app>    (only create the repository; used by pipeline.yml)
 import {
@@ -77,8 +78,8 @@ main(async () => {
   await dockerLogin(registry);
 
   for (const app of apps(only)) {
-    if (!app.dockerfile) {
-      console.log(`skip ${app.name} (no dockerfile)`);
+    if (app.deploy !== 'ecs' || !app.dockerfile) {
+      console.log(`skip ${app.name} (not an ECS service)`);
       continue;
     }
     await ensureRepository(app.name);

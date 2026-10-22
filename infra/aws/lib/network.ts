@@ -3,15 +3,26 @@ import { Construct } from 'constructs';
 
 import { config, names } from './config.ts';
 
+/** Where Fargate tasks run: the public subnet of the one working AZ (the subnet in the other AZ stays empty). */
+export const workSubnets: ec2.SubnetSelection = {
+  subnetType: ec2.SubnetType.PUBLIC,
+  availabilityZones: [config.workAz],
+};
+
 /**
- * VPC with two PUBLIC subnets and nothing else: no NAT gateway, no private subnets, no load balancer.
- * "Private" is enforced by security groups — only the host's 80/443 are reachable from the internet.
+ * VPC with two PUBLIC subnets (one per AZ: the ALB and the database subnet group need two) and nothing else:
+ * no NAT gateway, no private subnets, no VPC endpoints. Only the subnet of `config.workAz` is ever used for tasks.
+ * Every Fargate task gets a public IP for outbound traffic (ECR, logs, OpenAI…); who may talk to whom is decided
+ * entirely by the security groups below. Nothing on the internet can open a connection to a task: the only
+ * inbound rules are "CloudFront → ALB", "ALB → api" and "task → task".
  */
 export class Network extends Construct {
   readonly vpc: ec2.Vpc;
-  /** The machine: HTTP/HTTPS from anywhere, everything else closed. */
-  readonly hostSg: ec2.SecurityGroup;
-  /** The database: Postgres from the machine only. */
+  /** The load balancer: HTTPS from CloudFront's origin-facing addresses only. */
+  readonly albSg: ec2.SecurityGroup;
+  /** Every Fargate task: the api port from the ALB, everything from other tasks (Service Connect). */
+  readonly tasksSg: ec2.SecurityGroup;
+  /** The database: Postgres from the tasks only. */
   readonly dbSg: ec2.SecurityGroup;
   /**
    * The database, developer access: deliberately EMPTY here. `pnpm db:allow-me` puts your current IP in it,
@@ -31,22 +42,33 @@ export class Network extends Construct {
       restrictDefaultSecurityGroup: false,
     });
 
-    this.hostSg = new ec2.SecurityGroup(this, 'HostSg', {
+    this.albSg = new ec2.SecurityGroup(this, 'AlbSg', {
       vpc: this.vpc,
-      securityGroupName: `${names.stack}-host`,
-      description: 'bf host: public HTTP/HTTPS only',
+      securityGroupName: names.albSecurityGroup,
+      description: 'bf load balancer: HTTPS from CloudFront only',
     });
-    this.hostSg.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(80), 'http (redirect + ACME)');
-    this.hostSg.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(443), 'https');
-    this.hostSg.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.udp(443), 'http/3');
+    this.albSg.addIngressRule(
+      ec2.Peer.prefixList(config.cloudfront.originPrefixListId),
+      ec2.Port.tcp(443),
+      'https from CloudFront (origin-facing prefix list)',
+    );
+
+    this.tasksSg = new ec2.SecurityGroup(this, 'TasksSg', {
+      vpc: this.vpc,
+      securityGroupName: names.tasksSecurityGroup,
+      description: 'bf fargate tasks: api from the ALB, everything from other tasks',
+    });
+    this.tasksSg.addIngressRule(this.albSg, ec2.Port.tcp(3000), 'api from the load balancer');
+    this.tasksSg.addIngressRule(this.tasksSg, ec2.Port.allTcp(), 'service to service');
 
     this.dbSg = new ec2.SecurityGroup(this, 'DbSg', {
       vpc: this.vpc,
       securityGroupName: `${names.stack}-db`,
+      // do not edit: a changed description replaces the group, and its fixed name makes the replacement fail
       description: 'bf database: postgres from the host',
       allowAllOutbound: false,
     });
-    this.dbSg.addIngressRule(this.hostSg, ec2.Port.tcp(5432), 'postgres from the host');
+    this.dbSg.addIngressRule(this.tasksSg, ec2.Port.tcp(5432), 'postgres from the tasks');
 
     this.dbDevSg = new ec2.SecurityGroup(this, 'DbDevSg', {
       vpc: this.vpc,

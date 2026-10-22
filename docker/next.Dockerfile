@@ -1,8 +1,12 @@
 # syntax=docker/dockerfile:1.7
-# One Dockerfile for every Next.js app. Build context = repo root:
+# One Dockerfile for every Next.js app (local docker compose only — in production the same `out/` goes to S3).
+# Build context = repo root:
 #   docker build -f docker/next.Dockerfile --build-arg APP=fe-main --build-arg NEXT_PUBLIC_API_URL=http://localhost:3000 -t bf/fe-main .
+# The build stage runs the static export (`output: 'export'`), the runner is nginx serving `out/` with the same
+# rewrite rules CloudFront applies (docker/nginx-static.conf.template).
 ARG APP=fe-main
 ARG NODE_IMAGE=node:26-alpine
+ARG NGINX_IMAGE=nginx:1.27-alpine
 
 # ---------- base ----------
 FROM ${NODE_IMAGE} AS base
@@ -47,19 +51,12 @@ COPY apps/${APP} ./apps/${APP}
 RUN pnpm --filter @bf/contracts build && pnpm --filter "${APP}" build
 
 # ---------- runner ----------
-FROM ${NODE_IMAGE} AS runner
+FROM ${NGINX_IMAGE} AS runner
 ARG APP
-ENV NODE_ENV=production \
-  NEXT_TELEMETRY_DISABLED=1 \
-  PORT=3000 \
-  HOSTNAME=0.0.0.0 \
-  APP=${APP}
-WORKDIR /app
-RUN addgroup -S -g 1001 nodejs && adduser -S -u 1001 -G nodejs nextjs
-# The standalone output mirrors the monorepo layout (outputFileTracingRoot = repo root).
-COPY --from=build --chown=nextjs:nodejs /repo/apps/${APP}/.next/standalone ./
-COPY --from=build --chown=nextjs:nodejs /repo/apps/${APP}/.next/static ./apps/${APP}/.next/static
-COPY --from=build --chown=nextjs:nodejs /repo/apps/${APP}/public ./apps/${APP}/public
-USER nextjs
-EXPOSE 3000
-CMD ["sh", "-c", "node apps/${APP}/server.js"]
+# '' for the main site, '/admin' for fe-admin (must equal `basePath` in the app's next.config.ts)
+ARG BASE_PATH=""
+ENV BASE_PATH=${BASE_PATH}
+COPY docker/nginx-static.conf.template /etc/nginx/templates/default.conf.template
+COPY --from=build /repo/apps/${APP}/out /usr/share/nginx/html${BASE_PATH}
+EXPOSE 80
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 CMD wget -qO- http://127.0.0.1${BASE_PATH}/ >/dev/null || exit 1

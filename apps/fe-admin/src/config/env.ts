@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 const schema = z.object({
   NEXT_PUBLIC_APP_NAME: z.string().min(1).default('bf admin'),
-  NEXT_PUBLIC_APP_URL: z.string().url().default('http://localhost:4001'),
+  NEXT_PUBLIC_APP_URL: z.string().url().default('http://localhost:4001/admin'),
   /** The edge (`apps/api`): every backend call goes through it as /<service>/… */
   NEXT_PUBLIC_API_URL: z.string().url().default('http://localhost:3000'),
   NEXT_PUBLIC_DEV_TOKEN_SUB: z.string().min(1).default('admin'),

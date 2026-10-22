@@ -24,7 +24,7 @@ export interface GithubStackProps extends StackProps {
 
 /**
  * Everything GitHub Actions needs BEFORE it can deploy: the OIDC trust, one least-privilege role per workflow,
- * the permissions CloudFormation itself works with, and the buckets for the host bundle and DB snapshot exports.
+ * the permissions CloudFormation itself works with, and the bucket for DB snapshot exports.
  * No long-lived AWS keys exist: GitHub exchanges its OIDC token for short-lived credentials.
  *
  * Deployed from a laptop with admin credentials (scripts/bootstrap.ts) — never by GitHub, which is why this
@@ -72,14 +72,6 @@ export class GithubStack extends Stack {
       );
 
     // ---------------------------------------------------------------- storage
-    /** Host bundle (compose.yml, Caddyfile) uploaded by scripts/host-deploy.ts and fetched by the machine. */
-    const artifacts = new s3.Bucket(this, 'ArtifactsBucket', {
-      bucketName: names.artifactsBucket(account),
-      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
-      encryption: s3.BucketEncryption.S3_MANAGED,
-      removalPolicy: RemovalPolicy.RETAIN,
-    });
-
     // RDS snapshot exports to S3 must be encrypted with a customer managed key
     const snapshotKey = new kms.Key(this, 'SnapshotKey', {
       description: 'bf DB snapshot exports',
@@ -112,11 +104,23 @@ export class GithubStack extends Stack {
     // with, so the GitHub roles never hold these permissions themselves. IAM is limited to bf-<env>-* names.
     const cfnExec = new iam.ManagedPolicy(this, 'CfnExecPolicy', {
       managedPolicyName: names.cfnExecPolicy,
+      // do not edit: a changed description replaces the policy, and its fixed name makes the replacement fail
       description: `What CloudFormation may create/change when deploying ${names.stack}`,
       statements: [
         new iam.PolicyStatement({
           sid: 'Services',
-          actions: ['ec2:*', 'rds:*', 'logs:*', 'cloudwatch:*'],
+          actions: [
+            'ec2:*',
+            'rds:*',
+            'logs:*',
+            'cloudwatch:*',
+            'ecs:*',
+            'elasticloadbalancing:*',
+            'cloudfront:*',
+            'acm:*',
+            'servicediscovery:*',
+            'application-autoscaling:*',
+          ],
           resources: ['*'],
         }),
         new iam.PolicyStatement({
@@ -132,6 +136,30 @@ export class GithubStack extends Stack {
           sid: 'DnsStatus',
           actions: ['route53:GetChange'],
           resources: ['*'],
+        }),
+        // Cloud Map (Service Connect namespace bf-<env>.local) keeps a private hosted zone of its own
+        new iam.PolicyStatement({
+          sid: 'CloudMapZoneCreate',
+          actions: ['route53:CreateHostedZone', 'route53:ListHostedZonesByName'],
+          resources: ['*'],
+        }),
+        new iam.PolicyStatement({
+          sid: 'CloudMapZone',
+          actions: [
+            'route53:AssociateVPCWithHostedZone',
+            'route53:ChangeResourceRecordSets',
+            'route53:ChangeTagsForResource',
+            'route53:DeleteHostedZone',
+            'route53:GetHostedZone',
+            'route53:ListResourceRecordSets',
+          ],
+          resources: ['arn:aws:route53:::hostedzone/*'],
+        }),
+        new iam.PolicyStatement({
+          sid: 'KeepPublicZone',
+          effect: iam.Effect.DENY,
+          actions: ['route53:DeleteHostedZone'],
+          resources: [`arn:aws:route53:::hostedzone/${config.hostedZoneId}`],
         }),
         new iam.PolicyStatement({
           sid: 'Parameters',
@@ -183,7 +211,7 @@ export class GithubStack extends Stack {
             `arn:aws:iam::${account}:instance-profile/bf-${config.env}-*`,
           ],
         }),
-        // encrypted volumes / cluster / secrets use the AWS-managed keys; allowed only on behalf of those services
+        // encrypted cluster / secrets / buckets use the AWS-managed keys; allowed only on behalf of those services
         new iam.PolicyStatement({
           sid: 'ManagedKeys',
           actions: [
@@ -197,7 +225,7 @@ export class GithubStack extends Stack {
           resources: ['*'],
           conditions: {
             StringEquals: {
-              'kms:ViaService': ['ec2', 'rds', 'secretsmanager', 'ssm'].map(
+              'kms:ViaService': ['ec2', 'rds', 'secretsmanager', 'ssm', 's3'].map(
                 (service) => `${service}.${config.region}.amazonaws.com`,
               ),
             },
@@ -207,7 +235,16 @@ export class GithubStack extends Stack {
           sid: 'ServiceLinkedRoles',
           actions: ['iam:CreateServiceLinkedRole'],
           resources: ['*'],
-          conditions: { StringLike: { 'iam:AWSServiceName': ['rds.amazonaws.com'] } },
+          conditions: {
+            StringLike: {
+              'iam:AWSServiceName': [
+                'rds.amazonaws.com',
+                'ecs.amazonaws.com',
+                'elasticloadbalancing.amazonaws.com',
+                'ecs.application-autoscaling.amazonaws.com',
+              ],
+            },
+          },
         }),
       ],
     });
@@ -230,16 +267,27 @@ export class GithubStack extends Stack {
       ['*'],
     );
     allow(plan, ['sts:AssumeRole'], [`arn:aws:iam::${account}:role/cdk-hnb659fds-lookup-role-*`]);
+    // synth reads the image tag each service runs (lib/images.ts), so a diff/deploy never reverts an image
+    const imageParameters = arn('ssm', `parameter${names.imageParameter('*')}`);
+    allow(plan, ['ssm:GetParameters'], [imageParameters]);
 
     // pipeline.yml (infra) — `cdk deploy`: may only hand the work to the CDK roles; CloudFormation acts with bf-cfn-exec
     const infra = githubRole('GhaInfraRole', 'bf-gha-infra', `environment:${config.env}`);
     allow(infra, ['sts:AssumeRole'], [cdkRoles]);
+    allow(infra, ['ssm:GetParameters'], [imageParameters]);
 
-    // pipeline.yml (images, rollout) — push images, upload the host bundle, run the deploy on the machine. No CloudFormation.
+    // pipeline.yml (images, static, release) — push images, upload the frontends, register task definitions, run
+    // migrations and roll services. No CloudFormation.
     const app = githubRole('GhaAppRole', 'bf-gha-app', `environment:${config.env}`);
     allow(
       app,
-      ['ecr:GetAuthorizationToken', 'ec2:DescribeInstances', 'ssm:GetCommandInvocation'],
+      [
+        'ecr:GetAuthorizationToken',
+        'ecs:DescribeTaskDefinition',
+        'ecs:RegisterTaskDefinition',
+        'ecs:ListTaskDefinitions',
+        'ecs:ListTasks',
+      ],
       ['*'],
     );
     allow(
@@ -259,11 +307,43 @@ export class GithubStack extends Stack {
       ],
       [arn('ecr', `repository/bf-${config.env}/*`)],
     );
-    allow(app, ['s3:PutObject'], [artifacts.arnForObjects(`${names.hostBundlePrefix}*`)]);
-    allow(app, ['ssm:SendCommand'], [`arn:aws:ssm:${Aws.REGION}::document/AWS-RunShellScript`]);
-    allow(app, ['ssm:SendCommand'], [arn('ec2', 'instance/*')], {
-      StringEquals: { [`ssm:resourceTag/${names.hostTag.key}`]: names.hostTag.value },
+    allow(
+      app,
+      ['ssm:GetParameter', 'ssm:GetParameters'],
+      [imageParameters, arn('ssm', `parameter${names.platformParameter('*' as never)}`)],
+    );
+    allow(app, ['ssm:PutParameter', 'ssm:AddTagsToResource'], [imageParameters]);
+    allow(
+      app,
+      ['ecs:DescribeServices', 'ecs:UpdateService'],
+      [arn('ecs', `service/${names.cluster}/*`)],
+    );
+    allow(app, ['ecs:RunTask'], [arn('ecs', `task-definition/bf-${config.env}-*:*`)], {
+      ArnEquals: { 'ecs:cluster': arn('ecs', `cluster/${names.cluster}`) },
     });
+    allow(app, ['ecs:DescribeTasks', 'ecs:StopTask'], [arn('ecs', `task/${names.cluster}/*`)]);
+    allow(
+      app,
+      ['iam:PassRole'],
+      [
+        `arn:aws:iam::${account}:role/${names.executionRole}`,
+        `arn:aws:iam::${account}:role/${names.taskRole('*')}`,
+      ],
+      { StringEquals: { 'iam:PassedToService': 'ecs-tasks.amazonaws.com' } },
+    );
+    allow(
+      app,
+      ['logs:DescribeLogStreams', 'logs:GetLogEvents', 'logs:FilterLogEvents'],
+      [arn('logs', `log-group:${names.logGroup('*')}:*`)],
+    );
+    const staticBuckets = `arn:aws:s3:::${names.staticBucket('*', 'fe-*')}`;
+    allow(app, ['s3:ListBucket'], [staticBuckets]);
+    allow(app, ['s3:PutObject', 's3:GetObject', 's3:DeleteObject'], [`${staticBuckets}/*`]);
+    allow(
+      app,
+      ['cloudfront:CreateInvalidation', 'cloudfront:GetInvalidation'],
+      [`arn:aws:cloudfront::${account}:distribution/*`],
+    );
 
     // db-snapshot.yml (called by pipeline.yml) — cluster snapshot + export to S3 before each release
     const snapshot = githubRole('GhaSnapshotRole', 'bf-gha-snapshot', `environment:${config.env}`);
@@ -295,7 +375,6 @@ export class GithubStack extends Stack {
     output('Account', account, 'Set as GitHub repo variable AWS_ACCOUNT_ID');
     output('Repository', githubRepo, 'The only repository that may assume the roles');
     output('CfnExecPolicyArn', cfnExec.managedPolicyArn);
-    output('ArtifactsBucketName', artifacts.bucketName);
     output('SnapshotBucketName', snapshots.bucketName);
     for (const role of [plan, infra, app, snapshot]) output(`${role.node.id}Arn`, role.roleArn);
   }

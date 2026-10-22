@@ -16,7 +16,8 @@ main(() => {
 
   const all = allApps();
   const changed = new Set(affectedAppNames(base, all) as string[]);
-  const images = all.filter((a) => changed.has(a.name) && a.dockerfile);
+  const images = all.filter((a) => changed.has(a.name) && a.deploy === 'ecs');
+  const statics = all.filter((a) => changed.has(a.name) && a.deploy === 'static');
   const migrations = git('diff', '--name-status', base, 'HEAD', '--', 'apps/*/drizzle/*.sql')
     .split('\n')
     .filter(Boolean)
@@ -27,16 +28,20 @@ main(() => {
     `### Release plan · merging to \`main\` deploys to **${config.env}** (\`${config.region}\`)`,
     '',
   ];
-  if (!images.length) {
-    lines.push('No deployable app is affected — **no images are built**.');
+  if (!images.length && !statics.length) {
+    lines.push('No deployable app is affected — **nothing is built or deployed**.');
   } else {
     lines.push(
-      'Order: 📸 DB snapshot → 🐳 build & push → 🗄️ migrate → 🚀 compose up on the host (rolls back if a container stays unhealthy) → 💨 smoke test',
+      'Order: 📸 DB snapshot → 🐳 build & push images ∥ 🗂️ static exports → S3 → 🗄️ migrate (one-off Fargate tasks) → 🚀 ECS rolling deploy (the circuit breaker rolls back a task that never gets healthy) → 💨 smoke test',
       '',
-      '| App | Migrations |',
-      '|---|---|',
+      '| App | Deploy | Migrations |',
+      '|---|---|---|',
       ...images.map(
-        (a) => `| \`${a.name}\` | ${a.migrations ? 'runs `drizzle-kit migrate`' : '–'} |`,
+        (a) =>
+          `| \`${a.name}\` | ECS service | ${a.migrations ? 'runs `drizzle-kit migrate`' : '–'} |`,
+      ),
+      ...statics.map(
+        (a) => `| \`${a.name}\` | S3 + CloudFront${a.basePath ? ` (\`${a.basePath}\`)` : ''} | – |`,
       ),
     );
   }

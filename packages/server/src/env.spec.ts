@@ -27,6 +27,11 @@ describe('baseEnvSchema', () => {
     expect(env.JWT_PUBLIC_KEY).toBe(publicKey);
     expect(env.JWT_PRIVATE_KEY).toBeUndefined();
   });
+  it('trusts one proxy hop by default and accepts an override', () => {
+    expect(validate({ JWT_PUBLIC_KEY: publicKey }).TRUST_PROXY_HOPS).toBe(1);
+    expect(validate({ JWT_PUBLIC_KEY: publicKey, TRUST_PROXY_HOPS: '2' }).TRUST_PROXY_HOPS).toBe(2);
+    expect(() => validate({ JWT_PUBLIC_KEY: publicKey, TRUST_PROXY_HOPS: '-1' })).toThrow();
+  });
   it('fails loudly on a non-PEM public key', () => {
     expect(() => validate({ JWT_PUBLIC_KEY: b64('not a key') })).toThrow(/JWT_PUBLIC_KEY/);
   });

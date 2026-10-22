@@ -1,19 +1,17 @@
 // Decides what a workflow run has to do, from scripts/apps.mjs (no app list anywhere else).
 //   node scripts/ci/discover.ts ci        → outputs changed / unit / migrations / e2e / docker   (JSON arrays for job matrices), infra
-//   node scripts/ci/discover.ts deploy    → outputs images (JSON matrix), migrate (comma list or "none"), release, infra (true|false)
+//   node scripts/ci/discover.ts deploy    → outputs images (JSON matrix of ECS apps), static (JSON matrix of frontends),
+//                                            image_names / migrate / static_names (space-separated), release, infra (true|false)
 // Env: BASE   git ref to compare with (PR base or previous main commit)
 //      SELECT deploy only: "changed" (default), "all", or a comma list of app names
-//      INFRA  deploy only: "true"|"false" to force the CDK stack step (manual runs); empty = decide from the diff
+//      INFRA  deploy only: "true"|"false" to force the CDK deploy (manual runs); empty = decide from the diff
 import { affectedAppNames } from '../apps.mjs';
 
 import { allApps, changedFiles, main, setOutput, summary } from './_gh.ts';
 
 import type { App } from './_gh.ts';
 
-/** A change here must reach the machine even when no image changed (see infra/aws/scripts/host-deploy.ts). */
-const HOST_BUNDLE_PATHS = ['infra/aws/host', 'infra/aws/lib/host-commands.ts'];
-
-/** What `cdk deploy` / `cdk diff` is computed from. The host bundle and the ops scripts are not part of the stack. */
+/** What `cdk deploy` / `cdk diff` is computed from. The ops scripts are not part of the stacks. */
 const INFRA_PATHS = [
   'infra/aws/lib',
   'infra/aws/bin',
@@ -69,22 +67,28 @@ main(() => {
 
   if (mode === 'deploy') {
     const selection = process.env.SELECT || 'changed';
-    const images = select(selection, base).filter((a) => a.dockerfile);
+    const selected = select(selection, base);
+    const images = selected.filter((a) => a.deploy === 'ecs');
+    const statics = selected.filter((a) => a.deploy === 'static');
     const migrate = images.filter((a) => a.migrations).map((a) => a.name);
-    // unknown base (manual run, first push) → assume the bundle changed
-    const bundleChanged =
-      selection !== 'changed' || (changedFiles(base, HOST_BUNDLE_PATHS)?.length ?? 1) > 0;
-    setOutput('images', images);
-    setOutput('migrate', migrate.join(',') || 'none');
     const infra = process.env.INFRA ? process.env.INFRA === 'true' : infraChanged(base);
-    setOutput('release', String(images.length > 0 || bundleChanged));
+    setOutput('images', images);
+    setOutput('image_names', images.map((a) => a.name).join(' '));
+    setOutput('migrate', migrate.join(' '));
+    setOutput('static', statics);
+    setOutput('static_names', statics.map((a) => a.name).join(' '));
+    setOutput('release', String(images.length > 0));
     setOutput('infra', String(infra));
     summary(
       [
         '## Deploying',
+        '### Services (ECS)',
         list(images, (a) => (a.migrations ? ' (with migrations)' : '')),
-        bundleChanged ? '\nHost bundle (compose.yml / Caddyfile) is re-applied.' : '',
-        infra ? '\nThe CDK stack `bf-prod` is deployed (infra/aws changed).' : '',
+        '### Frontends (S3 + CloudFront)',
+        list(statics),
+        infra
+          ? '\nThe CDK stacks `bf-prod` + `bf-prod-apps` are deployed (infra/aws changed).'
+          : '',
       ].join('\n'),
     );
     return;

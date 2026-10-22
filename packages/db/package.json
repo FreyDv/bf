@@ -13,6 +13,13 @@
     "./config": {
       "types": "./dist/config.d.ts",
       "default": "./dist/config.js"
+    },
+    "./ensure-database": {
+      "types": "./dist/ensure-database.d.ts",
+      "default": "./dist/ensure-database.js"
+    },
+    "./cli/migrate": {
+      "default": "./dist/cli/migrate.js"
     }
   },
   "files": [

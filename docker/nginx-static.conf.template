@@ -1,0 +1,35 @@
+# Serves a Next.js static export (`out/`) the same way CloudFront + S3 do in production, so local == prod:
+#   /x/  → /x/index.html      /x → /x/ (301, trailingSlash)      unknown → 404.html
+# BASE_PATH is '' for fe-main and '/admin' for fe-admin (the export is copied under that prefix).
+# The official nginx image renders /etc/nginx/templates/*.template with envsubst at start.
+server {
+  listen 80;
+  server_name _;
+  root /usr/share/nginx/html;
+  # relative Location headers, so the redirect keeps whatever host:port the client used (localhost:4001, CloudFront)
+  absolute_redirect off;
+
+  add_header X-Content-Type-Options nosniff always;
+  add_header X-Frame-Options DENY always;
+  add_header Referrer-Policy strict-origin-when-cross-origin always;
+  add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+
+  gzip on;
+  gzip_types text/css application/javascript application/json image/svg+xml;
+
+  error_page 404 ${BASE_PATH}/404.html;
+
+  location ~* ^${BASE_PATH}/_next/static/ {
+    add_header Cache-Control "public, max-age=31536000, immutable";
+    try_files $uri =404;
+  }
+
+  # /x → /x/ (301), exactly what the CloudFront Function does for extension-less paths
+  location ~ ^[^.]*[^/]$ {
+    return 301 $uri/;
+  }
+
+  location / {
+    try_files $uri $uri/index.html $uri.html =404;
+  }
+}

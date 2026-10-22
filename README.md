@@ -11,12 +11,12 @@ apps/
   billing   :3004  invoices (skeleton)
   admin     :3005  back-office skeleton — audit_log table, tRPC clients to the other services
   ai        :3006  LLM facade skeleton (@bf/llm wired, no procedures yet)
-  fe-main   :4000  public Next.js site (placeholder page)
-  fe-admin  :4001  Next.js admin (placeholder dashboard)
+  fe-main   :4000  public Next.js site (placeholder page) — static export
+  fe-admin  :4001  Next.js admin (placeholder dashboard) — static export under /admin
 packages/  @bf/contracts (zod schemas + generated router types)  @bf/trpc (server context, middlewares, typed clients)
            @bf/config @bf/shared @bf/db @bf/events @bf/server @bf/storage @bf/llm @bf/ui
-docker/    nest.Dockerfile (ARG APP)  next.Dockerfile (ARG APP)  migrate.Dockerfile + migrate.sh
-infra/     postgres/redis/minio/otel/… compose files; infra/aws (CDK: one EC2 host + Aurora Serverless v2)
+docker/    nest.Dockerfile (ARG APP)  next.Dockerfile (ARG APP, nginx serving the export)  migrate.Dockerfile + migrate.sh
+infra/     postgres/redis/minio/otel/… compose files; infra/aws (CDK: ECS Fargate scale-to-zero + CloudFront/S3 + Aurora Serverless v2)
 ```
 
 ## Quick start (everything in Docker)
@@ -25,8 +25,8 @@ infra/     postgres/redis/minio/otel/… compose files; infra/aws (CDK: one EC2 
 nvm use && npm i -g pnpm@10.15.0 && pnpm install
 pnpm setup:env      # copies every .env.example → .env (apps + infra)
 pnpm stack:up       # docker compose up --build -d  → postgres, redis, minio, migrate, 7 services, 2 Next apps
-open http://localhost:4000   # fe-main
-open http://localhost:4001   # fe-admin
+open http://localhost:4000         # fe-main
+open http://localhost:4001/admin/  # fe-admin
 ```
 
 ## Quick start (apps on the host)
@@ -79,8 +79,8 @@ No app list anywhere: `scripts/apps.mjs` scans `apps/*` and the workflows fan ou
 - `pipeline.yml` is the **only** workflow for the path PR → production, so one run shows everything:
   - **CI** (PR and `main`): repo-wide prettier, packages, `infra/aws` (tsc · eslint · `cdk synth`), env drift, contracts drift; per affected app **static** (prettier · eslint · tsc · deps), **unit**, **migrations drift**, **e2e**, **docker build**. `ci ok` is the single required check.
   - **PR comments** (sticky, updated on every push): **release plan** (what a merge deploys), **infra diff** (`cdk diff`; fails on a removed/replaced stateful resource unless the PR has the label `allow-destructive`), **test report** (unit + e2e, failures included).
-  - **Production** (merge to `main`, or "Run workflow" for chosen apps / `infra`): `ci ok` → **approve** (one click, once `prod-approval` has a reviewer) → **DB snapshot** → `cdk deploy` (only if the stack changed) ∥ per app **build & push** → **rollout** (`drizzle-kit migrate`, `docker compose up --wait`, automatic rollback to the previous images when a container is unhealthy) → **smoke test** of the public URLs. Containers are checked on `/health/live` only; there is deliberately no DB health check (Aurora must be able to pause).
+  - **Production** (merge to `main`, or "Run workflow" for chosen apps / `infra`): `ci ok` → **approve** (one click, once `prod-approval` has a reviewer) → **DB snapshot** → `cdk deploy` (only if `infra/aws` changed) ∥ per service **build & push** (ECR) ∥ per frontend **export & upload** (S3 + CloudFront invalidation) → **release** (migrations as one-off Fargate tasks, then an ECS rolling deploy per service; the deployment circuit breaker rolls back a task that never gets healthy) → **smoke test** of the public URLs. Tasks are checked on `/health/live` only; there is deliberately no DB health check (Aurora must be able to pause), and services sleep when idle (the orchestrator in `apps/api` wakes them on the first request).
 - `db-snapshot.yml` snapshots Aurora to S3 (called by the pipeline, or run by hand). One-time GitHub settings (branch protection on `ci ok`, the `prod-approval` environment, the label): `node scripts/ci/repo-settings.ts --apply`. AWS setup: `infra/aws/README.md`.
 - Workflow logic lives in TypeScript (`scripts/ci/*.ts`, `infra/aws/scripts/*.ts`), run with plain `node` — the same commands work locally.
 
-Decisions: `docs/ADR.md` (#16–20 cover the split). Infra details: `infra/README.md`. AWS: `infra/aws/README.md`.
+Decisions: `docs/ADR.md` (#16–20 cover the split, #23 the AWS platform). Infra details: `infra/README.md`. AWS: `infra/aws/README.md`.

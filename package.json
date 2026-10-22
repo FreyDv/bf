@@ -36,7 +36,11 @@
     "repo:settings": "node scripts/ci/repo-settings.ts",
     "aws:diff": "pnpm --filter @bf/infra-aws run diff",
     "aws:deploy": "pnpm --filter @bf/infra-aws run deploy",
-    "aws:host-deploy": "node infra/aws/scripts/host-deploy.ts",
+    "aws:deploy:apps": "pnpm --filter @bf/infra-aws run deploy:apps",
+    "aws:release": "node infra/aws/scripts/release.ts",
+    "aws:static": "node infra/aws/scripts/static-deploy.ts",
+    "aws:services": "node infra/aws/scripts/services.ts",
+    "aws:exec": "node infra/aws/scripts/exec.ts",
     "db:allow-me": "node infra/aws/scripts/db-allow-me.ts",
     "db:url": "node infra/aws/scripts/db-url.ts",
     "db:rotate-password": "node infra/aws/scripts/db-rotate-password.ts"

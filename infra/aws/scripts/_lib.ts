@@ -5,15 +5,18 @@ import { appendFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { DescribeInstancesCommand, EC2Client } from '@aws-sdk/client-ec2';
-import { GetCommandInvocationCommand, SendCommandCommand, SSMClient } from '@aws-sdk/client-ssm';
+import { GetParametersCommand, SSMClient } from '@aws-sdk/client-ssm';
 import { GetCallerIdentityCommand, STSClient } from '@aws-sdk/client-sts';
 
-import { discoverApps } from '../../../scripts/apps.mjs';
+import { discover } from '../lib/apps.ts';
 import { config, names } from '../lib/config.ts';
 
+import type { PlatformParameter } from '../lib/config.ts';
+
+export type { App } from '../lib/apps.ts';
+export { repoRoot } from '../lib/apps.ts';
+
 export const awsDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-export const repoRoot = resolve(awsDir, '../..');
 
 /** Options for every SDK client: the region always comes from lib/config.ts, never from the shell. */
 export const sdk = { region: config.region };
@@ -24,39 +27,40 @@ export async function accountId(): Promise<string> {
   return Account;
 }
 
-/** One entry of scripts/apps.mjs (plain JS, so its shape is declared here). */
-export interface App {
-  name: string;
-  path: string;
-  kind: 'nest' | 'next' | 'other';
-  dockerfile: string | null;
-  migrations: boolean;
-}
+/** Apps from scripts/apps.mjs (the single source of truth), optionally narrowed to the given names. */
+export const apps = discover;
 
-/** Apps from scripts/apps.mjs (the single source of truth), optionally narrowed to the given names. v1*/
-export function apps(only: string[] = []): App[] {
-  const cwd = process.cwd();
-  process.chdir(repoRoot); // apps.mjs scans ./apps
-  try {
-    const all = discoverApps() as App[];
-    const unknown = only.filter((name) => !all.some((a) => a.name === name));
-    if (unknown.length) throw new Error(`unknown app(s): ${unknown.join(', ')}`);
-    return only.length ? all.filter((a) => only.includes(a.name)) : all;
-  } finally {
-    process.chdir(cwd);
+/** Ids the platform stack publishes for the scripts (subnets, security group, distribution, …). */
+export async function platformParams<K extends PlatformParameter>(
+  keys: readonly K[],
+): Promise<Record<K, string>> {
+  const { Parameters = [], InvalidParameters = [] } = await new SSMClient(sdk).send(
+    new GetParametersCommand({ Names: keys.map((key) => names.platformParameter(key)) }),
+  );
+  if (InvalidParameters.length)
+    throw new Error(
+      `missing SSM parameter(s) ${InvalidParameters.join(', ')} — is the stack ${names.stack} deployed?`,
+    );
+  const out = {} as Record<K, string>;
+  for (const key of keys) {
+    const value = Parameters.find((p) => p.Name === names.platformParameter(key))?.Value;
+    if (!value) throw new Error(`empty SSM parameter ${names.platformParameter(key)}`);
+    out[key] = value;
   }
+  return out;
 }
 
 /** Runs a program with inherited stdio; throws if it exits non-zero. */
 export function run(
   command: string,
   args: string[],
-  options: { cwd?: string; input?: string } = {},
+  options: { cwd?: string; input?: string; env?: Record<string, string> } = {},
 ) {
   console.log(`$ ${command} ${args.join(' ')}`);
   const result = spawnSync(command, args, {
-    cwd: options.cwd ?? repoRoot,
+    cwd: options.cwd ?? resolve(awsDir, '../..'),
     input: options.input,
+    env: options.env ? { ...process.env, ...options.env } : process.env,
     stdio: [options.input === undefined ? 'inherit' : 'pipe', 'inherit', 'inherit'],
   });
   if (result.error) throw result.error;
@@ -65,75 +69,24 @@ export function run(
 
 export const sleep = (ms: number) => new Promise((done) => setTimeout(done, ms));
 
-const TIMEOUT_SECONDS = 1800;
-
-/** The running instance tagged bf:env=<env>. */
-export async function findHost(): Promise<string> {
-  const { Reservations = [] } = await new EC2Client(sdk).send(
-    new DescribeInstancesCommand({
-      Filters: [
-        { Name: `tag:${names.hostTag.key}`, Values: [names.hostTag.value] },
-        { Name: 'instance-state-name', Values: ['running'] },
-      ],
-    }),
-  );
-  const ids = Reservations.flatMap((r) => r.Instances ?? []).map((i) => i.InstanceId!);
-  if (ids.length !== 1) {
-    throw new Error(
-      `expected exactly one running host, found ${ids.length} — is ${names.stack} deployed?`,
-    );
-  }
-  return ids[0]!;
-}
-
-/** Sends the script and polls until it finishes; returns the invocation (status + output). */
-export async function runOnHost(
-  instanceId: string,
-  commands: string[],
-  comment = 'bf host deploy',
-) {
-  const ssm = new SSMClient(sdk);
-  const { Command } = await ssm.send(
-    new SendCommandCommand({
-      InstanceIds: [instanceId],
-      DocumentName: 'AWS-RunShellScript',
-      Comment: comment,
-      TimeoutSeconds: 60,
-      Parameters: { commands, executionTimeout: [String(TIMEOUT_SECONDS)] },
-    }),
-  );
-  const commandId = Command!.CommandId!;
-  console.log(`ssm command ${commandId} on ${instanceId} — waiting…`);
-
-  const deadline = Date.now() + (TIMEOUT_SECONDS + 120) * 1000;
-  while (Date.now() < deadline) {
-    await sleep(5000);
-    const invocation = await ssm
-      .send(new GetCommandInvocationCommand({ CommandId: commandId, InstanceId: instanceId }))
-      .catch((error: Error) => {
-        if (error.name === 'InvocationDoesNotExist') return undefined; // not registered yet
-        throw error;
-      });
-    if (invocation && !['Pending', 'InProgress', 'Delayed'].includes(invocation.Status ?? '')) {
-      return invocation;
-    }
-  }
-  throw new Error(`ssm command ${commandId} did not finish in time`);
-}
-
 /** `--name value` from argv, or undefined. */
 export function flag(name: string): string | undefined {
   const i = process.argv.indexOf(`--${name}`);
   return i === -1 ? undefined : process.argv[i + 1];
 }
 
-/** Positional arguments (everything that is not a `--flag value` pair). */
-export function positionals(): string[] {
+/** `--name` present in argv (no value). */
+export const has = (name: string) => process.argv.includes(`--${name}`);
+
+/** Positional arguments (everything that is not a `--flag value` pair; bare `--switch`es listed in `switches` take no value). */
+export function positionals(switches: string[] = []): string[] {
   const out: string[] = [];
   const argv = process.argv.slice(2);
   for (let i = 0; i < argv.length; i++) {
-    if (argv[i]!.startsWith('--')) i++;
-    else out.push(argv[i]!);
+    const arg = argv[i]!;
+    if (arg.startsWith('--')) {
+      if (!switches.includes(arg.slice(2))) i++;
+    } else out.push(arg);
   }
   return out;
 }
@@ -151,3 +104,7 @@ export function main(fn: () => Promise<void>) {
     process.exit(1);
   });
 }
+
+/** True when this module is the entry point (`node x.ts`), false when imported by another script. */
+export const isEntry = (moduleUrl: string) =>
+  process.argv[1] !== undefined && moduleUrl === new URL(`file://${process.argv[1]}`).href;

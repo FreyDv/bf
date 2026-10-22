@@ -13,6 +13,8 @@
     "test": "NODE_OPTIONS=--experimental-vm-modules jest --passWithNoTests"
   },
   "dependencies": {
+    "@aws-sdk/client-application-auto-scaling": "catalog:",
+    "@aws-sdk/client-ecs": "catalog:",
     "@bf/server": "workspace:*",
     "@bf/shared": "workspace:*",
     "@bf/trpc": "workspace:*",
@@ -25,6 +27,7 @@
     "@nestjs/throttler": "catalog:",
     "class-transformer": "catalog:",
     "class-validator": "catalog:",
+    "express": "catalog:",
     "http-proxy-middleware": "catalog:",
     "reflect-metadata": "catalog:",
     "rxjs": "catalog:",

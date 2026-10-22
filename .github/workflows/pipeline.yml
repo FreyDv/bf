@@ -12,14 +12,15 @@ name: pipeline
 #             │                resource unless the PR has the label `allow-destructive`
 #             └ report         sticky PR comment: unit + e2e results (from the jest.json artifacts)
 #                    └──► ci-ok  (the single required check)
-#                              └──► approve ─► snapshot ─► infra ─┐
-#                                          └─► images (per app) ──┴─► rollout ─► smoke
+#                              └──► approve ─► snapshot ─► infra ──┬─► frontends (per app) ───┐
+#                                          └─► images (per app) ───┴─► release ──────────────┴─► smoke
 #
 # `approve` waits for ONE human approval per run once the environment `prod-approval` has a required reviewer
 # (node scripts/ci/repo-settings.ts --apply sets that up, plus branch protection on `ci ok`).
-# `rollout` pulls the images, migrates and runs `docker compose up --wait`; it rolls back to the previous images
-# when a container does not become healthy. Every deploy step is a TypeScript script you can also run from a laptop
-# (infra/aws/README.md). No app list anywhere: scripts/apps.mjs scans apps/*.
+# `images` pushes the Nest images to ECR, `frontends` exports the Next apps to S3 (+ CloudFront invalidation),
+# `release` runs the migrations as one-off Fargate tasks and rolls the ECS services to the new image (the deployment
+# circuit breaker rolls back when a task never becomes healthy). Every deploy step is a TypeScript script you can also
+# run from a laptop (infra/aws/README.md). No app list anywhere: scripts/apps.mjs scans apps/*.
 
 on:
   pull_request:
@@ -32,7 +33,7 @@ on:
         type: string
         default: all
       infra:
-        description: also deploy the CDK stack bf-prod
+        description: also deploy the CDK stacks (bf-prod, bf-prod-apps)
         type: boolean
         default: false
       skip_migrations:
@@ -68,12 +69,15 @@ jobs:
       e2e: ${{ steps.ci.outputs.e2e }}
       docker: ${{ steps.ci.outputs.docker }}
       images: ${{ steps.deploy.outputs.images }}
+      image_names: ${{ steps.deploy.outputs.image_names }}
       migrate: ${{ steps.deploy.outputs.migrate }}
+      static: ${{ steps.deploy.outputs.static }}
+      static_names: ${{ steps.deploy.outputs.static_names }}
       release: ${{ steps.deploy.outputs.release }}
-      # does infra/aws (the CDK stack) change? PR: for the diff; main: for the deploy
+      # does infra/aws (the CDK stacks) change? PR: for the diff; main: for the deploy
       infra: ${{ steps.deploy.outputs.infra || steps.ci.outputs.infra }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with: { fetch-depth: 0 }
       - uses: ./.github/actions/setup
         with: { ignore-scripts: 'true' }
@@ -96,7 +100,7 @@ jobs:
     if: github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-24.04-arm
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: ./.github/actions/setup
         with: { ignore-scripts: 'true' }
       - run: pnpm format:check
@@ -106,22 +110,26 @@ jobs:
     if: github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-24.04-arm
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: ./.github/actions/setup
         with: { turbo-cache: packages }
       - run: pnpm turbo run build --cache-dir=.turbo --filter='./packages/*'
       - run: pnpm turbo run lint typecheck test --cache-dir=.turbo --continue --filter='./packages/*'
 
   infra-check:
-    name: infra/aws · tsc · eslint · cdk synth
+    name: infra/aws · tsc · eslint · tests · cdk synth
     if: github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-24.04-arm
+    env:
+      # no credentials here: fail the SDK credential chain fast instead of probing the instance metadata endpoint
+      AWS_EC2_METADATA_DISABLED: 'true'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: ./.github/actions/setup
         with: { turbo-cache: infra }
       - run: pnpm typecheck:scripts
       - run: pnpm turbo run lint typecheck --cache-dir=.turbo --filter=@bf/infra-aws
+      - run: pnpm --filter @bf/infra-aws run test
       - run: pnpm --filter @bf/infra-aws run synth
 
   env-drift:
@@ -129,7 +137,7 @@ jobs:
     if: github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-24.04-arm
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: ./.github/actions/setup
         with: { turbo-cache: env-drift }
       - run: pnpm turbo run build --cache-dir=.turbo --filter='./packages/*' --filter='./apps/*'
@@ -140,7 +148,7 @@ jobs:
     if: github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-24.04-arm
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: ./.github/actions/setup
         with: { turbo-cache: contracts }
       - run: pnpm turbo run build --cache-dir=.turbo --filter='./packages/*'
@@ -158,7 +166,7 @@ jobs:
       matrix:
         include: ${{ fromJson(needs.discover.outputs.changed) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: ./.github/actions/setup
         with:
           filter: ${{ matrix.name }}...
@@ -182,7 +190,7 @@ jobs:
       matrix:
         include: ${{ fromJson(needs.discover.outputs.unit) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: ./.github/actions/setup
         with:
           filter: ${{ matrix.name }}...
@@ -191,7 +199,7 @@ jobs:
       - name: jest (JSON result for the PR test report)
         run: pnpm --filter "${{ matrix.name }}" test --json --outputFile="$GITHUB_WORKSPACE/jest.json"
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: report-unit-${{ matrix.name }}
           path: jest.json
@@ -221,7 +229,7 @@ jobs:
       POSTGRES_PASSWORD: bf
       POSTGRES_DB: ${{ matrix.name }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: ./.github/actions/setup
         with: { filter: '${{ matrix.name }}...' }
       - run: pnpm turbo run build --filter="${{ matrix.name }}^..."
@@ -269,7 +277,7 @@ jobs:
       S3_BUCKET: bf-order
       AUTH_URL: http://localhost:3001
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: ./.github/actions/setup
         with: { filter: '${{ matrix.name }}...' }
       - name: MinIO (start, wait until healthy, create the bucket)
@@ -286,7 +294,7 @@ jobs:
       - name: jest e2e (JSON result for the PR test report)
         run: pnpm --filter "${{ matrix.name }}" test:e2e --json --outputFile="$GITHUB_WORKSPACE/jest.json"
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: report-e2e-${{ matrix.name }}
           path: jest.json
@@ -303,11 +311,11 @@ jobs:
       matrix:
         include: ${{ fromJson(needs.discover.outputs.docker) }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v4
       - name: compose file is valid
         run: node scripts/setup-env.mjs && docker compose config -q
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v7
         with:
           context: .
           file: ${{ matrix.dockerfile }}
@@ -329,7 +337,7 @@ jobs:
       BASE: ${{ github.event.pull_request.base.sha }}
       GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with: { fetch-depth: 0 }
       - uses: ./.github/actions/setup
         with: { ignore-scripts: 'true' }
@@ -350,7 +358,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       PR_NUMBER: ${{ github.event.pull_request.number }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: ./.github/actions/setup
         with: { filter: '@bf/infra-aws...', ignore-scripts: 'true' }
       - uses: ./.github/actions/aws-auth
@@ -371,10 +379,10 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: ./.github/actions/setup
         with: { ignore-scripts: 'true' }
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         continue-on-error: true # no matching artifact = no tests ran
         with:
           pattern: report-*
@@ -403,9 +411,9 @@ jobs:
     if: always()
     runs-on: ubuntu-24.04-arm
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version-file: .nvmrc }
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with: { node-version-file: .nvmrc, package-manager-cache: false } # pnpm is not installed in this job
       - name: every stage succeeded or was skipped
         env:
           NEEDS: ${{ toJson(needs) }}
@@ -415,17 +423,18 @@ jobs:
   approve:
     name: approve production deploy
     needs: [discover, ci-ok]
-    if: github.event_name != 'pull_request' && (needs.discover.outputs.release == 'true' || needs.discover.outputs.infra == 'true')
+    # explicit status check: the implicit success() also looks at skipped ancestors (the PR-only plan jobs) and would skip this
+    if: ${{ !cancelled() && needs.ci-ok.result == 'success' && github.event_name != 'pull_request' && (needs.discover.outputs.release == 'true' || needs.discover.outputs.static != '[]' || needs.discover.outputs.infra == 'true') }}
     runs-on: ubuntu-24.04-arm
     # a separate environment: the AWS roles trust `prod`, so approvals must not sit on it (every job would ask)
     environment: prod-approval
     steps:
-      - run: echo "approved — apps ${{ needs.discover.outputs.images }}, migrate ${{ needs.discover.outputs.migrate }}, infra ${{ needs.discover.outputs.infra }}"
+      - run: echo "approved — services ${{ needs.discover.outputs.image_names }}, frontends ${{ needs.discover.outputs.static_names }}, migrate ${{ needs.discover.outputs.migrate }}, infra ${{ needs.discover.outputs.infra }}"
 
   snapshot:
     name: db snapshot
     needs: [discover, approve]
-    if: github.event.inputs.skip_snapshot != 'true'
+    if: ${{ !cancelled() && needs.approve.result == 'success' && github.event.inputs.skip_snapshot != 'true' }}
     permissions:
       id-token: write
       contents: read
@@ -434,7 +443,7 @@ jobs:
       label: ${{ github.sha }}
 
   infra:
-    name: cdk deploy
+    name: cdk deploy (bf-prod, bf-prod-apps)
     needs: [discover, approve, snapshot]
     if: always() && needs.approve.result == 'success' && needs.discover.outputs.infra == 'true' && !contains(fromJSON('["failure","cancelled"]'), needs.snapshot.result)
     runs-on: ubuntu-24.04-arm
@@ -443,18 +452,19 @@ jobs:
       id-token: write
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: ./.github/actions/setup
         with: { filter: '@bf/infra-aws...', ignore-scripts: 'true' }
       - uses: ./.github/actions/aws-auth
         with: { role: bf-gha-infra, account-id: '${{ vars.AWS_ACCOUNT_ID }}' }
+      # synth reads SSM /bf/prod/images/<app> so the services keep the image they run (infra/aws/lib/images.ts)
       - run: pnpm aws:deploy
 
   images:
     name: ${{ matrix.name }} · build & push
     needs: [discover, approve]
-    if: needs.discover.outputs.images != '[]'
-    runs-on: ubuntu-24.04-arm # native arm64 (the host is Graviton): no QEMU emulation
+    if: ${{ !cancelled() && needs.approve.result == 'success' && needs.discover.outputs.images != '[]' }}
+    runs-on: ubuntu-24.04-arm # native arm64 (Fargate ARM64 tasks): no QEMU emulation
     environment: prod # keep equal to `env` in infra/aws/lib/config.ts
     permissions:
       id-token: write
@@ -464,7 +474,7 @@ jobs:
       matrix:
         include: ${{ fromJson(needs.discover.outputs.images) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: ./.github/actions/setup
         with: { filter: '@bf/infra-aws...', ignore-scripts: 'true' }
       - uses: ./.github/actions/aws-auth
@@ -473,51 +483,78 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v2
       - name: ECR repository exists (created on first deploy of a new app)
         run: node infra/aws/scripts/push-images.ts --ensure-repo "${{ matrix.name }}"
-      - name: build args (NEXT_PUBLIC_* from infra/aws/lib/config.ts)
-        id: args
-        run: node infra/aws/scripts/build-args.ts "${{ matrix.name }}" >> "$GITHUB_OUTPUT"
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/build-push-action@v6
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/build-push-action@v7
         with:
           context: .
           file: ${{ matrix.dockerfile }}
-          build-args: ${{ steps.args.outputs.args }}
+          build-args: APP=${{ matrix.name }}
           platforms: linux/arm64
           push: true
-          # <sha> for traceability, <env> as the floating tag infra/aws/host/compose.yml points at
+          # <sha> is what the release pins the service to; <env> is the floating tag a service runs until then
           tags: |
             ${{ steps.ecr.outputs.registry }}/bf-${{ env.BF_ENV }}/${{ matrix.name }}:${{ github.sha }}
             ${{ steps.ecr.outputs.registry }}/bf-${{ env.BF_ENV }}/${{ matrix.name }}:${{ env.BF_ENV }}
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
 
-  rollout:
-    name: migrate & roll out on the host
-    needs: [discover, approve, snapshot, infra, images]
-    # snapshot, infra and images must have succeeded or been skipped on purpose — a failure in any of them blocks the release
-    if: always() && needs.approve.result == 'success' && needs.discover.outputs.release == 'true' && !contains(fromJSON('["failure","cancelled"]'), needs.snapshot.result) && !contains(fromJSON('["failure","cancelled"]'), needs.infra.result) && !contains(fromJSON('["failure","cancelled"]'), needs.images.result)
+  frontends:
+    name: ${{ matrix.name }} · export & upload
+    needs: [discover, approve, snapshot, infra]
+    # the buckets and the distribution come from bf-prod, so a failed infra deploy blocks this
+    if: always() && needs.approve.result == 'success' && needs.discover.outputs.static != '[]' && !contains(fromJSON('["failure","cancelled"]'), needs.snapshot.result) && !contains(fromJSON('["failure","cancelled"]'), needs.infra.result)
+    runs-on: ubuntu-24.04-arm
+    environment: prod # keep equal to `env` in infra/aws/lib/config.ts
+    permissions:
+      id-token: write
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.discover.outputs.static) }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup
+        with: { turbo-cache: '${{ matrix.name }}' }
+      - uses: ./.github/actions/aws-auth
+        with: { role: bf-gha-app, account-id: '${{ vars.AWS_ACCOUNT_ID }}' }
+      - name: next build (export) → S3 → CloudFront invalidation
+        run: node infra/aws/scripts/static-deploy.ts "${{ matrix.name }}"
+
+  release:
+    name: migrate & roll out (ECS)
+    needs: [discover, approve, snapshot, infra, images, frontends]
+    # snapshot, infra, images and frontends must have succeeded or been skipped on purpose — a failure in any of them blocks the release
+    if: always() && needs.approve.result == 'success' && needs.discover.outputs.release == 'true' && !contains(fromJSON('["failure","cancelled"]'), needs.snapshot.result) && !contains(fromJSON('["failure","cancelled"]'), needs.infra.result) && !contains(fromJSON('["failure","cancelled"]'), needs.images.result) && !contains(fromJSON('["failure","cancelled"]'), needs.frontends.result)
     runs-on: ubuntu-24.04-arm
     environment: prod # keep equal to `env` in infra/aws/lib/config.ts
     permissions:
       id-token: write
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: ./.github/actions/setup
         with: { filter: '@bf/infra-aws...', ignore-scripts: 'true' }
       - uses: ./.github/actions/aws-auth
         with: { role: bf-gha-app, account-id: '${{ vars.AWS_ACCOUNT_ID }}' }
-      - env:
-          MIGRATE: ${{ github.event.inputs.skip_migrations == 'true' && 'none' || needs.discover.outputs.migrate }}
-        run: node infra/aws/scripts/host-deploy.ts --migrate "$MIGRATE"
+      - name: migrations (one-off Fargate task per DB app)
+        if: needs.discover.outputs.migrate != '' && github.event.inputs.skip_migrations != 'true'
+        env:
+          APPS: ${{ needs.discover.outputs.migrate }}
+        run: node infra/aws/scripts/ecs-migrate.ts --tag "$GITHUB_SHA" $APPS
+      - name: roll the services to the new image
+        env:
+          APPS: ${{ needs.discover.outputs.image_names }}
+        run: node infra/aws/scripts/ecs-deploy.ts --tag "$GITHUB_SHA" $APPS
 
   smoke:
     name: smoke test (public URLs)
-    needs: rollout
-    if: needs.rollout.result == 'success'
+    needs: [release, frontends]
+    # after whichever of the two ran; a failed one blocks it
+    if: always() && !contains(fromJSON('["failure","cancelled"]'), needs.release.result) && !contains(fromJSON('["failure","cancelled"]'), needs.frontends.result) && (needs.release.result == 'success' || needs.frontends.result == 'success')
     runs-on: ubuntu-24.04-arm
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: ./.github/actions/setup
         with: { filter: '@bf/infra-aws...', ignore-scripts: 'true' }
       - run: node infra/aws/scripts/smoke.ts

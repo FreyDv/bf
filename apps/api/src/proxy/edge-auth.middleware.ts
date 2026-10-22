@@ -14,7 +14,8 @@ import type { Env } from '../app/env.schema';
 import type { JwtPayload } from '@bf/shared/interfaces';
 import type { NextFunction, Request, Response } from 'express';
 
-const ALWAYS_PUBLIC = /^\/[a-z][a-z0-9-]*\/(health)(\/|$|\?)/;
+/** `/<svc>/health…`: never needs a token (and never wakes a sleeping service, see WakeMiddleware). */
+export const ALWAYS_PUBLIC = /^\/[a-z][a-z0-9-]*\/(health)(\/|$|\?)/;
 
 /**
  * Edge authentication. Verifies the bearer JWT (RS256, public key) and forwards the identity as
