@@ -99,7 +99,13 @@ One Aurora cluster, one database per app (`POSTGRES_DB=<app>`), created by the m
 - `/<svc>/health/*` never wakes a service (503 `SERVICE_ASLEEP` while it sleeps); the smoke test only hits the edge.
 - `alwaysOn` (`config.ecs`, default `['api']`) services keep a minimum of 1 task.
 
-Runtime knobs, from a laptop or through the edge (`/api/_services`, role `admin`):
+The admin UI shows the same picture at `/admin/infra` (`fe-admin`): every service with its status, running tasks,
+vCPU and memory per task (from the task definition), last activity, a **Wake up** button per service and **Wake up
+all**, plus every Aurora cluster of the account with its status and current ACU. It talks tRPC to the edge's own
+router (`/api/_services/trpc`, contract `@bf/contracts/api`: `services.list|wake|wakeAll|sleep|redeploy|cooldown|bounds`,
+`databases.list`). The clusters are discovered through the SDK (`rds:DescribeDBClusters`), nothing is configured.
+
+Runtime knobs, from a laptop or through the edge (`/api/_services/trpc`, role `admin`):
 
 ```bash
 pnpm aws:services                          # who is awake, since when, bounds, cooldown, revision

@@ -5,6 +5,7 @@ import {
 } from '@aws-sdk/client-application-auto-scaling';
 import {
   DescribeServicesCommand,
+  DescribeTaskDefinitionCommand,
   ECSClient,
   TagResourceCommand,
   UpdateServiceCommand,
@@ -30,9 +31,17 @@ export interface Bounds {
   max: number;
 }
 
+/** Size of one task, as the task definition declares it (`cpu` in CPU units: 1024 = 1 vCPU; memory in MiB). */
+export interface TaskSize {
+  cpu: number;
+  memory: number;
+}
+
 /** The handful of AWS calls the orchestrator needs; `SdkEcsApi` is the only code touching the SDK. */
 export interface EcsApi {
   describeServices(names: string[]): Promise<ServiceState[]>;
+  /** Size of a task definition revision (immutable, so callers may cache by ARN). */
+  describeTaskDefinition(taskDefinition: string): Promise<TaskSize>;
   updateDesiredCount(name: string, desired: number): Promise<void>;
   forceNewDeployment(name: string): Promise<void>;
   /** Application Auto Scaling bounds of the service (`min 0/0` = asleep, `min 1/N` = awake). */
@@ -46,6 +55,8 @@ export const ECS_API = Symbol.for('bf.orchestrator.ecsApi');
 export class SdkEcsApi implements EcsApi {
   private readonly ecs: ECSClient;
   private readonly scaling: ApplicationAutoScalingClient;
+  /** A task definition revision never changes, so its size is fetched once per api task. */
+  private readonly taskSizes = new Map<string, Promise<TaskSize>>();
 
   constructor(
     private readonly cluster: string,
@@ -92,6 +103,23 @@ export class SdkEcsApi implements EcsApi {
       }
     }
     return out;
+  }
+
+  describeTaskDefinition(taskDefinition: string): Promise<TaskSize> {
+    const cached = this.taskSizes.get(taskDefinition);
+    if (cached) return cached;
+    const pending = this.ecs
+      .send(new DescribeTaskDefinitionCommand({ taskDefinition }))
+      .then(({ taskDefinition: def }) => ({
+        cpu: Number(def?.cpu ?? 0),
+        memory: Number(def?.memory ?? 0),
+      }))
+      .catch((error: unknown) => {
+        this.taskSizes.delete(taskDefinition);
+        throw error;
+      });
+    this.taskSizes.set(taskDefinition, pending);
+    return pending;
   }
 
   async updateDesiredCount(name: string, desired: number): Promise<void> {

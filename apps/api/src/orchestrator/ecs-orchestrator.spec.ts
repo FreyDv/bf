@@ -282,6 +282,34 @@ describe('EcsOrchestrator — admin surface', () => {
     expect(by.auth!.bounds).toEqual({ min: 1, max: 4 });
   });
 
+  it('lists the task size of every service and survives a failed task definition lookup', async () => {
+    const { api, orch, logs } = setup();
+    api.taskSize = { cpu: 256, memory: 512 };
+    let list = await orch.list();
+    expect(list.every((v) => v.task?.cpu === 256 && v.task.memory === 512)).toBe(true);
+    // one DescribeTaskDefinition per distinct revision, not per service per request
+    expect(api.count('taskDefinition')).toBe(NAMES.length);
+
+    api.describeTaskDefinition = () => Promise.reject(new Error('AccessDenied'));
+    list = await orch.list();
+    expect(list.every((v) => v.task === undefined)).toBe(true);
+    expect(list.map((v) => v.status)).toEqual(NAMES.map(() => 'asleep'));
+    expect(logs.some((l) => l.includes('task_definition_failed'))).toBe(true);
+  });
+
+  it('wakeAll starts every sleeping service once and leaves awake ones alone', async () => {
+    const { api, orch, clock, flush } = setup();
+    awake(api, 'auth', Math.floor(clock.now() / 1000));
+    await orch.wakeAll();
+    await flush();
+    expect(api.count('desired')).toBe(NAMES.length - 1);
+    expect(api.count('desired', 'auth')).toBe(0);
+    for (const name of NAMES) expect(api.get(name).desiredCount).toBe(1);
+    await orch.wakeAll();
+    await flush();
+    expect(api.count('desired')).toBe(NAMES.length - 1);
+  });
+
   it('wake / sleep / cooldown / bounds / redeploy map to the ECS calls', async () => {
     const { api, orch } = setup();
     await orch.wake('billing'); // closure auth, order, billing

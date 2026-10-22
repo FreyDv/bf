@@ -1,9 +1,11 @@
-import type { Bounds, EcsApi, ServiceState } from './ecs-api';
+import type { Bounds, EcsApi, ServiceState, TaskSize } from './ecs-api';
 
 /** In-memory ECS for unit tests: records every call, `advance()` simulates tasks coming up or going down. */
 export class FakeEcsApi implements EcsApi {
   readonly services = new Map<string, ServiceState & Bounds>();
   readonly calls: { op: string; name: string; args?: unknown }[] = [];
+  /** Size reported for every task definition (0.5 vCPU / 1 GB, like production). */
+  taskSize: TaskSize = { cpu: 512, memory: 1024 };
 
   constructor(names: string[], now = 0) {
     for (const name of names) {
@@ -15,6 +17,7 @@ export class FakeEcsApi implements EcsApi {
         pendingCount: 0,
         rolloutState: 'COMPLETED',
         deploymentUpdatedAt: now,
+        taskDefinition: `arn:aws:ecs:us-east-1:1:task-definition/bf-prod-${name}:1`,
         tags: {},
         min: 0,
         max: 4,
@@ -43,6 +46,11 @@ export class FakeEcsApi implements EcsApi {
         .filter((n) => this.services.has(n))
         .map((n) => ({ ...this.get(n), tags: { ...this.get(n).tags } })),
     );
+  }
+
+  describeTaskDefinition(taskDefinition: string): Promise<TaskSize> {
+    this.calls.push({ op: 'taskDefinition', name: taskDefinition });
+    return Promise.resolve({ ...this.taskSize });
   }
 
   updateDesiredCount(name: string, desired: number): Promise<void> {

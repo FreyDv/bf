@@ -5,6 +5,7 @@
  * consumer only pulls the schemas it needs. See README.md for the rules.
  */
 export * as common from './common';
+export * as api from './api';
 export * as auth from './auth';
 export * as order from './order';
 export * as course from './course';

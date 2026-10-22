@@ -10,11 +10,15 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "NODE_OPTIONS=--experimental-vm-modules jest --passWithNoTests"
+    "test": "NODE_OPTIONS=--experimental-vm-modules jest --passWithNoTests",
+    "contracts:generate": "node ../../scripts/trpc-generate.mjs api"
   },
   "dependencies": {
     "@aws-sdk/client-application-auto-scaling": "catalog:",
+    "@aws-sdk/client-cloudwatch": "catalog:",
     "@aws-sdk/client-ecs": "catalog:",
+    "@aws-sdk/client-rds": "catalog:",
+    "@bf/contracts": "workspace:*",
     "@bf/server": "workspace:*",
     "@bf/shared": "workspace:*",
     "@bf/trpc": "workspace:*",
@@ -25,10 +29,12 @@
     "@nestjs/platform-express": "catalog:",
     "@nestjs/terminus": "catalog:",
     "@nestjs/throttler": "catalog:",
+    "@trpc/server": "catalog:",
     "class-transformer": "catalog:",
     "class-validator": "catalog:",
     "express": "catalog:",
     "http-proxy-middleware": "catalog:",
+    "nestjs-trpc": "catalog:",
     "reflect-metadata": "catalog:",
     "rxjs": "catalog:",
     "zod": "catalog:"

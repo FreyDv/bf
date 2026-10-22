@@ -24,6 +24,7 @@ function fakeOrchestrator(over: Partial<Orchestrator> = {}): Orchestrator & { ca
     invalidate: () => undefined,
     list: () => Promise.resolve([]),
     wake: () => Promise.resolve(),
+    wakeAll: () => Promise.resolve(),
     sleep: () => Promise.resolve(),
     setCooldown: () => Promise.resolve(),
     setBounds: () => Promise.resolve(),
