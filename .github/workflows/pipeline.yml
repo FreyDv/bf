@@ -12,14 +12,16 @@ name: pipeline
 #             │                resource unless the PR has the label `allow-destructive`
 #             └ report         sticky PR comment: unit + e2e results (from the jest.json artifacts)
 #                    └──► ci-ok  (the single required check)
-#                              └──► approve ─► snapshot ─► infra ──┬─► frontends (per app) ───┐
-#                                          └─► images (per app) ───┴─► release ──────────────┴─► smoke
+#                              └──► gate ─┬─► snapshot ──────────────────────────┐
+#                                         ├─► infra ─┬─► frontends (per app) ────┼─► smoke
+#                                         └─► images ┴──────────────┐            │
+#                                                      release (per app: migrate, then roll out) ┘
 #
-# `approve` waits for ONE human approval per run once the environment `prod-approval` has a required reviewer
-# (node scripts/ci/repo-settings.ts --apply sets that up, plus branch protection on `ci ok`).
+# There is no manual approval: a green `ci ok` on main deploys (`gate` only decides whether there is anything to deploy).
 # `images` pushes the Nest images to ECR, `frontends` exports the Next apps to S3 (+ CloudFront invalidation),
-# `release` runs the migrations as one-off Fargate tasks and rolls the ECS services to the new image (the deployment
-# circuit breaker rolls back when a task never becomes healthy). Every deploy step is a TypeScript script you can also
+# `release` runs, per app and in parallel, the migration as a one-off Fargate task and then rolls the ECS service to the
+# new image (the deployment circuit breaker rolls back when a task never becomes healthy); it waits for the DB snapshot,
+# the CDK deploy and the images. Every deploy step is a TypeScript script you can also
 # run from a laptop (infra/aws/README.md). No app list anywhere: scripts/apps.mjs scans apps/*.
 
 on:
@@ -420,21 +422,19 @@ jobs:
         run: node scripts/ci/ci-ok.ts
 
   # ══════════════════════════════════════════════════════════════ production (push to main, Run workflow)
-  approve:
-    name: approve production deploy
+  gate:
+    name: deploy plan
     needs: [discover, ci-ok]
     # explicit status check: the implicit success() also looks at skipped ancestors (the PR-only plan jobs) and would skip this
     if: ${{ !cancelled() && needs.ci-ok.result == 'success' && github.event_name != 'pull_request' && (needs.discover.outputs.release == 'true' || needs.discover.outputs.static != '[]' || needs.discover.outputs.infra == 'true') }}
     runs-on: ubuntu-24.04-arm
-    # a separate environment: the AWS roles trust `prod`, so approvals must not sit on it (every job would ask)
-    environment: prod-approval
     steps:
-      - run: echo "approved — services ${{ needs.discover.outputs.image_names }}, frontends ${{ needs.discover.outputs.static_names }}, migrate ${{ needs.discover.outputs.migrate }}, infra ${{ needs.discover.outputs.infra }}"
+      - run: echo "deploying — services ${{ needs.discover.outputs.image_names }}, frontends ${{ needs.discover.outputs.static_names }}, migrate ${{ needs.discover.outputs.migrate }}, infra ${{ needs.discover.outputs.infra }}"
 
   snapshot:
     name: db snapshot
-    needs: [discover, approve]
-    if: ${{ !cancelled() && needs.approve.result == 'success' && github.event.inputs.skip_snapshot != 'true' }}
+    needs: [discover, gate]
+    if: ${{ !cancelled() && needs.gate.result == 'success' && github.event.inputs.skip_snapshot != 'true' }}
     permissions:
       id-token: write
       contents: read
@@ -444,8 +444,8 @@ jobs:
 
   infra:
     name: cdk deploy (bf-prod, bf-prod-apps)
-    needs: [discover, approve, snapshot]
-    if: always() && needs.approve.result == 'success' && needs.discover.outputs.infra == 'true' && !contains(fromJSON('["failure","cancelled"]'), needs.snapshot.result)
+    needs: [discover, gate]
+    if: always() && needs.gate.result == 'success' && needs.discover.outputs.infra == 'true'
     runs-on: ubuntu-24.04-arm
     environment: prod # keep equal to `env` in infra/aws/lib/config.ts
     permissions:
@@ -462,8 +462,8 @@ jobs:
 
   images:
     name: ${{ matrix.name }} · build & push
-    needs: [discover, approve]
-    if: ${{ !cancelled() && needs.approve.result == 'success' && needs.discover.outputs.images != '[]' }}
+    needs: [discover, gate]
+    if: ${{ !cancelled() && needs.gate.result == 'success' && needs.discover.outputs.images != '[]' }}
     runs-on: ubuntu-24.04-arm # native arm64 (Fargate ARM64 tasks): no QEMU emulation
     environment: prod # keep equal to `env` in infra/aws/lib/config.ts
     permissions:
@@ -500,9 +500,9 @@ jobs:
 
   frontends:
     name: ${{ matrix.name }} · export & upload
-    needs: [discover, approve, snapshot, infra]
-    # the buckets and the distribution come from bf-prod, so a failed infra deploy blocks this
-    if: always() && needs.approve.result == 'success' && needs.discover.outputs.static != '[]' && !contains(fromJSON('["failure","cancelled"]'), needs.snapshot.result) && !contains(fromJSON('["failure","cancelled"]'), needs.infra.result)
+    needs: [discover, gate, infra]
+    # the buckets and the distribution come from bf-prod, so a failed infra deploy blocks this (the database is not touched)
+    if: always() && needs.gate.result == 'success' && needs.discover.outputs.static != '[]' && !contains(fromJSON('["failure","cancelled"]'), needs.infra.result)
     runs-on: ubuntu-24.04-arm
     environment: prod # keep equal to `env` in infra/aws/lib/config.ts
     permissions:
@@ -522,30 +522,31 @@ jobs:
         run: node infra/aws/scripts/static-deploy.ts "${{ matrix.name }}"
 
   release:
-    name: migrate & roll out (ECS)
-    needs: [discover, approve, snapshot, infra, images, frontends]
-    # snapshot, infra, images and frontends must have succeeded or been skipped on purpose — a failure in any of them blocks the release
-    if: always() && needs.approve.result == 'success' && needs.discover.outputs.release == 'true' && !contains(fromJSON('["failure","cancelled"]'), needs.snapshot.result) && !contains(fromJSON('["failure","cancelled"]'), needs.infra.result) && !contains(fromJSON('["failure","cancelled"]'), needs.images.result) && !contains(fromJSON('["failure","cancelled"]'), needs.frontends.result)
+    name: ${{ matrix.name }} · migrate & roll out
+    needs: [discover, gate, snapshot, infra, images]
+    # per app and in parallel: its own migration (one-off Fargate task, each app has its own database), then its rollout.
+    # A failure in snapshot, infra or images blocks every app; skipped on purpose is fine. The frontends are independent.
+    if: always() && needs.gate.result == 'success' && needs.discover.outputs.release == 'true' && !contains(fromJSON('["failure","cancelled"]'), needs.snapshot.result) && !contains(fromJSON('["failure","cancelled"]'), needs.infra.result) && !contains(fromJSON('["failure","cancelled"]'), needs.images.result)
     runs-on: ubuntu-24.04-arm
     environment: prod # keep equal to `env` in infra/aws/lib/config.ts
     permissions:
       id-token: write
       contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.discover.outputs.images) }}
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/setup
         with: { filter: '@bf/infra-aws...', ignore-scripts: 'true' }
       - uses: ./.github/actions/aws-auth
         with: { role: bf-gha-app, account-id: '${{ vars.AWS_ACCOUNT_ID }}' }
-      - name: migrations (one-off Fargate task per DB app)
-        if: needs.discover.outputs.migrate != '' && github.event.inputs.skip_migrations != 'true'
-        env:
-          APPS: ${{ needs.discover.outputs.migrate }}
-        run: node infra/aws/scripts/ecs-migrate.ts --tag "$GITHUB_SHA" $APPS
-      - name: roll the services to the new image
-        env:
-          APPS: ${{ needs.discover.outputs.image_names }}
-        run: node infra/aws/scripts/ecs-deploy.ts --tag "$GITHUB_SHA" $APPS
+      - name: migrate (one-off Fargate task)
+        if: matrix.migrations && github.event.inputs.skip_migrations != 'true'
+        run: node infra/aws/scripts/ecs-migrate.ts --tag "$GITHUB_SHA" "${{ matrix.name }}"
+      - name: roll out
+        run: node infra/aws/scripts/ecs-deploy.ts --tag "$GITHUB_SHA" "${{ matrix.name }}"
 
   smoke:
     name: smoke test (public URLs)
