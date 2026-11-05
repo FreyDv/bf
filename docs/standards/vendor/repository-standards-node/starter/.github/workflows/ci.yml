@@ -1,0 +1,55 @@
+# Quality gate - format + types + lint, Turbo-cached. A TEMPLATE for an adopting repo
+# (this file does not run in the standard's own repo).
+#
+# Hardened per DECISIONS.md #11: explicit least-privilege permissions (the one place the
+# standard improves on stayget, whose ci.yml had no top-level permissions block), pnpm
+# store cache, and a frozen lockfile. Actions are pinned by full commit SHA (DECISIONS.md #11).
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Least-privilege: this job only needs to read the repo.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version-file: ".nvmrc"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Restore Turbo cache
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: .turbo
+          key: ${{ runner.os }}-turbo-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-turbo-
+
+      - name: Format, types, and lint
+        run: pnpm check:all
+      - name: Unit tests (the fast tier rides the fast gate)
+        run: pnpm test:unit
+
+      # Also run the standard's compliance gate if the repo is aligned:
+      # - name: Self-verify
+      #   run: node scripts/self-verify.mjs

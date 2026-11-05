@@ -1,0 +1,23 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": [
+    "Dependency updates as reviewed diffs (DECISIONS.md #12). Everything stays exact-pinned; nothing lands before the same 7-day cooldown the install-time policy enforces."
+  ],
+  "extends": [
+    "config:recommended"
+  ],
+  "rangeStrategy": "pin",
+  "minimumReleaseAge": "7 days",
+  "labels": [
+    "deps"
+  ],
+  "packageRules": [
+    {
+      "matchUpdateTypes": [
+        "minor",
+        "patch"
+      ],
+      "groupName": "non-major updates"
+    }
+  ]
+}
