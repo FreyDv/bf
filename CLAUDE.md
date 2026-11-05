@@ -30,17 +30,15 @@ between doing it as you go or doing it under review pressure at the end.
 easily skipped: reconcile the spec against what you actually built, file what you noticed
 and did not do, review your own diff before pushing.
 
-## Two standards bind this repository, in full
+## Two bodies of binding rules, loaded in every session
 
-- **Repository Standards** (how the repo is run): `SPEC.md` is the normative core; the method
-  manual, the standard's own decision records and the digests are under `docs/standards/`.
-- **Domain-Driven Hexagon** (how every backend service is built): the rules are in
-  `docs/standards/domain-driven-hexagon/rules.md`, the mapping to NestJS + nestjs-trpc +
-  Drizzle is in `docs/standards/domain-driven-hexagon/bf-mapping.md`, and the hard rules load
-  automatically from `.claude/rules/backend-architecture.md` whenever a session edits
-  `apps/*` backend code.
+- **Repository Standards** (how the repo is run): `SPEC.md` is the normative core; the method manual, the
+  standard's own decision records and digests are under `docs/standards/`.
+- **Domain-Driven Hexagon** (how every backend is built): `.claude/rules/architecture-rules.md` (numbered,
+  stack-agnostic rules) and `.claude/rules/ai-protocol.md` (how a session plans, implements and reviews) are
+  loaded automatically. Plans for backend work MUST carry the `## Architecture conformance` section and MUST NOT
+  deviate from the rules without a recorded ADR; a conflict is a stop, not a judgement call (AIP-1, AIP-4).
 
-A session that plans, codes or reviews backend work reads
-[`docs/standards/README.md`](docs/standards/README.md) first: it says which document to load
-for which task, and which parts are binding. Deviation is legal only when it is recorded - as
-a manifest exception, a backlog row or a superseding decision record - never silently.
+[`docs/standards/README.md`](docs/standards/README.md) says which deeper document to read for which task.
+Deviation is legal only when it is recorded - as a manifest exception, a backlog row or a superseding decision
+record - never silently.
