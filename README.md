@@ -91,4 +91,4 @@ No app list anywhere: `scripts/apps.mjs` scans `apps/*` and the workflows fan ou
 - `db-snapshot.yml` snapshots Aurora to S3 (called by the pipeline, or run by hand). One-time GitHub settings (branch protection on `ci ok`, the label): `node scripts/ci/repo-settings.ts --apply`. AWS setup: `infra/aws/README.md`.
 - Workflow logic lives in TypeScript (`scripts/ci/*.ts`, `infra/aws/scripts/*.ts`), run with plain `node` — the same commands work locally.
 
-Decisions: `docs/ADR.md` (#16–20 cover the split, #23 the AWS platform). Infra details: `infra/README.md`. AWS: `infra/aws/README.md`.
+Decisions: `docs/decision-records/` (ADR-016..020 cover the split, ADR-023 the AWS platform). Infra details: `infra/README.md`. AWS: `infra/aws/README.md`.
