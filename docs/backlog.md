@@ -39,8 +39,8 @@ Alignment scope for this repo -> standard@1.0.19
 
 | id | title | cap | persona | owner | assignee | size | why | source | DoD | status |
 |----|-------|-----|---------|-------|----------|------|-----|--------|-----|--------|
-| PERSONAS-1 | Подтвердить BDR-001 и персоны | - | `Владелец-оператор` | product |  | S | персоны - ворота валидации; вся работа ссылается на них | onboarding | маркеры `[NEEDS INPUT]` и `[NEEDS REVIEW]` сняты | todo |
-| PRODUCT-1 | North Star, метрики, не-цели | - | `Владелец-оператор` | product |  | S | спеки пишут `Success metric: n/a` без причины | onboarding | раздел «Success metrics» заполнен | todo |
+| PERSONAS-1 | Подтвердить BDR-001 и персоны (отложено 2026-11-05: поля недоверия, целей и признаков успеха ждут первой спеки; `[NEEDS DECISION]` о полномочиях MCP - до первой спеки про MCP) | - | `Владелец-оператор` | product |  | S | персоны - ворота валидации; вся работа ссылается на них | onboarding | маркеры `[NEEDS INPUT]` и `[NEEDS REVIEW]` сняты | todo |
+| PRODUCT-1 | North Star и метрики (чем пользуются сегодня и не-цели подтверждены владельцем 2026-11-05) | - | `Владелец-оператор` | product |  | S | спеки пишут `Success metric: n/a` без причины | onboarding | раздел «Success metrics» заполнен | todo |
 | SPEC-1 | Первая спека возможности | - | `Владелец-оператор` | product |  | M | без спеки нет работы по циклу стандарта | asked: owner 2026-11-05 | спека проходит clarify-гейт и записана в `capability-map.json` | todo |
 
 ## Epic: Стек и решения
