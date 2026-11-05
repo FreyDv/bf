@@ -19,6 +19,14 @@ docker/    nest.Dockerfile (ARG APP)  next.Dockerfile (ARG APP, nginx serving th
 infra/     postgres/redis/minio/otel/… compose files; infra/aws (CDK: ECS Fargate scale-to-zero + CloudFront/S3 + Aurora Serverless v2)
 ```
 
+## For agents and contributors
+
+Read [`AGENTS.md`](AGENTS.md) first: the single entry point (altitude, conventions, red flags,
+workflows). This repository follows [Repository Standards](https://repositorystandards.com)
+(`SPEC.md`, checked by `node scripts/self-verify.mjs`) and builds every backend service as a
+Domain-Driven Hexagon (`docs/standards/domain-driven-hexagon/bf-mapping.md`). The knowledge
+behind both lives in full under [`docs/standards/`](docs/standards/README.md).
+
 ## Quick start (everything in Docker)
 
 ```bash
