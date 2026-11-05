@@ -82,3 +82,9 @@ catalog:
   next: ^15.5.2
   tailwindcss: ^4.1.12
   '@tailwindcss/postcss': ^4.1.12
+
+# Supply-chain policy of the Node stack (ADR-030, backlog PINS-1). minimumReleaseAge needs pnpm >= 10.16;
+# until the packageManager pin moves, older pnpm ignores the setting. Exact versions on add.
+enablePrePostScripts: false
+saveExact: true
+minimumReleaseAge: 10080

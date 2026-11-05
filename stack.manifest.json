@@ -1,0 +1,141 @@
+{
+  "$about": "The stack contract and manifest in one (standard ADR-016): the same schema (files/guards, adapt classes, per-entry rule anchors - here DECISIONS#N instead of R#) the core's standard.manifest.json uses, so the align engine and self-verify read it whole. Paths are the adopted repo's; the reference copy of every merge-class file lives in starter/. An adopting repo carries this file beside standard.manifest.json; self-verify then counts one drift across both layers. The registry pointer is the linkage to the core - discovery metadata, never a version requirement (standard ADR-022). `provenanceCommit` is the full commit SHA of THIS repository that an adopter's copy last aligned to: it ships `null`, and the run that applies or updates this layer writes it into the adopter's copy. It is what the stack half of an update's delta is computed from, the way the core manifest's own field is (standard ADR-052); `version` stays the human-facing bookmark. The two layers are independent - a stack rides its own clock (standard ADR-022) - so this field records a commit here, never one in the core repository.",
+  "technology": "node",
+  "version": "0.3.1",
+  "provenanceCommit": "8f7e651a5ad9ea3739f9f4a4a025abf4038404df",
+  "description": "Node/TypeScript best practices - Next.js + Fastify through one proxy, Better Auth, tiered testing; distilled from production repos and boot-verified",
+  "registry": "repository-standards/core",
+  "files": [
+    {
+      "path": ".nvmrc",
+      "purpose": "the Node version pin - one runtime, no drift between machines",
+      "adapt": "copy",
+      "required": true,
+      "profile": "core",
+      "rule": "DECISIONS#1"
+    },
+    {
+      "path": "biome.json",
+      "purpose": "lint + format, one tool - the reference copy encodes the strictness the picks assume",
+      "adapt": "merge",
+      "required": true,
+      "profile": "core",
+      "rule": "DECISIONS#3"
+    },
+    {
+      "path": "tsconfig.base.json",
+      "purpose": "strict TypeScript base every package extends",
+      "adapt": "merge",
+      "required": true,
+      "profile": "core",
+      "rule": "DECISIONS#4"
+    },
+    {
+      "path": "pnpm-workspace.yaml",
+      "purpose": "workspace globs + the supply-chain policy (release-age cooldown, allowed build scripts, save-exact) - the policy block is the point",
+      "adapt": "merge",
+      "required": true,
+      "profile": "core",
+      "rule": "DECISIONS#8",
+      "requiredKeys": ["minimumReleaseAge", "saveExact", "enablePrePostScripts"]
+    },
+    {
+      "path": "vitest.config.ts",
+      "purpose": "unit and integration tiers as separate Vitest projects - the tiers are the requirement, not the path: a workspace whose packages each configure them satisfies it there, and a root projects config on top of those runs every suite twice, so this entry is optional rather than drift for that shape",
+      "adapt": "merge",
+      "required": false,
+      "profile": "core",
+      "rule": "DECISIONS#9"
+    },
+    {
+      "path": "playwright.config.ts",
+      "purpose": "the e2e tier - real browser journeys against the running app",
+      "adapt": "merge",
+      "required": false,
+      "profile": "core",
+      "rule": "DECISIONS#9"
+    },
+    {
+      "path": "docker-compose.test.yml",
+      "purpose": "ephemeral real dependencies for integration/e2e - not mocks",
+      "adapt": "copy",
+      "required": false,
+      "profile": "core",
+      "rule": "DECISIONS#9"
+    },
+    {
+      "path": "perf/",
+      "purpose": "local Lighthouse perf-budget runner - report-only, committed baseline + dated history, no external upload; edit config.mjs routes",
+      "adapt": "copy",
+      "required": false,
+      "profile": "scale",
+      "rule": "DECISIONS#9"
+    },
+    {
+      "path": "scripts/perf-budget.sh",
+      "purpose": "local perf env prep (seed/build/start) - copy, then adapt its SEED/BUILD/START hooks to your stack",
+      "adapt": "copy",
+      "required": false,
+      "profile": "scale",
+      "rule": "DECISIONS#9"
+    },
+    {
+      "path": "renovate.json",
+      "purpose": "dependency updates as reviewed diffs, riding the same 7-day cooldown",
+      "adapt": "merge",
+      "required": false,
+      "profile": "core",
+      "rule": "DECISIONS#12"
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "purpose": "hardened least-privilege CI template",
+      "adapt": "merge",
+      "required": false,
+      "profile": "scale",
+      "rule": "DECISIONS#11"
+    },
+    {
+      "path": ".github/workflows/e2e.yml",
+      "purpose": "the e2e tier in CI, against the docker test stack",
+      "adapt": "merge",
+      "required": false,
+      "profile": "scale",
+      "rule": "DECISIONS#11"
+    }
+  ],
+  "guards": [
+    {
+      "id": "stack-check-all",
+      "run": "pnpm check:all",
+      "kind": "static",
+      "blocks": true,
+      "purpose": "format + types + lint green - the stack's own quality gate counted in the same drift number. Needs pnpm on PATH and dependencies already installed - a real toolchain run, not something a config-file read can substitute for; see SHIPPED.md for the prerequisite",
+      "profile": "core",
+      "rule": "DECISIONS#3",
+      "requires": [
+        {
+          "kind": "command",
+          "match": "pnpm"
+        },
+        {
+          "kind": "path",
+          "match": "node_modules",
+          "hint": "run pnpm install once - the full tree, network required"
+        }
+      ]
+    }
+  ],
+  "exceptions": [
+    {
+      "kind": "file",
+      "match": "biome.json",
+      "reason": "this repo lints with ESLint 10 and formats with Prettier (ADR-002); migrating to Biome is not planned"
+    },
+    {
+      "kind": "file",
+      "match": "tsconfig.base.json",
+      "reason": "the strict TypeScript base lives in packages/config/tsconfig/base.json and is extended by every package (ADR-002, ADR-013)"
+    }
+  ]
+}
