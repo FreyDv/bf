@@ -1,19 +1,5 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
-  "$about": [
-    "Agent settings baseline from repository-standards (standard.manifest.json entry .claude/settings.json, merge-class, R19),",
-    "merged with this repo's own entries. Deliberate adaptations, each one recorded in docs/adoption-intake.md:",
-    "1. Read(**/.env.*) narrowed to the secret-bearing variants so that the committed .env.example files stay readable",
-    "   (pnpm setup:env and pnpm env:check depend on them).",
-    "2. REMOTE_DB_ENV_FILES names this monorepo's per-app env files so the remote-database guard resolves the host a",
-    "   migration runner would use (apps/<svc>/.env, never a root .env).",
-    "3. ask: this repo's own deploy, release and database scripts under infra/aws/scripts and scripts/ci.",
-    "4. onFailure: block on both PreToolUse hooks - Claude Code lets a crashing or timed-out hook fail OPEN by",
-    "   default (docs: hooks, 'onFailure'); the shipped || fallback covers a missing script, this covers the rest."
-  ],
-  "env": {
-    "REMOTE_DB_ENV_FILES": "apps/auth/.env apps/order/.env apps/course/.env apps/billing/.env apps/admin/.env apps/ai/.env apps/api/.env infra/postgres/.env"
-  },
   "permissions": {
     "deny": [
       "Bash(sudo *)",
@@ -68,11 +54,7 @@
       "Bash(kysely migrate*)",
       "Bash(npx kysely migrate*)",
       "Read(**/.env)",
-      "Read(**/.env.local)",
-      "Read(**/.env.*.local)",
-      "Read(**/.env.production*)",
-      "Read(**/.env.prod*)",
-      "Read(**/.env.staging*)",
+      "Read(**/.env.*)",
       "Read(**/*.pem)",
       "Read(**/id_rsa*)",
       "Read(**/id_ed25519*)",
@@ -128,22 +110,7 @@
       "Bash(gh pr close *)",
       "Bash(brew uninstall *)",
       "Bash(launchctl *)",
-      "Bash(crontab *)",
-      "Bash(pnpm aws:deploy*)",
-      "Bash(pnpm aws:release*)",
-      "Bash(pnpm aws:static*)",
-      "Bash(pnpm aws:exec*)",
-      "Bash(pnpm db:rotate-password*)",
-      "Bash(pnpm db:allow-me*)",
-      "Bash(pnpm repo:settings*)",
-      "Bash(pnpm --filter @bf/infra-aws run deploy*)",
-      "Bash(node infra/aws/scripts/release.ts*)",
-      "Bash(node infra/aws/scripts/static-deploy.ts*)",
-      "Bash(node infra/aws/scripts/exec.ts*)",
-      "Bash(node infra/aws/scripts/db-rotate-password.ts*)",
-      "Bash(node infra/aws/scripts/db-allow-me.ts*)",
-      "Bash(node scripts/ci/repo-settings.ts --apply*)",
-      "Bash(gh workflow run *)"
+      "Bash(crontab *)"
     ]
   },
   "hooks": {
@@ -171,5 +138,8 @@
         ]
       }
     ]
-  }
+  },
+  "$about": [
+    "Shipped settings baseline of repository-standards (R19), unmodified except onFailure: block on both PreToolUse hooks - Claude Code lets a crashing or timed-out hook fail OPEN by default (docs: hooks, onFailure)."
+  ]
 }

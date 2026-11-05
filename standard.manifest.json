@@ -1034,11 +1034,5 @@
       "note": "moved to skills/record-run/ in the standards repo - a transition skill run from a checkout, never shipped into the client tree (standard ADR-045's correction, ADOPT-DEFAULTS-1); nothing in the adopted repo replaces it, delete the directory on update"
     }
   ],
-  "exceptions": [
-    {
-      "kind": "content",
-      "match": ".nvmrc",
-      "reason": "Node 26 is pinned on purpose (ADR-031); the standard's copy pins 24.18.0"
-    }
-  ]
+  "exceptions": []
 }
