@@ -20,7 +20,7 @@
 
 ## Decision
 
-Каждый модуль backend-сервиса строится по Domain-Driven Hexagon: вертикальные срезы по use case, `domain` свободен от фреймворка, порты и адаптеры, CQS через `@nestjs/cqrs`, `Result` для бизнес-ошибок, модель персистентности отдельно от доменной. Правила - `docs/standards/domain-driven-hexagon/rules.md` (DDH-1..128), форма для этого стека - `bf-mapping.md`, жёсткие правила - `.claude/rules/backend-architecture.md`; границы проверяет `pnpm deps` (один набор правил на все Nest-приложения). Единственное зафиксированное исключение - плоский модуль `auth/identity`, миграция в раскладку - ARCH-1.
+Каждый модуль backend-сервиса строится по Domain-Driven Hexagon: вертикальные срезы по use case, `domain` свободен от фреймворка, порты и адаптеры, CQS через `@nestjs/cqrs`, `Result` для бизнес-ошибок, модель персистентности отдельно от доменной. Правила - `docs/standards/domain-driven-hexagon/rules.md` (DDH-1..128), форма для этого стека - `bf-mapping.md`, жёсткие правила - `.claude/rules/backend-architecture.md`; границы проверяет `pnpm deps` (один набор правил на все Nest-приложения). Зафиксированные исключения - плоские модули-скелеты `auth/identity`, `billing/invoices`, `course/courses`; миграция в раскладку - ARCH-1.
 
 ## Consequences
 

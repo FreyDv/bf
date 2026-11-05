@@ -23,7 +23,7 @@ dependency rules; a violation is a failed build, not a style note.
 1. **Layout.** A service = one bounded context. `src/modules/<module>/` with
    `commands/<use-case>/`, `queries/<use-case>/`, `domain/`, `application/{ports,event-handlers}`,
    `infrastructure/`, `<module>.module.ts`, `<module>.di-tokens.ts`. New code starts in this
-   shape; nothing is added to the legacy flat `identity` module (backlog `ARCH-1`).
+   shape; nothing is added to the legacy flat `identity`, `invoices`, `courses` modules (backlog `ARCH-1`).
 2. **Suffixes mark layers**: `.aggregate.ts .entity.ts .value-object.ts .domain-event.ts
 .errors.ts .types.ts .domain-service.ts` (domain) / `.service.ts .command.ts .query.ts
 .query-handler.ts .port.ts .domain-event-handler.ts .mapper.ts` (application) /

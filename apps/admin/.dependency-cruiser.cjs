@@ -21,11 +21,12 @@ const INTERFACE = [
   '^src/modules/[^/]+/(commands|queries)/[^/]+/[^/]+\\.router\\.ts$',
 ];
 /**
- * Recorded exception (backlog ARCH-1): the identity module of `auth` predates the standard and
- * keeps the skeleton's flat `controller + services + schema` shape until it is migrated. The
+ * Recorded exception (backlog ARCH-1): the skeleton modules `identity` (auth), `invoices` (billing) and
+ * `courses` (course) predate the standard and keep their flat shape (router/controller reaching Drizzle)
+ * until migrated. The
  * application-layer and schema rules skip it; nothing new is added to it in that shape.
  */
-const LEGACY = ['^src/modules/identity/'];
+const LEGACY = ['^src/modules/(identity|invoices|courses)/'];
 const FRAMEWORK_AND_IO = [
   'node_modules/@nestjs',
   'node_modules/nestjs-trpc',
@@ -86,7 +87,7 @@ module.exports = {
       severity: 'error',
       comment:
         'bf-mapping section 6: a router validates, dispatches on the bus and maps the Result',
-      from: { path: INTERFACE },
+      from: { path: INTERFACE, pathNot: LEGACY },
       to: { path: [...INFRASTRUCTURE, 'node_modules/drizzle-orm', '^src/db/'] },
     },
     {

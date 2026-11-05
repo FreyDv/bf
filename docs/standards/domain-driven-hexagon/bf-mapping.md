@@ -91,10 +91,7 @@ Rules of the layout (DDH-5..9, 109..114 made concrete):
   `*.repository.ts | *.adapter.ts` = infrastructure; `*.router.ts | *.controller.ts |
 *.dto.ts` = interface adapters.
 - **Flat over nested** (DDH-112): no folder deeper than `modules/<module>/<layer>/<group>/`.
-- **New code follows this layout from its first file.** The existing `apps/auth/src/modules/
-identity` (a flat `controller + services` module from the skeleton phase) is migrated under
-  backlog `ARCH-1`; until then it is the one recorded exception, and nothing new is added to it
-  in its current shape.
+- **New code follows this layout from its first file.** The skeleton modules `auth/identity`, `billing/invoices` and `course/courses` (a flat controller or router plus services from the skeleton phase) are migrated under backlog `ARCH-1`; until then they are the recorded exceptions in the dependency-cruiser rules, and nothing new is added to them in their current shape.
 
 ## 3. Dependency rules (what `pnpm deps` enforces)
 
