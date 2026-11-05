@@ -95,7 +95,7 @@ rather than pass it unchecked.
 
 - **Commits:** Conventional Commits, `type(scope): imperative summary`; one commit = one
   logical change; small, focused PRs; ASCII hyphen `-` only in commits and PR text.
-  **No AI or tool attribution** in commits or PR text (no `Co-Authored-By: Claude`, no "Generated with"): the owner chose the standard's convention on 2026-11-05 (backlog `CONV-1` removes the trailers carried by older commits).
+  **No AI or tool attribution** in commits or PR text (no `Co-Authored-By: Claude`, no "Generated with"): the owner chose the standard's convention on 2026-11-05 (commits already on `main` keep theirs; history is not rewritten; backlog `CONV-1` closes the merge-method setting).
 - **Branch and history (R23):** branch off `main` and base every PR on `main`, never on another
   open PR's branch; update by rebase (`git rebase main`), never merge `main` into your branch;
   land by **squash-merge** (the integration method this repository already uses - ADR-027);
