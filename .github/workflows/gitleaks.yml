@@ -1,0 +1,63 @@
+name: gitleaks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: gitleaks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gitleaks:
+    name: secret scan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    env:
+      # Pinned upstream release; bump deliberately. Using the binary instead
+      # of gitleaks/gitleaks-action to avoid its Node-20 wrapper deprecation.
+      GITLEAKS_VERSION: "8.30.1"
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Install gitleaks
+        run: |
+          set -euo pipefail
+          # The archive keeps its release name: the checksum line names that file, and
+          # sha256sum -c looks it up by name.
+          ARCHIVE="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -fsSL \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${ARCHIVE}" \
+            -o "/tmp/${ARCHIVE}"
+          curl -fsSL \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_checksums.txt" \
+            -o /tmp/gitleaks.sums
+          (cd /tmp && grep " ${ARCHIVE}\$" gitleaks.sums | sha256sum -c -)
+          tar -xzf "/tmp/${ARCHIVE}" -C /tmp
+          sudo install -m 0755 /tmp/gitleaks /usr/local/bin/gitleaks
+          gitleaks version
+
+      - name: Run gitleaks
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            RANGE="${{ github.event.pull_request.base.sha }}..HEAD"
+          elif [ -n "${{ github.event.before }}" ] && [ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]; then
+            RANGE="${{ github.event.before }}..HEAD"
+          else
+            RANGE="HEAD"
+          fi
+          # -v prints the file, line and rule of every finding; --redact keeps the value
+          # itself out of the log. Without -v the run says only "leaks found: 1", which
+          # tells whoever opened the pull request nothing about where to look.
+          gitleaks detect \
+            --no-banner \
+            --redact \
+            -v \
+            --config .gitleaks.toml \
+            --source . \
+            --log-opts="$RANGE"

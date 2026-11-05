@@ -15,13 +15,13 @@ specs it wrote years earlier, and its own history says nothing about who was ask
 **States** - the full set and what each one costs is in
 [`.claude/elicitation/README.md`](../.claude/elicitation/README.md):
 
-| State | Use it when |
-|---|---|
-| `pending` | the run has not reached this point |
-| `human` | a person answered - name them and date it |
+| State         | Use it when                                                                             |
+| ------------- | --------------------------------------------------------------------------------------- |
+| `pending`     | the run has not reached this point                                                      |
+| `human`       | a person answered - name them and date it                                               |
 | `provisional` | you suggested, they will check later - **name the backlog row**, or the promise is lost |
-| `inferred` | you concluded it from the code and said so - most points refuse this |
-| `absent` | you wrote a stub rather than guess, and the gap is visible in the artifact |
+| `inferred`    | you concluded it from the code and said so - most points refuse this                    |
+| `absent`      | you wrote a stub rather than guess, and the gap is visible in the artifact              |
 
 **Two kinds of row, and the difference decides what a row is worth later.** Most points here
 belong to the repository - who it is for, how its records are kept, which profile it runs at -
@@ -36,30 +36,30 @@ which as `scope`.
 
 ## The record
 
-| Point | State | Answered by | When | Landed in | Backlog row |
-|---|---|---|---|---|---|
-| `adopt.language` | pending | - | - | - | - |
-| `adopt.layout` | pending | - | - | - | - |
-| `adopt.profile` | pending | - | - | - | - |
-| `adopt.stack` | pending | - | - | - | - |
-| `adopt.intent` | pending | - | - | - | - |
-| `adopt.evidence` | pending | - | - | - | - |
-| `adopt.continue` | pending | - | - | - | - |
-| `adopt.existing-material` | pending | - | - | - | - |
-| `adopt.records` | pending | - | - | - | - |
-| `adopt.personas` | pending | - | - | - | - |
-| `adopt.tracker` | pending | - | - | - | - |
-| `adopt.backlog` | pending | - | - | - | - |
-| `adopt.guards` | pending | - | - | - | - |
-| `adopt.commit-plan` | pending | - | - | - | - |
-| `green.product` | pending | - | - | - | - |
-| `green.conventions` | pending | - | - | - | - |
-| `green.stack` | pending | - | - | - | - |
-| `spec.scope` | pending | - | - | - | - |
-| `spec.acceptance` | pending | - | - | - | - |
-| `spec.unknowns` | pending | - | - | - | - |
-| `discover.materials` | pending | - | - | - | - |
-| `discover.decisions` | pending | - | - | - | - |
+| Point                     | State   | Answered by | When | Landed in | Backlog row |
+| ------------------------- | ------- | ----------- | ---- | --------- | ----------- |
+| `adopt.language`          | pending | -           | -    | -         | -           |
+| `adopt.layout`            | pending | -           | -    | -         | -           |
+| `adopt.profile`           | pending | -           | -    | -         | -           |
+| `adopt.stack`             | pending | -           | -    | -         | -           |
+| `adopt.intent`            | pending | -           | -    | -         | -           |
+| `adopt.evidence`          | pending | -           | -    | -         | -           |
+| `adopt.continue`          | pending | -           | -    | -         | -           |
+| `adopt.existing-material` | pending | -           | -    | -         | -           |
+| `adopt.records`           | pending | -           | -    | -         | -           |
+| `adopt.personas`          | pending | -           | -    | -         | -           |
+| `adopt.tracker`           | pending | -           | -    | -         | -           |
+| `adopt.backlog`           | pending | -           | -    | -         | -           |
+| `adopt.guards`            | pending | -           | -    | -         | -           |
+| `adopt.commit-plan`       | pending | -           | -    | -         | -           |
+| `green.product`           | pending | -           | -    | -         | -           |
+| `green.conventions`       | pending | -           | -    | -         | -           |
+| `green.stack`             | pending | -           | -    | -         | -           |
+| `spec.scope`              | pending | -           | -    | -         | -           |
+| `spec.acceptance`         | pending | -           | -    | -         | -           |
+| `spec.unknowns`           | pending | -           | -    | -         | -           |
+| `discover.materials`      | pending | -           | -    | -         | -           |
+| `discover.decisions`      | pending | -           | -    | -         | -           |
 
 <!-- The table is parsed by position, six cells per row. Add columns to the right if you
      need them; do not reorder these. `-` means not applicable, never "I did not fill it in". -->
@@ -67,7 +67,7 @@ which as `scope`.
 ## Questions this run asked that no point declares
 
 The declared points are a floor, not a ceiling. They are the questions that can be
-*enforced* - the hook refuses a write for a point that exists, and it can only refuse what
+_enforced_ - the hook refuses a write for a point that exists, and it can only refuse what
 somebody wrote down. Every repository is different, and the questions worth asking here are
 mostly ones no list anticipated: ask them, lead with the answer that converges on the
 standard, and record them below.
@@ -79,6 +79,5 @@ asked where tracked work lives and recommended keeping the repository's parallel
 When rows accumulate here, send them to the standard.
 
 | Question asked | Which answer led | What was chosen | Worth declaring? |
-|---|---|---|---|
-| - | - | - | - |
-
+| -------------- | ---------------- | --------------- | ---------------- |
+| -              | -                | -               | -                |
