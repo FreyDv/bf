@@ -36,30 +36,30 @@ which as `scope`.
 
 ## The record
 
-| Point                     | State   | Answered by | When | Landed in | Backlog row |
-| ------------------------- | ------- | ----------- | ---- | --------- | ----------- |
-| `adopt.language`          | pending | -           | -    | -         | -           |
-| `adopt.layout`            | pending | -           | -    | -         | -           |
-| `adopt.profile`           | pending | -           | -    | -         | -           |
-| `adopt.stack`             | pending | -           | -    | -         | -           |
-| `adopt.intent`            | pending | -           | -    | -         | -           |
-| `adopt.evidence`          | pending | -           | -    | -         | -           |
-| `adopt.continue`          | pending | -           | -    | -         | -           |
-| `adopt.existing-material` | pending | -           | -    | -         | -           |
-| `adopt.records`           | pending | -           | -    | -         | -           |
-| `adopt.personas`          | pending | -           | -    | -         | -           |
-| `adopt.tracker`           | pending | -           | -    | -         | -           |
-| `adopt.backlog`           | pending | -           | -    | -         | -           |
-| `adopt.guards`            | pending | -           | -    | -         | -           |
-| `adopt.commit-plan`       | pending | -           | -    | -         | -           |
-| `green.product`           | pending | -           | -    | -         | -           |
-| `green.conventions`       | pending | -           | -    | -         | -           |
-| `green.stack`             | pending | -           | -    | -         | -           |
-| `spec.scope`              | pending | -           | -    | -         | -           |
-| `spec.acceptance`         | pending | -           | -    | -         | -           |
-| `spec.unknowns`           | pending | -           | -    | -         | -           |
-| `discover.materials`      | pending | -           | -    | -         | -           |
-| `discover.decisions`      | pending | -           | -    | -         | -           |
+| Point                     | State   | Answered by                                                                        | When       | Landed in                                  | Backlog row |
+| ------------------------- | ------- | ---------------------------------------------------------------------------------- | ---------- | ------------------------------------------ | ----------- |
+| `adopt.language`          | human   | the owner (FreyDv), card 1: code and commits in English, docs and specs in Russian | 2026-11-05 | AGENTS.md (Conventions / Working language) | LANG-2      |
+| `adopt.layout`            | pending | -                                                                                  | -          | -                                          | -           |
+| `adopt.profile`           | pending | -                                                                                  | -          | -                                          | -           |
+| `adopt.stack`             | pending | -                                                                                  | -          | -                                          | -           |
+| `adopt.intent`            | human   | the owner (FreyDv), card 1 of the intake round in the Claude Code session          | 2026-11-05 | docs/adoption-intake.md                    | -           |
+| `adopt.evidence`          | human   | the owner (FreyDv), card 1: send nothing                                           | 2026-11-05 | docs/adoption-intake.md (Evidence line)    | -           |
+| `adopt.continue`          | pending | -                                                                                  | -          | -                                          | -           |
+| `adopt.existing-material` | pending | -                                                                                  | -          | -                                          | -           |
+| `adopt.records`           | pending | -                                                                                  | -          | -                                          | -           |
+| `adopt.personas`          | pending | -                                                                                  | -          | -                                          | -           |
+| `adopt.tracker`           | pending | -                                                                                  | -          | -                                          | -           |
+| `adopt.backlog`           | pending | -                                                                                  | -          | -                                          | -           |
+| `adopt.guards`            | pending | -                                                                                  | -          | -                                          | -           |
+| `adopt.commit-plan`       | pending | -                                                                                  | -          | -                                          | -           |
+| `green.product`           | pending | -                                                                                  | -          | -                                          | -           |
+| `green.conventions`       | pending | -                                                                                  | -          | -                                          | -           |
+| `green.stack`             | pending | -                                                                                  | -          | -                                          | -           |
+| `spec.scope`              | pending | -                                                                                  | -          | -                                          | -           |
+| `spec.acceptance`         | pending | -                                                                                  | -          | -                                          | -           |
+| `spec.unknowns`           | pending | -                                                                                  | -          | -                                          | -           |
+| `discover.materials`      | pending | -                                                                                  | -          | -                                          | -           |
+| `discover.decisions`      | pending | -                                                                                  | -          | -                                          | -           |
 
 <!-- The table is parsed by position, six cells per row. Add columns to the right if you
      need them; do not reorder these. `-` means not applicable, never "I did not fill it in". -->
