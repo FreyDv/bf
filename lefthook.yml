@@ -1,0 +1,35 @@
+# Pre-commit (ADR-018): the same steps as CI, in the same order, on what is staged.
+# Bypassable with --no-verify, so the guarantee is CI (.github/workflows/ci.yml); agents never bypass it.
+# Not yet here: the Helm step, which waits for the chart (CHART-1).
+pre-commit:
+  piped: true # stop on the first failing step
+  jobs:
+    - name: typecheck
+      glob: '{apps,packages}/**/*.{ts,tsx,json}'
+      # Whole-package tsc cannot run per file; Turborepo caches what did not change.
+      run: pnpm turbo run typecheck --affected
+
+    - name: prettier
+      glob: '{apps/**,packages/**,package.json,turbo.json,.dependency-cruiser.mjs,scripts/boundaries.test.ts}'
+      run: pnpm exec prettier --write --ignore-unknown {staged_files}
+      stage_fixed: true
+
+    - name: eslint backend
+      root: apps/backend/
+      glob: '*.{ts,js}'
+      run: pnpm exec eslint --fix {staged_files}
+      stage_fixed: true
+
+    - name: eslint frontend
+      root: apps/frontend/
+      glob: '*.{ts,tsx,js}'
+      run: pnpm exec eslint --fix {staged_files}
+      stage_fixed: true
+
+    - name: boundaries
+      glob: '{apps/**/*.{ts,tsx},.dependency-cruiser.mjs,scripts/boundaries.test.ts}'
+      run: pnpm deps
+
+    - name: boundary rules fire on violations
+      glob: '{.dependency-cruiser.mjs,scripts/boundaries.test.ts}'
+      run: pnpm deps:test
