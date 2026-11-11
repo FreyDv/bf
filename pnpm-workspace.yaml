@@ -1,0 +1,14 @@
+packages:
+  - 'apps/*'
+  - 'packages/*'
+
+# Supply chain (ADR-005, R21): exact versions, 7-day release cooldown, no unreviewed install scripts.
+saveExact: true
+minimumReleaseAge: 10080
+enablePrePostScripts: false
+allowBuilds:
+  '@swc/core': true
+  esbuild: true
+  sharp: true
+  lefthook: true
+  unrs-resolver: true
