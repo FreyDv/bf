@@ -1,0 +1,30 @@
+# Every feature on: sealed secret, ingress, cron jobs and the Pre-sync migration Job.
+image:
+  repository: ghcr.io/example/app
+  tag: 0123456789abcdef0123456789abcdef01234567
+port: 4000
+replicas: 2
+command: [node]
+args: [dist/main.js]
+env:
+  NODE_ENV: production
+  LOG_LEVEL: info
+envFromSecrets: [shared-config]
+secret:
+  encryptedData:
+    DATABASE_URL: AgBexampleciphertextone
+    OPENAI_API_KEY: AgBexampleciphertexttwo
+ingress:
+  enabled: true
+  host: app.example.test
+probes:
+  path: /health
+cronJobs:
+  - name: cleanup
+    schedule: '0 3 * * *'
+    command: [node]
+    args: [dist/cron/cleanup.js]
+migration:
+  enabled: true
+  command: [node]
+  args: [dist/migrate.js]
