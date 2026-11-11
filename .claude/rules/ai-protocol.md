@@ -33,6 +33,7 @@ section, filled with the actual names - not a restatement of the rules:
 - Ports introduced and the PRG-3 reason for each; adapters that implement them
 - Error codes and the Result sum type per use case (ERR-1..4)
 - DTOs: request, response whitelist (ADP-3, ADP-4)
+- List queries with a filter: filter spec, read port, relations and the module owning each, enums in contracts (QRY)
 - Tests: domain unit, use case with doubles, behavioural from the spec's acceptance criteria (TST-1..2)
 - Boundary check: tool, config location, status (ENF-1)
 - Rule IDs deliberately not applied and the ADR that permits it: none | <IDs + ADR>
@@ -82,6 +83,8 @@ not fixed is in the backlog. Say what was not verified instead of claiming it.
    (ADP-3); repository maps to a separate persistence model (INF-4, INF-5).
 7. Tests: three levels, spec criteria covered, doubles for ports, no weakened assertions (TST-1..5).
 8. Enforcement: the boundary check passes and its configuration was not loosened (ENF-1).
+9. Query filters: declared with `defineFilter`, read through a port, relations as `EXISTS` with an indexed
+   foreign key, another module only through its `public/`, client enums in contracts (QRY rules, `query-filter-rules.md`).
 Findings cite rule IDs and are `blocker` (MUST/MUST NOT) or `advice` (SHOULD/AVOID).
 
 ## AIP-6a Explaining and answering

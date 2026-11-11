@@ -23,7 +23,8 @@ Binding source: `.claude/rules/architecture-rules.md` (rule IDs) and `.claude/ru
 5. **Ports.** List only ports with a PRG-3 reason: repository per aggregate root, clock/id source, other
    modules' facades, external systems. Note the adapter that implements each.
 6. **Errors.** Per use case, the Result sum type and stable error codes (ERR-1..3).
-7. **Contracts.** Request DTO, response whitelist, versioning impact (ADP-3..5).
+7. **Contracts.** Request DTO, response whitelist, versioning impact (ADP-3..5). A list query with a filter
+   follows `.claude/rules/query-filter-rules.md`.
 8. **Tests.** Three levels per slice and the spec criteria each covers (TST-1..2).
 9. **Write the plan** with the `## Architecture conformance` block from AIP-2, filled with real names.
    Hand over to `spec-plan` / `spec-tasks`; implementation follows AIP-3.

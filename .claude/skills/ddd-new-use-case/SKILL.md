@@ -22,7 +22,8 @@ case (STR-2, APP-3).
 5. **Infrastructure.** Repository/adapter changes through the existing port; map through the persistence
    model (INF-4, INF-5).
 6. **Driving adapter and DTOs.** Request DTO validated at the boundary, response whitelist, error-code to
-   transport mapping (ADP-1..4, ERR-4). No business logic.
+   transport mapping (ADP-1..4, ERR-4). No business logic. A list query with a filter follows
+   `.claude/rules/query-filter-rules.md`.
 7. **Behavioural test** from the spec's acceptance criteria through the adapter against a test database
    (TST-1, TST-3).
 8. **Finish.** Run the boundary check and the tests; update the spec in the same PR; run `ddd-review`.

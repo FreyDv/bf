@@ -12,7 +12,7 @@ checklist AIP-6 in `.claude/rules/ai-protocol.md`. List first, fix after; do not
 2. Run the mechanical gates and report their output verbatim: the boundary check (ENF-1), the test suite,
    `node scripts/spec-guard.mjs --audit --block`. If the boundary check does not exist, that is the first
    finding (blocker).
-3. Walk checklist items 1-8 of AIP-6 over every changed file; cite the rule ID for each finding.
+3. Walk checklist items 1-9 of AIP-6 over every changed file; cite the rule ID for each finding.
 4. Report a table `file | rule ID | finding | fix | severity` (`blocker` = MUST/MUST NOT broken or a gate
    failed; `advice` = SHOULD/AVOID). A diff with no blockers and green gates passes.
 5. Fix the blockers, re-run step 2, then hand over to `pre-pr-review`.
