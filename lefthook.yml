@@ -4,13 +4,18 @@
 pre-commit:
   piped: true # stop on the first failing step
   jobs:
+    - name: contracts are generated
+      # ADR-035: before typecheck, which reads the generated file.
+      glob: '{apps/backend/src/**/*.{router,request.dto,response.dto,enum}.ts,packages/contracts/**,scripts/contracts-generate.ts}'
+      run: pnpm contracts:check
+
     - name: typecheck
       glob: '{apps,packages}/**/*.{ts,tsx,json}'
       # Whole-package tsc cannot run per file; Turborepo caches what did not change.
       run: pnpm turbo run typecheck --affected
 
     - name: prettier
-      glob: '{apps/**,packages/**,package.json,turbo.json,.dependency-cruiser.mjs,scripts/boundaries.test.ts}'
+      glob: '{apps/**,packages/**,package.json,turbo.json,.dependency-cruiser.mjs,scripts/boundaries.test.ts,scripts/contracts-generate.ts}'
       run: pnpm exec prettier --write --ignore-unknown {staged_files}
       stage_fixed: true
 
@@ -27,7 +32,7 @@ pre-commit:
       stage_fixed: true
 
     - name: boundaries
-      glob: '{apps/**/*.{ts,tsx},.dependency-cruiser.mjs,scripts/boundaries.test.ts}'
+      glob: '{apps/**/*.{ts,tsx},packages/**/*.ts,.dependency-cruiser.mjs,scripts/boundaries.test.ts}'
       run: pnpm deps
 
     - name: boundary rules fire on violations

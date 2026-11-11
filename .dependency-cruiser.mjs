@@ -117,6 +117,14 @@ export default {
       to: { path: '^apps/', pathNot: '^apps/$1/' },
     },
     {
+      name: 'contracts-only-dtos-from-backend',
+      comment:
+        'ADR-035: the generated router file reads from backend only request and response DTOs and enums, so the frontend never type-checks domain or infrastructure code.',
+      severity: 'error',
+      from: { path: '^packages/contracts/' },
+      to: { path: '^apps/', pathNot: '\\.(request\\.dto|response\\.dto|enum)\\.ts$' },
+    },
+    {
       name: 'not-to-unresolvable',
       comment: 'An import the checker cannot resolve is an import it cannot check.',
       severity: 'error',

@@ -86,6 +86,8 @@ pnpm build | lint | typecheck | test    # turbo run over all packages (ADR-009)
 pnpm format:check                       # prettier on code (apps/, packages/)
 pnpm deps                               # architecture boundaries (DEP-2, DEP-3, DEP-5, DEP-8, DEP-9)
 pnpm deps:test                          # the rules fire on violating fixtures; run after editing the config
+pnpm contracts:generate                 # rebuild packages/contracts/src/generated/server.ts (the AppRouter type, ADR-035); commit it
+pnpm contracts:check                    # fails when that file is out of date (CI and pre-commit); run after touching a router or request DTO
 pnpm local:up | local:cdc | local:down | local:reset   # docker compose: Postgres, NATS (+ Debezium with local:cdc), ADR-033
 ```
 

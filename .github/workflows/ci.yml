@@ -40,6 +40,10 @@ jobs:
           key: turbo-${{ runner.os }}-${{ github.sha }}
           restore-keys: turbo-${{ runner.os }}-
 
+      - name: Contracts are generated
+        # ADR-035: the committed `AppRouter` type must equal what the routers produce; before typecheck, which reads it.
+        run: pnpm contracts:check
+
       # Pull requests check what they touch; a push to `main` checks everything.
       - name: Typecheck
         run: pnpm turbo run typecheck ${{ github.event_name == 'pull_request' && '--affected' || '' }}
