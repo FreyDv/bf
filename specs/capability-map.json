@@ -1,0 +1,7 @@
+{
+  "$about": [
+    "capability -> the code globs that must move with its spec (R11). Keys starting with $ are metadata, not capabilities.",
+    "Empty at scaffold time: /spec-specify adds a capability's globs when it mints the spec (ADR-006: clean slate, no code yet).",
+    "Declare $unclaimed - the paths that belong to no capability - once there is code, so `spec-guard --audit` can report code nobody claims."
+  ]
+}

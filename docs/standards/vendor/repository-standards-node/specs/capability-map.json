@@ -1,0 +1,48 @@
+{
+  "$about": "Capability -> paths, so the coupling guard can bind a spec to what it describes (R11). Derived from this repository's real layout. NOTE for anyone editing: this repository's product is decisions and reference files rather than a running service, so a capability owns documents and a shipped tree, not a slice of application code. The Layer 1 files this repository carries as an adopter (scripts/, .claude/, specs/, docs/, the two manifests) are $unclaimed on purpose: they are the standard's own content, governed by the core's specs, and claiming them here would make every core update read as a change to a capability of this repository.",
+  "stack-decisions": [
+    "DECISIONS.md"
+  ],
+  "reference-implementation": [
+    "starter/**",
+    ".github/workflows/starter-boot.yml"
+  ],
+  "adoption-path": [
+    "ADAPTING.md",
+    "QUICKSTART.md"
+  ],
+  "stack-contract": [
+    "stack.manifest.json",
+    "SHIPPED.md"
+  ],
+  "$unclaimed": [
+    "README.md",
+    "WHAT-THIS-IS.md",
+    "CONTRIBUTING.md",
+    "CODE_OF_CONDUCT.md",
+    "SECURITY.md",
+    "LICENSE",
+    "VERSION",
+    "CHANGELOG.md",
+    "backlog.md",
+    "AGENTS.md",
+    "SPEC.md",
+    "standard.manifest.json",
+    ".standards-version",
+    ".nvmrc",
+    ".gitattributes",
+    ".gitignore",
+    ".gitleaks.toml",
+    "site/**",
+    "site.config.json",
+    "docs/**",
+    "specs/**",
+    "scripts/**",
+    ".claude/**",
+    ".github/workflows/spec-guard.yml",
+    ".github/pull_request_template.md",
+    ".github/workflows/dashboard.yml",
+    ".github/workflows/gitleaks.yml",
+    ".github/workflows/standards-update-watch.yml"
+  ]
+}

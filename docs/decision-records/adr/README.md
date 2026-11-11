@@ -1,0 +1,76 @@
+# ADR index
+
+Architecture Decision Records - технические причины. Тест записи, жизненный цикл и иерархия: стандарт (`docs/standards/vendor/repository-standards-core/docs/tree/docs-decision-records.md`).
+
+Записи идут в порядке, в котором их стоит читать: каждая опирается только на предыдущие.
+
+| # | Title | Status |
+|---|-------|--------|
+| [001](ADR-001-adopt-repository-standards.md) | Внедрить Repository Standards (профиль core) | Accepted |
+| [002](ADR-002-domain-driven-hexagon.md) | Domain-Driven Hexagon - обязательная архитектура каждого backend | Accepted |
+| [003](ADR-003-branching-squash-merge.md) | Ветвление: trunk-based, rebase веток, squash-merge в main | Accepted |
+| [004](ADR-004-working-language.md) | Рабочий язык: код и коммиты - английский, документы и спеки - русский | Accepted |
+| [005](ADR-005-dependency-policy.md) | Политика зависимостей: точные версии, lockfile, кулдаун 7 дней | Accepted |
+| [006](ADR-006-clean-slate.md) | Чистый лист: прототип и его решения удалены (2026-11-05) | Accepted |
+| [007](ADR-007-language-and-runtime.md) | Язык и рантайм: TypeScript 6 strict, Node 26 LTS, ESM, pnpm | Accepted |
+| [008](ADR-008-repository-topology.md) | Топология: монорепо, модульный монолит, несколько точек входа | Accepted |
+| [009](ADR-009-task-runner-turborepo.md) | Задачи монорепо: Turborepo поверх pnpm workspaces, общий пакет конфигураций | Accepted |
+| [010](ADR-010-backend-framework-nestjs.md) | Backend-фреймворк: NestJS 12 (отход от Fastify из Node-стандарта) | Accepted |
+| [011](ADR-011-frontend-nextjs.md) | Frontend-фреймворк: Next.js с React | Accepted |
+| [012](ADR-012-api-contract-trpc.md) | API и контракт FE-BE: tRPC (nestjs-trpc), MCP отдельным адаптером | Accepted |
+| [013](ADR-013-datastore-postgres-drizzle.md) | Хранилище: PostgreSQL 18, Drizzle, миграции только вперёд | Accepted |
+| [014](ADR-014-boundary-check-dependency-cruiser.md) | Проверка границ архитектуры: dependency-cruiser | Accepted |
+| [015](ADR-015-result-type-neverthrow.md) | Тип результата для бизнес-ошибок: neverthrow | Accepted |
+| [016](ADR-016-tooling-eslint-prettier-vitest.md) | Линт, формат, тесты: ESLint type-aware, Prettier, Vitest (отход от Biome) | Accepted |
+| [017](ADR-017-platform-digitalocean.md) | Платформа: Kubernetes и Managed Postgres на DigitalOcean, облачный слой - runbook | Accepted |
+| [018](ADR-018-unified-pipeline.md) | Единый конвейер для всех приложений: pre-commit, CI на PR, CI при merge | Accepted |
+| [019](ADR-019-deployment-helm-argocd.md) | Деплой: общий Helm-чарт app и ArgoCD, манифесты в deploy/ | Accepted |
+| [020](ADR-020-secrets-sealed-secrets.md) | Секреты: Sealed Secrets в кластере, GitHub Secrets только для CI | Accepted |
+| [021](ADR-021-events-debezium-cdc.md) | События: Debezium читает WAL Postgres (outbox-таблица и CDC остальных таблиц) | Accepted |
+| [022](ADR-022-queue-nats-jetstream.md) | Очередь: NATS JetStream в кластере, одна реплика с PVC | Accepted |
+| [023](ADR-023-debezium-server-run.md) | Запуск CDC: репликация Postgres - SQL-файлом, Debezium Server - файлом настроек | Accepted |
+| [024](ADR-024-query-filter-contract.md) | Контракт фильтров query: описание полей, EXISTS, публичный фасад модуля | Accepted |
+| [025](ADR-025-transaction-and-domain-event-outbox.md) | Транзакция команды и outbox доменных событий: TransactionManager, DomainEventRecorder, subject в NATS | Accepted |
+| [026](ADR-026-image-registry-ghcr.md) | Реестр образов: GitHub Container Registry, образы публичные | Accepted |
+| [027](ADR-027-image-layout-dockerfile.md) | Устройство образа: node:26-slim, turbo prune, multi-stage, non-root | Accepted |
+| [028](ADR-028-image-build-ci.md) | Сборка образов в CI: BuildKit, кэш GHA, amd64, матрица по затронутым | Accepted |
+| [029](ADR-029-image-checks.md) | Проверки образа: hadolint и секреты блокируют, Trivy сообщает | Accepted |
+| [030](ADR-030-image-tag-direct-commit.md) | Тег образа в Git: прямой коммит бота в main вместо PR с автослиянием (заменяет пункт 2 раздела «Тег образа» ADR-019) | Accepted |
+| [031](ADR-031-ui-library-blueprintjs.md) | UI-библиотека frontend: BlueprintJS | Accepted |
+| [032](ADR-032-logging-pino-loki.md) | Логирование: pino в stdout, Loki и Grafana в кластере | Accepted |
+| [033](ADR-033-local-environment-docker-compose.md) | Локальная среда: docker compose с Postgres, NATS JetStream и Debezium | Accepted |
+| [034](ADR-034-cooldown-exception-managed-parity.md) | Исключение из кулдауна: версия, уже работающая в managed-сервисе | Accepted |
+
+Первая ячейка - номер-ссылка на файл; остальное - свободный текст. `scripts/decision-records-check.mjs` сверяет таблицу с файлами. Нумерация без пропусков, номера не переиспользуются. Шаблон: [`_template.md`](_template.md). Решения прототипа не переносятся (ADR-006).
+
+## Группы
+
+| Группа | Записи |
+|---|---|
+| Как ведётся репозиторий | 001-006, 034 |
+| Код: язык, структура, фреймворки, контракт, данные | 007-013, 024, 031 |
+| Качество: границы, ошибки, линт и тесты | 014-016 |
+| Платформа и доставка | 017-020, 032, 033 |
+| События и очередь | 021-023 |
+
+## Развилки стандарта (R7) и ответы на них
+
+| Развилка | Ответ |
+|---|---|
+| Границы доменов и модулей | ADR-002, проверка - ADR-014 |
+| Ветвление и релизы | ADR-003; откат деплоя - ADR-019 |
+| Зависимости и цепочка поставок | ADR-005 |
+| Язык, рантайм, фреймворки, инструменты | ADR-007, ADR-010, ADR-011, ADR-016; UI-библиотека - ADR-031 |
+| Логи и наблюдаемость | ADR-032; срок хранения - открыто: backlog OBS-1 |
+| Топология репозитория и сборка | ADR-008, ADR-009 |
+| Стиль API и контракта | ADR-012 |
+| Хранилище данных | ADR-013; размещение - ADR-017 |
+| Модель ошибок | ERR-1..6 (ADR-002); тип результата - ADR-015 |
+| Платформа и описание инфраструктуры | ADR-017 |
+| Конвейер проверок и доставки | ADR-018; реестр образов - ADR-026; образы - ADR-027, ADR-028, ADR-029; окружения, TLS - открыто: backlog CI-1 |
+| Деплой | ADR-019; тег образа - ADR-030 вместо пункта 2 раздела «Тег образа» |
+| Секреты | ADR-020 |
+| События и очередь | ADR-021, ADR-022, ADR-023, ADR-025 |
+| Объектное хранилище, AI-провайдер, аутентификация | открыто: backlog STACK-2, STACK-3, AUTH-1 |
+| Стратегия тестирования | открыто: backlog TEST-1 |
+| Базовая безопасность | открыто: backlog SEC-1 |

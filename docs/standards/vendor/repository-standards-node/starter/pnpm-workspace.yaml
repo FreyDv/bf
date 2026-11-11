@@ -1,0 +1,30 @@
+# pnpm workspace - the paved-road monorepo shape. This file IS the reference copy
+# (stack.manifest.json points brownfield merges here); the policy block below is
+# the point - the workspace globs are the trivial part.
+
+packages:
+  - 'apps/*' # every deployable, UI or not - one place, see DECISIONS #17
+  - 'packages/*'
+  - 'e2e' # cross-app end-to-end journeys (Playwright) - its own package, not co-located
+  - 'perf' # local Lighthouse perf-budget runner - report-only, committed baselines + history
+
+# Do not run arbitrary lifecycle scripts on install. Approve build scripts explicitly.
+enablePrePostScripts: false
+
+# Only these dependencies may run install/build scripts (pnpm's allow-list). Add a
+# package here consciously - an unreviewed postinstall is a supply-chain foothold.
+# (esbuild and sharp still work when their postinstall is skipped - the platform binary
+# ships as an optional dependency - but allow them so the fast path is used.)
+allowBuilds:
+  '@parcel/watcher': false # prebuilt platform binary ships as an optional dep; the script is a fallback build
+  esbuild: true
+  sharp: true
+
+# Supply-chain cooldown: never install a package version published less than 7 days ago
+# (10080 min). Fresh releases are the main vector for compromised packages and are
+# usually pulled within the week. All versions pinned in this starter respect it.
+# Exact versions on add - the manifests stay range-free (pnpm 11 reads settings
+# from this file, not .npmrc).
+saveExact: true
+
+minimumReleaseAge: 10080

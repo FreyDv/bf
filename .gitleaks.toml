@@ -1,0 +1,57 @@
+# gitleaks config (repository-standards baseline)
+# Scans staged commits (pre-commit hook) + PR/push range (CI).
+# Principle: secrets never live in the repo - secret manager + env vars only.
+# `[[allowlists]]` and `targetRules` need a recent gitleaks 8.x; the shipped workflow pins
+# the version it is tested against.
+
+title = "gitleaks config"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Paths and patterns allowed to contain secret-like strings."
+# No blanket entry for docs/: `docs/discovery/` is where the standard tells the agent to
+# paste meeting notes, mails and transcripts, and runbooks carry real command lines - the
+# two places in the tree most likely to receive a live credential. Placeholder-shaped
+# findings in templates are covered by the `regexes` below, which match the secret itself.
+paths = [
+  '''(.*/)?\.env\.example$''',
+  '''(.*/)?\.env\.sample$''',
+  '''(.*/)?pnpm-lock\.yaml$''',
+  '''(.*/)?package-lock\.json$''',
+  '''(.*/)?yarn\.lock$''',
+]
+regexes = [
+  '''EXAMPLE''',
+  '''your-.*-here''',
+  '''<.*>''',
+]
+
+# A manifest entry is a path and the sha256 of the file at it, so where the path carries a
+# word the entropy rule keys on - a hook called `no-ci-secret-writes.sh` - the hash beside
+# it reads as a credential and the adoption commit fails the scan on a shipped file.
+#
+# Scoped by shape AND by file. The shape alone - a JSON key whose entire value is 64
+# lowercase hex characters - is also the shape of an HMAC signing secret pasted into a
+# service config, so on its own it would switch `generic-api-key` off for that line in
+# every JSON file in the repo. `condition = "AND"` makes gitleaks require both the path
+# and the line (the default OR lets either one allow) - and only that line: a non-hash
+# secret elsewhere in a manifest is still reported. The rule stays scoped to
+# `generic-api-key`, so every named-vendor rule still fires everywhere, manifests included.
+# The path is matched repo-relative in git mode and absolute in `gitleaks dir`, hence the
+# optional directory prefix rather than a `^` anchor.
+[[allowlists]]
+description = "sha256 values recorded by manifest-hashes, in the manifests only."
+targetRules = ["generic-api-key"]
+condition = "AND"
+paths = ['''(.*/)?(standard|stack)\.manifest\.json$''']
+regexTarget = "line"
+regexes = ['''^\s*"[^"]+":\s*"[a-f0-9]{64}",?\s*$''']
+
+# Add repo-specific vendor-key rules below (optional), e.g.:
+# [[rules]]
+# id = "vendor-api-key"
+# description = "Vendor API key must live in the secret manager only."
+# regex = '''(?i)VENDOR_API_KEY\s*[:=]\s*['"][A-Za-z0-9\-_]{16,}['"]'''
+# tags = ["vendor", "secret"]

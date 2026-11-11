@@ -1,9 +1,7 @@
-node_modules
-dist
-.next
-.turbo
 pnpm-lock.yaml
-apps/*/drizzle/**
-infra/**/*.json
-**/cdk.out
-out/
+docs/standards/vendor
+.next
+dist
+coverage
+.turbo
+next-env.d.ts

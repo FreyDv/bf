@@ -2,32 +2,35 @@
   "name": "@bf/config",
   "version": "0.0.0",
   "private": true,
-  "description": "Shared ESLint (flat), Prettier and tsconfig presets for the bf monorepo",
+  "type": "module",
   "exports": {
-    "./eslint": "./eslint/index.mjs",
-    "./eslint/base": "./eslint/base.mjs",
-    "./eslint/nest": "./eslint/nest.mjs",
-    "./eslint/react": "./eslint/react.mjs",
-    "./prettier": "./prettier.mjs",
-    "./tsconfig/base.json": "./tsconfig/base.json",
-    "./tsconfig/nest.json": "./tsconfig/nest.json",
-    "./tsconfig/react.json": "./tsconfig/react.json",
-    "./tsconfig/package.json": "./tsconfig/package.json"
+    "./tsconfig/*": "./tsconfig/*",
+    "./eslint": {
+      "types": "./eslint/index.d.ts",
+      "default": "./eslint/index.js"
+    },
+    "./prettier": "./prettier.js",
+    "./vitest": {
+      "types": "./vitest/index.d.ts",
+      "default": "./vitest/index.js"
+    }
   },
   "dependencies": {
-    "@eslint-react/eslint-plugin": "catalog:",
-    "@eslint/js": "catalog:",
-    "eslint": "catalog:",
-    "eslint-config-prettier": "catalog:",
-    "eslint-import-resolver-typescript": "^4.4.5",
-    "eslint-plugin-import-x": "catalog:",
-    "eslint-plugin-react-hooks": "catalog:",
-    "eslint-plugin-unused-imports": "catalog:",
-    "globals": "catalog:",
-    "prettier": "catalog:",
-    "typescript-eslint": "catalog:"
+    "@eslint/js": "10.0.1",
+    "@swc/core": "1.16.21",
+    "eslint-config-next": "16.4.4",
+    "eslint-config-prettier": "10.1.8",
+    "typescript-eslint": "8.72.1",
+    "unplugin-swc": "2.0.0"
   },
   "devDependencies": {
-    "typescript": "catalog:"
+    "eslint": "10.14.0",
+    "typescript": "6.0.3",
+    "vitest": "5.1.0"
+  },
+  "peerDependencies": {
+    "eslint": "10.14.0",
+    "typescript": "6.0.3",
+    "vitest": "5.1.0"
   }
 }

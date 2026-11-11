@@ -1,10 +1,6 @@
-**/node_modules
-**/dist
-**/.next
-**/out
-**/.turbo
-**/coverage
 **/.env
-infra/**/data
+**/.env.*
+!**/.env.example
+**/node_modules
+**/.turbo
 .git
-.idea

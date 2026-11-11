@@ -1,0 +1,32 @@
+{
+  "name": "@bf/backend",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "start": "node dist/main.js"
+  },
+  "prettier": "@bf/config/prettier",
+  "dependencies": {
+    "@nestjs/common": "12.3.2",
+    "@nestjs/core": "12.3.2",
+    "@nestjs/platform-express": "12.3.2",
+    "@trpc/server": "11.23.0",
+    "nestjs-trpc": "2.14.0",
+    "reflect-metadata": "0.2.2",
+    "rxjs": "7.8.1",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@bf/config": "workspace:*",
+    "@nestjs/testing": "12.3.2",
+    "@types/node": "26.6.6",
+    "eslint": "10.14.0",
+    "typescript": "6.0.3",
+    "vitest": "5.1.0"
+  }
+}

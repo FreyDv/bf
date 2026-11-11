@@ -1,0 +1,15 @@
+{
+  "name": "perf",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Local Lighthouse performance-budget runner. Not a CI gate: report-only, driven before pushing. Baselines and dated history are committed here; the live `.results/` is gitignored. Run from the repo root via `pnpm test:perf`.",
+  "scripts": {
+    "perf:run": "node run-perf.mjs",
+    "perf:compare": "node compare.mjs"
+  },
+  "devDependencies": {
+    "chrome-launcher": "1.2.1",
+    "lighthouse": "13.4.0"
+  }
+}
