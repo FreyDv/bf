@@ -29,7 +29,11 @@ const files: Record<string, string> = {
   [`${S}/app.module.ts`]:
     "import { repo } from './orders/infrastructure/order.repository.js';\nexport const app = repo;",
 
+  [`${S}/orders/commands/place/place.request.dto.ts`]: 'export const dto = 1;',
+  'packages/contracts/src/generated/server.ts': `import { dto } from '../../../../apps/backend/src/orders/commands/place/place.request.dto.js';\nexport const a = dto;`,
+
   // violations
+  'packages/contracts/src/bad-domain.ts': `import { order } from '../../../apps/backend/src/orders/domain/order.aggregate.js';\nexport const a = order;`,
   [`${S}/orders/domain/bad-application.ts`]:
     "import { port } from '../application/ports/order.port.js';\nexport const a = port;",
   [`${S}/orders/domain/bad-infrastructure.ts`]:
@@ -69,6 +73,7 @@ const expected: Array<[rule: string, from: string]> = [
   ['dep-9-no-circular', `${S}/orders/domain/cycle-a.ts`],
   ['not-to-unresolvable', `${S}/orders/domain/bad-unresolved.ts`],
   ['apps-do-not-import-each-other', 'apps/frontend/app/bad-app-import.ts'],
+  ['contracts-only-dtos-from-backend', 'packages/contracts/src/bad-domain.ts'],
 ];
 
 interface Violation {
@@ -101,7 +106,14 @@ describe('dependency-cruiser boundaries', () => {
     try {
       stdout = execFileSync(
         join(root, 'node_modules/.bin/depcruise'),
-        ['apps', '--config', join(root, '.dependency-cruiser.mjs'), '--output-type', 'json'],
+        [
+          'apps',
+          'packages',
+          '--config',
+          join(root, '.dependency-cruiser.mjs'),
+          '--output-type',
+          'json',
+        ],
         { cwd: tmp, encoding: 'utf8', maxBuffer: 1 << 26 },
       );
     } catch (error) {

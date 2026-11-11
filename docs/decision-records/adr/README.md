@@ -40,6 +40,7 @@ Architecture Decision Records - технические причины. Тест 
 | [032](ADR-032-logging-pino-loki.md) | Логирование: pino в stdout, Loki и Grafana в кластере | Accepted |
 | [033](ADR-033-local-environment-docker-compose.md) | Локальная среда: docker compose с Postgres, NATS JetStream и Debezium | Accepted |
 | [034](ADR-034-cooldown-exception-managed-parity.md) | Исключение из кулдауна: версия, уже работающая в managed-сервисе | Accepted |
+| [035](ADR-035-router-type-export-to-frontend.md) | Тип `AppRouter` во frontend: файл из `nestjs-trpc generate` в `packages/contracts` | Accepted |
 
 Первая ячейка - номер-ссылка на файл; остальное - свободный текст. `scripts/decision-records-check.mjs` сверяет таблицу с файлами. Нумерация без пропусков, номера не переиспользуются. Шаблон: [`_template.md`](_template.md). Решения прототипа не переносятся (ADR-006).
 
@@ -63,7 +64,7 @@ Architecture Decision Records - технические причины. Тест 
 | Язык, рантайм, фреймворки, инструменты | ADR-007, ADR-010, ADR-011, ADR-016; UI-библиотека - ADR-031 |
 | Логи и наблюдаемость | ADR-032; срок хранения - открыто: backlog OBS-1 |
 | Топология репозитория и сборка | ADR-008, ADR-009 |
-| Стиль API и контракта | ADR-012 |
+| Стиль API и контракта | ADR-012; тип роутера во frontend - ADR-035 |
 | Хранилище данных | ADR-013; размещение - ADR-017 |
 | Модель ошибок | ERR-1..6 (ADR-002); тип результата - ADR-015 |
 | Платформа и описание инфраструктуры | ADR-017 |

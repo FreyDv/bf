@@ -13,6 +13,7 @@
   },
   "prettier": "@bf/config/prettier",
   "dependencies": {
+    "@bf/contracts": "workspace:*",
     "next": "16.4.4",
     "react": "19.3.1",
     "react-dom": "19.3.1"

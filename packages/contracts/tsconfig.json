@@ -1,0 +1,10 @@
+{
+  "extends": "@bf/config/tsconfig/base.json",
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "noEmit": true,
+    "noUnusedLocals": false
+  },
+  "include": ["src", "*.js"]
+}
