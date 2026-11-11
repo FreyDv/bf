@@ -1,0 +1,8 @@
+# Bootstrap values for the argo-cd chart (runbook docs/runbooks/malinina-kubernetes.md, ADR-019).
+repoServer:
+  replicas: 2
+server:
+  env:
+  - name: ARGOCD_API_SERVER_REPLICAS
+    value: "2"
+  replicas: 2
