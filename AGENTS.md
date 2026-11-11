@@ -19,8 +19,8 @@ TDR stream.
 
 ## Project
 
-A new project, started from a clean slate on 2026-11-05 (ADR-006): there is no code yet and the technology
-stack is not chosen. What and why: [PRODUCT.md](docs/PRODUCT.md). The previous prototype (a NestJS service
+A new project, started from a clean slate on 2026-11-05 (ADR-006): the stack is chosen (ADR-007..033) and the
+monorepo skeleton exists, but no capability is specified or built yet. What and why: [PRODUCT.md](docs/PRODUCT.md). The previous prototype (a NestJS service
 monorepo with AWS infrastructure) was removed on purpose; it remains in the git history of `main` (last
 commit `7c7928a`) and is not a source of rules.
 
@@ -48,23 +48,27 @@ checks them ([self-verify.md](docs/standards/vendor/repository-standards-core/me
 - Implement inside-out, one slice at a time: domain, application, infrastructure, driving adapters, tests
   (AIP-3). Cite rule IDs in plans, reviews and pull requests.
 - A conflict with a rule is a stop: name the rule, propose the ADR, wait (AIP-1, AIP-4). Never deviate silently.
-- No backend module is merged before the dependency-boundary check runs in CI (ENF-1). Until the stack ADR
-  chooses the tool, no backend code is written: backlog `STACK-1`, `ENF-1`.
+- No backend module is merged before the dependency-boundary check passes in CI (ENF-1): `pnpm deps`, config
+  `.dependency-cruiser.mjs`, step `Architecture boundaries` in `.github/workflows/ci.yml` (ADR-014). A violation is fixed in the code, never in the config.
+- A list query with a filter follows `.claude/rules/query-filter-rules.md` (QRY rules, ADR-024), also loaded in every session.
 - Skills: `ddd-plan-module` (plan), `ddd-new-use-case` (implement a slice), `ddd-review` (review).
 
 ## Repo map
 
 | Path | Purpose |
 |------|---------|
+| `apps/`, `packages/` | backend (NestJS), frontend (Next.js), shared config package (ADR-008, ADR-009) |
+| `compose.yaml`, `deploy/` | local environment (ADR-033), ArgoCD bootstrap values; Helm charts and manifests arrive with CHART-1 |
 | `docs/PRODUCT.md`, `docs/personas.md` | what we build and for whom (drafts awaiting the owner) |
 | `docs/decision-records/` | ADR (technical why) and BDR (business why), MADR form |
 | `specs/` | living capability specs + `capability-map.json` (R8-R11); empty until the first capability |
 | `docs/backlog.md` | ordered, agent-first backlog and the alignment scope count |
 | `docs/discovery/`, `docs/ideas/`, `docs/runbooks/` | raw material with provenance, ideas, operational runbooks |
 | `docs/standards/` | knowledge base: both sources vendored verbatim, digests of everything they cite, rationale and traceability |
-| `.claude/rules/` | always-loaded binding rules (architecture, AI protocol) and the repository-standards rules |
+| `.claude/rules/` | always-loaded binding rules (architecture, AI protocol, query filters) and the repository-standards rules |
 | `.claude/skills/` | the standard's 21 lifecycle skills plus `ddd-plan-module`, `ddd-new-use-case`, `ddd-review` |
 | `.claude/hooks/`, `.claude/settings.json` | agent guards (remote-DB writes, force-push, CI secrets, elicitation) and the permission baseline |
+| `package.json`, `turbo.json`, `lefthook.yml`, `.dependency-cruiser.mjs` | workspace, task runner, pre-commit, boundary check (ADR-009, ADR-014, ADR-018) |
 | `scripts/` | the standard's dependency-free guards (`*.mjs`), spec engine, guard self-test |
 | `.github/workflows/` | the standard's gates: `spec-guard`, `gitleaks`, `standards-update-watch` |
 
@@ -76,9 +80,16 @@ node scripts/self-verify.mjs            # drift against the standard (0 = aligne
 node scripts/spec-structure.mjs --block && node scripts/spec-guard.mjs --audit --block
 node scripts/decision-records-check.mjs --block
 bash scripts/verifyAgentGuards.sh       # after any change under .claude/hooks/
+
+pnpm install                            # exact pins, 7-day cooldown (pnpm-workspace.yaml)
+pnpm build | lint | typecheck | test    # turbo run over all packages (ADR-009)
+pnpm format:check                       # prettier on code (apps/, packages/)
+pnpm deps                               # architecture boundaries (DEP-2, DEP-3, DEP-5, DEP-8, DEP-9)
+pnpm deps:test                          # the rules fire on violating fixtures; run after editing the config
+pnpm local:up | local:cdc | local:down | local:reset   # docker compose: Postgres, NATS (+ Debezium with local:cdc), ADR-033
 ```
 
-Build, test and boundary-check commands are added here by the stack ADR. Before any of it the toolchain the
+Helm commands are added here by `CHART-1`. Before any of it the toolchain the
 guards need must be present: [prerequisites.md](docs/standards/vendor/repository-standards-core/method/prerequisites.md).
 Node and `jq` are not optional: without `jq` the `PreToolUse` guards deny every Bash command rather than pass
 it unchecked.
@@ -88,6 +99,8 @@ it unchecked.
 - **Commits:** Conventional Commits, `type(scope): imperative summary`; one commit = one logical change; small,
   focused PRs; ASCII hyphen `-` only. **No AI or tool attribution** in commits or PR text (the owner chose the
   standard's convention, 2026-11-05).
+  A `lefthook` pre-commit hook (`lefthook.yml`, ADR-018) runs typecheck, prettier, eslint and the boundary check on
+  staged files and re-stages what it fixed. Agents never bypass it (`--no-verify`); CI is the real gate.
 - **Branch and history (R23):** branch off `main`, base every PR on `main`, never on another open PR's branch;
   update by rebase, never merge `main` into your branch; land by **squash-merge** (ADR-003); never rewrite a
   branch someone else builds on.
