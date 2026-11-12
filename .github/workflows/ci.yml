@@ -1,17 +1,24 @@
 name: ci
 
-# ADR-018: the guarantee behind the bypassable pre-commit hook. Steps run in the ADR order and stop
-# on the first failure: tsc -> prettier -> eslint -> boundaries -> unit. Still to come, as the code
-# they need appears: e2e against a test database and NATS (TEST-1), migration check (ADR-013),
-# image build on `main` (CI-1). Folds in the former `boundaries` workflow (ENF-1, ADR-014).
+# ADR-018, ADR-036. Three jobs with separate rights:
+#   ci       the required check: tsc -> prettier -> eslint -> boundaries -> unit -> e2e -> migrations, then the chart.
+#            e2e runs only once a package defines `test:e2e`; migrations only when a pull request touches them.
+#   image    hadolint, then a build without push and a scan of the layers, on pull requests and `main` (ADR-028, ADR-029).
+#   publish  push to `main` only, needs the two above, the only job that may write packages (ADR-026).
+# Triggers are `push` to `main` and `pull_request`, never `pull_request_target`. Folds in the former `boundaries`
+# workflow (ENF-1, ADR-014).
 on:
   push:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # A new push to a pull request supersedes the old run; a run on `main` is never cancelled, it may be publishing.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   ci:
@@ -65,11 +72,200 @@ jobs:
         run: pnpm deps
       - name: Boundary rules fire on violations
         run: pnpm deps:test
+      - name: Migration check works
+        # The check itself on fixtures, against a real Postgres container; Docker is on the runner.
+        run: pnpm migrations:test
       - name: Unit tests
         run: pnpm turbo run test ${{ github.event_name == 'pull_request' && '--affected' || '' }}
+      - name: Is there an e2e task
+        id: e2e
+        # A package without `test:e2e` shows up in the dry run with the command <NONEXISTENT>.
+        run: |
+          count=$(pnpm turbo run test:e2e ${{ github.event_name == 'pull_request' && '--affected' || '' }} --dry=json | node -p "JSON.parse(require('fs').readFileSync(0, 'utf8')).tasks.filter((t) => t.task === 'test:e2e' && t.command !== '<NONEXISTENT>').length")
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+      - name: Postgres and NATS
+        # From compose.yaml, the local environment (ADR-033, ADR-036): no `cdc` profile, `--wait` holds until the
+        # health checks pass. The database is bf_test, so the TST-3 guard of the tests lets them run.
+        if: steps.e2e.outputs.count != '0'
+        run: pnpm local:up
+      - name: End-to-end tests
+        if: steps.e2e.outputs.count != '0'
+        env:
+          DATABASE_URL: postgres://doadmin:bf_local_only@127.0.0.1:5432/bf_test
+          NATS_URL: nats://127.0.0.1:4222
+        run: pnpm turbo run test:e2e ${{ github.event_name == 'pull_request' && '--affected' || '' }}
+      - name: Migrations
+        # Only a pull request, and the script itself skips when no migration file changed (ADR-018).
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: origin/${{ github.base_ref }}
+        run: pnpm migrations:check
       - name: Helm chart
         # Only when the deploy files changed on a pull request (ADR-019); Helm is preinstalled on the runner.
         if: github.event_name != 'pull_request' || steps.deploy.outputs.changed == 'true'
         run: |
           pnpm charts
           pnpm charts:test
+
+  image:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          # `turbo ls --affected` diffs against the base branch.
+          fetch-depth: 0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - name: Install pnpm
+        run: npm install --global pnpm@11.28.10
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Which images
+        id: apps
+        # A pull request builds the apps it affects; `main` builds all of them (ADR-028, ADR-036).
+        run: node scripts/image-check.ts affected
+      - name: Dockerfile lint
+        # hadolint, every Dockerfile, on pull requests and `main`; an error blocks (ADR-029).
+        run: node scripts/image-check.ts lint
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      # One step group per app: a matrix would give the check a name per app, and the required check is `image`.
+      # Built and loaded into the local daemon, not pushed: the layers are scanned here, the push is `publish`.
+      - name: Build backend
+        if: steps.apps.outputs.backend == 'true'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: apps/backend/Dockerfile
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: bf-backend:ci
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,scope=backend,mode=max
+      - name: Scan backend layers for secrets
+        if: steps.apps.outputs.backend == 'true'
+        run: node scripts/image-check.ts secrets bf-backend:ci
+      - name: Report backend vulnerabilities
+        if: steps.apps.outputs.backend == 'true'
+        run: node scripts/image-check.ts vulns bf-backend:ci
+
+      - name: Build frontend
+        if: steps.apps.outputs.frontend == 'true'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: apps/frontend/Dockerfile
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: bf-frontend:ci
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,scope=frontend,mode=max
+      - name: Scan frontend layers for secrets
+        if: steps.apps.outputs.frontend == 'true'
+        run: node scripts/image-check.ts secrets bf-frontend:ci
+      - name: Report frontend vulnerabilities
+        if: steps.apps.outputs.frontend == 'true'
+        run: node scripts/image-check.ts vulns bf-frontend:ci
+
+  publish:
+    # Only a push to `main`, and only after the code checks and the image checks passed (ADR-026, ADR-028).
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [ci, image]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write # the only job with this right (ADR-026)
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Per app, in this order (ADR-036): build and load from the cache `image` filled, scan the loaded layers,
+      # then push from the same cache with SBOM and provenance, then pull anonymously. A secret in a layer stops
+      # the run before anything is pushed. The tag is the commit SHA, never `latest` (ADR-018, ADR-026).
+      - name: Metadata backend
+        id: meta-backend
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ghcr.io/freydv/bf-backend
+          flavor: latest=false
+          tags: type=raw,value=${{ github.sha }}
+      - name: Build backend
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: apps/backend/Dockerfile
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: bf-backend:publish
+          labels: ${{ steps.meta-backend.outputs.labels }}
+          cache-from: type=gha,scope=backend
+      - name: Scan backend layers for secrets
+        run: node scripts/image-check.ts secrets bf-backend:publish
+      - name: Push backend
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: apps/backend/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta-backend.outputs.tags }}
+          labels: ${{ steps.meta-backend.outputs.labels }}
+          cache-from: type=gha,scope=backend
+          sbom: true
+          provenance: mode=max
+      - name: Pull backend anonymously
+        # ADR-026: the cluster pulls without a secret, so the package must be public. A fresh Docker config has no login.
+        run: DOCKER_CONFIG="$(mktemp -d)" docker pull ghcr.io/freydv/bf-backend:${{ github.sha }}
+
+      - name: Metadata frontend
+        id: meta-frontend
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ghcr.io/freydv/bf-frontend
+          flavor: latest=false
+          tags: type=raw,value=${{ github.sha }}
+      - name: Build frontend
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: apps/frontend/Dockerfile
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: bf-frontend:publish
+          labels: ${{ steps.meta-frontend.outputs.labels }}
+          cache-from: type=gha,scope=frontend
+      - name: Scan frontend layers for secrets
+        run: node scripts/image-check.ts secrets bf-frontend:publish
+      - name: Push frontend
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: apps/frontend/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta-frontend.outputs.tags }}
+          labels: ${{ steps.meta-frontend.outputs.labels }}
+          cache-from: type=gha,scope=frontend
+          sbom: true
+          provenance: mode=max
+      - name: Pull frontend anonymously
+        run: DOCKER_CONFIG="$(mktemp -d)" docker pull ghcr.io/freydv/bf-frontend:${{ github.sha }}
