@@ -6,6 +6,7 @@
 
 | id | title | type | where |
 |---|---|---|---|
+| SEC-1 | Базовая безопасность: ответ на каждую ось `security-baseline.md` | decision | `docs/decision-records/adr/ADR-037-security-baseline.md` (Accepted 2026-11-12, решено агентом по поручению владельца): 16 осей; DoD уточнён при закрытии - именованная отсрочка с владеющей строкой считается ответом (AUTH-1, OBS-1, SEALED-1, STACK-2, CI-1, PRIVACY-1); `SECURITY.md` (эмбарго), `docs/runbooks/github-settings.md` (раздел «Безопасность репозитория»); новые строки CHART-3, BACKUP-1, GHSET-1, AGENT-1, INGRESS-1, DBSEC-3, PRIVACY-1 |
 | PRODUCT-1 | North Star и метрики успеха в `PRODUCT.md` | task | `docs/PRODUCT.md` (Vision: горизонт и ставка; Success metrics: определение успеха словами владельца, числа отложены), `docs/discovery/product-vision/2026-11-12-owner-north-star.md`; числа - METRICS-1 |
 | PERSONAS-1 | Подтвердить BDR-001 и персоны | task | BDR-001 (Accepted 2026-11-11), `docs/personas.md` (четыре персоны, маркеры `[NEEDS INPUT]` и `[NEEDS REVIEW]` сняты; `[NEEDS DECISION]` о полномочиях MCP отложен владельцем до первой MCP-спеки), `docs/discovery/product-vision/` |
 | STACK-1 | Стек и развилки | task | `docs/decision-records/adr/README.md` - развилки записаны в ADR-007..023; остаток разделён на STACK-2 (объектное хранилище), STACK-3 (AI-провайдер), AUTH-1 (аутентификация) |
