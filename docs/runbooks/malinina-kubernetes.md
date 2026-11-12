@@ -30,7 +30,7 @@ Serves: владелец-оператор и агент, действующий 
 | Правила | 80 -> NodePort 31340 (http), 443 -> NodePort 31251 (TLS завершается на LB, дальше http); редирект http -> https включён; проба `:10256/healthz` |
 | Сертификат | `malinina-ca` (`b6041d52-...`): `malinina.ca`, `*.malinina.ca`, Let's Encrypt, `verified`, до 2027-02-09; продление DO не проверялось |
 | DNS | зона `malinina.ca` на DO (NS `ns1-3.digitalocean.com`): A `@` и A `*` на `209.38.12.89`, ещё один A `@` на тот же адрес (дубль), AAAA `@` на IPv6 балансировщика; AAAA для `*` нет |
-| Ingress | `ingress-nginx` 4.15.1 (контроллер v1.15.1, 2 реплики, `IngressClass nginx`), Helm-релиз ревизия 3, `deployed`, поставлен 2026-11-03 |
+| Ingress | `ingress-nginx` 4.15.1 (контроллер v1.15.1, 2 реплики, `IngressClass nginx`), Helm-релиз ревизия 3, `deployed`, поставлен 2026-11-03; снят с поддержки, заменяется Traefik (ADR-038) |
 
 ### Что работает в кластере
 
@@ -53,7 +53,7 @@ Serves: владелец-оператор и агент, действующий 
 | 4 | Автообновление выключено | версия кластера устареет, обновление - ручное в окно обслуживания | RUNBOOK-1 |
 | 5 | Нет metrics-server | не работают `kubectl top` и автомасштабирование подов | при появлении нагрузки |
 | 6 | Дубль A-записи `@` в DNS | безвреден, но лишний; удалять - действие в консоли DO | RUNBOOK-1 |
-| 7 | TLS завершается на балансировщике, внутри кластера http | трафик LB -> узел внутри VPC без шифрования; риск принят в ADR-037; заголовки, выбор ingress и IP клиента за балансировщиком остаются | ADR-037, CI-1 |
+| 7 | TLS завершается на балансировщике, внутри кластера http | трафик LB -> узел внутри VPC без шифрования; риск принят в ADR-037; ingress-контроллер, заголовки и IP клиента решены в ADR-038: `ingress-nginx` снят с поддержки и заменяется Traefik (миграция ниже), срок сертификата - CERT-1 | ADR-037, ADR-038, TRAEFIK-1, CERT-1 |
 | 8 | Spaces не видны через `doctl` | нужны отдельные ключи Spaces; состояние бакетов не проверено | STACK-2, RUNBOOK-1 |
 
 ## Не проверено
@@ -86,6 +86,21 @@ Serves: владелец-оператор и агент, действующий 
 
 Chart берётся командами `helm repo add argo https://argoproj.github.io/argo-helm` и `helm pull argo/argo-cd --version 10.11.6 --untar`. Значения (`repoServer.replicas=2`, `server.replicas=2`, `ARGOCD_API_SERVER_REPLICAS=2`) лежат в `deploy/argocd/argocd-values.yaml`. CRD ставятся отдельно от Helm: при обновлении chart повторять шаг 2 до `helm upgrade`.
 Гипотеза о размере CRD подтверждена косвенно: тот же объект kubectl применил без ошибок, а Helm 4 при первой установке на нём оборвался; точная причина сбоя Helm не доказана.
+
+## Миграция ingress: ingress-nginx -> Traefik (ADR-038, TRAEFIK-1)
+
+Команды ниже не выполнялись: живой кластер, DNS и балансировщик агент не трогает, их запускает владелец. Порядок важен: старый балансировщик работает, пока DNS не переключён.
+
+Условие: ArgoCD-приложение Traefik (chart `traefik/traefik` 42.3.0, ADR-038 п. 3) лежит в `deploy/argocd/` и синхронизировано (TRAEFIK-1). Его Service создаёт **новый** балансировщик DO с новым IP.
+
+1. Полный id сертификата: `doctl compute certificate list --format ID,Name,DNSNames,NotAfter,State` - строка `malinina-ca`. Он нужен для аннотации `service.beta.kubernetes.io/do-loadbalancer-certificate-id` на Service Traefik (вместе с протоколом `http`, TLS-портом 443 и редиректом http -> https, как на старом балансировщике: `doctl compute load-balancer get c2cd5d8d-b9b0-4010-9e79-14e8714bd702`).
+2. Новый адрес: `kubectl -n <namespace Traefik> get svc` (поле `EXTERNAL-IP`), `doctl compute load-balancer list --format ID,Name,IP,Status`; дождаться `active`.
+3. Проверка до DNS, мимо него: `curl -sI --resolve malinina.ca:443:<новый IP> https://malinina.ca/` (404 от Traefik, пока приложений нет; в ответе `Strict-Transport-Security`, `X-Content-Type-Options`, `Referrer-Policy`, `X-Frame-Options`) и `curl -sI --resolve malinina.ca:80:<новый IP> http://malinina.ca/` (редирект на https).
+4. DNS: `doctl compute domain records list malinina.ca --format ID,Type,Name,Data,TTL`; для каждой записи A `@` и A `*` - `doctl compute domain records update malinina.ca --record-id <id> --record-data <новый IP>`; AAAA `@` - на IPv6 нового балансировщика (`doctl compute load-balancer get <id> -o json`) или удалить. Дубль A `@` убирается здесь же (RUNBOOK-1).
+5. Дождаться TTL и сверить: `dig +short malinina.ca`, `dig +short anything.malinina.ca` отдают новый IP.
+6. Убрать старый контроллер: `helm -n ingress-nginx uninstall ingress-nginx`; DO удалит старый балансировщик (проверка: `doctl compute load-balancer list`). Namespace `ingress-nginx` удалить вручную, когда пуст.
+
+Откат до шага 6: вернуть в DNS `209.38.12.89` (старый IP). После шага 6 возврата к `ingress-nginx` нет (старый балансировщик удалён), поэтому шаг 6 делается, когда проверка по новому адресу и по DNS прошла.
 
 ## Diagnose
 

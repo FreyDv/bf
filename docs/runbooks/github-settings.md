@@ -1,6 +1,6 @@
 # Runbook: настройки репозитория на GitHub
 
-Serves: владелец и агент, действующий за него. Настройки живут на GitHub, не в git, поэтому записаны здесь (R3). Применены 2026-11-11 (GUARD-2, ADR-003).
+Serves: владелец и агент, действующий за него. Настройки живут на GitHub, не в git, поэтому записаны здесь (R3). Применены 2026-11-11 (GUARD-2, ADR-003). Защита `main` ниже - классическая; после BOT-1 её заменяет ruleset (ADR-038), см. раздел «Бот для коммита тега».
 
 ## Diagnose
 
@@ -56,6 +56,23 @@ Job `publish` обязательным не делают: на PR его нет,
 | Запуск workflow от первых контрибьюторов | требует одобрения | оставить | `gh api repos/FreyDv/bf/actions/permissions/fork-pr-contributor-approval` -> `first_time_contributors` |
 | Secret scanning и push protection | включены | оставить | `gh api repos/FreyDv/bf --jq '.security_and_analysis'` |
 
+## Бот для коммита тега: GitHub App и ruleset (ADR-038, BOT-1)
+
+Состояние на 2026-11-12: `gh api repos/FreyDv/bf/rulesets` -> `[]`, защита `main` классическая, бота и его секретов нет. Команды ниже не выполнялись: правки настроек и секретов GitHub делает владелец. Порядок важен: **сначала ruleset, потом снять классическую защиту**, иначе между шагами `main` останется без обязательных проверок.
+
+Что должно получиться: бот (GitHub App) единственный обходит правила `main` и коммитит только `deploy/apps/<app>/image.yaml` (ADR-030); люди не обходят ничего.
+
+1. **GitHub App.** Settings -> Developer settings -> GitHub Apps -> New GitHub App. Имя, например, `bf-tag-bot`; Webhook - снять «Active»; Repository permissions - только Contents: Read and write (Metadata: Read-only ставится сам); «Where can this GitHub App be installed» - Only on this account. Create. Записать App ID, затем «Generate a private key» (скачается `.pem`).
+2. **Установка.** App -> Install App -> аккаунт `FreyDv` -> Only select repositories -> `bf`.
+3. **Секреты Actions** (Settings -> Secrets and variables -> Actions -> New repository secret): `BOT_APP_ID` - App ID; `BOT_APP_PRIVATE_KEY` - содержимое `.pem`. Копию ключа - в менеджер паролей, файл с диска удалить. Ключ в репозиторий не попадает (gitleaks, ADR-037).
+4. **Ruleset.** Settings -> Rules -> Rulesets -> New ruleset -> New branch ruleset: имя `main`; Enforcement status - Active; Bypass list - добавить App `bf-tag-bot`, режим Always (больше никого); Target branches - Include default branch; правила: Restrict deletions, Block force pushes, Require a pull request before merging (0 одобрений, разрешённый способ слияния - Squash), Require status checks to pass - `ci`, `image`, `spec-guard`, `secret scan` (без «Require branches to be up to date», решение владельца 2026-11-11). Create.
+   То же через API: `gh api -X POST repos/FreyDv/bf/rulesets --input ruleset.json`, где `ruleset.json` - `{"name":"main","target":"branch","enforcement":"active","bypass_actors":[{"actor_id":<App ID>,"actor_type":"Integration","bypass_mode":"always"}],"conditions":{"ref_name":{"include":["~DEFAULT_BRANCH"],"exclude":[]}},"rules":[{"type":"deletion"},{"type":"non_fast_forward"},{"type":"pull_request","parameters":{"required_approving_review_count":0,"dismiss_stale_reviews_on_push":false,"require_code_owner_review":false,"require_last_push_approval":false,"required_review_thread_resolution":false,"allowed_merge_methods":["squash"]}},{"type":"required_status_checks","parameters":{"strict_required_status_checks_policy":false,"required_status_checks":[{"context":"ci"},{"context":"image"},{"context":"spec-guard"},{"context":"secret scan"}]}}]}`.
+5. **Проверка ruleset:** `gh api repos/FreyDv/bf/rulesets --jq '.[] | {id,name,enforcement}'`, затем `gh api repos/FreyDv/bf/rulesets/<id> --jq '{bypass_actors, rules: [.rules[].type], checks: [.rules[] | select(.type=="required_status_checks") | .parameters.required_status_checks[].context]}'` - в `bypass_actors` один `Integration`, `checks` - четыре имени.
+6. **Снять классическую защиту** (она блокирует бота, обязательные проверки у неё не обходятся): `gh api -X DELETE repos/FreyDv/bf/branches/main/protection`. Проверка: тот же запрос без `-X DELETE` отдаёт 404, а `gh api repos/FreyDv/bf/rules/branches/main --jq '.[].type'` перечисляет правила ruleset.
+7. **Проверка боем** - первый коммит тега в DEPLOY-1: push бота проходит, `ci` на нём не стартует (`paths-ignore` в `ci.yml`, ADR-038 п. 8). Проверка человеком: прямой push в `main` отклонён с `GH013: Repository rule violations`.
+
+После шага 6 таблица «Ожидаемое состояние» выше читается так: те же значения живут в ruleset, а `enforce_admins` заменён тем, что в списке обхода нет людей. Таблица и Diagnose обновляются в той же правке, что закрывает BOT-1.
+
 ## Common failures
 
 | Symptom | Cause | Fix |
@@ -64,6 +81,7 @@ Job `publish` обязательным не делают: на PR его нет,
 | `publish` красный на шаге «Pull ... anonymously» | пакет приватный (первая публикация) | раздел «Сделать пакеты образов публичными» |
 | `publish` красный на шаге «Scan ... for secrets» | в слоях образа найден секрет; образ не отправлен | убрать секрет из сборки (ADR-020, ADR-026), ротировать, если он настоящий |
 | Нужно срочно залить в `main` в обход | защита действует и на админа | временно снять `enforce_admins`, залить, вернуть; записать причину в PR |
+| Push бота отклонён: `GH013: Repository rule violations` | App не в списке обхода ruleset, либо классическая защита `main` ещё не снята | шаги 4-6 раздела «Бот для коммита тега» |
 
 ## Rollback
 
