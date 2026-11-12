@@ -6,6 +6,10 @@ All notable changes to this project, in [Keep a Changelog](https://keepachangelo
 
 <!-- A PR describes its change here, one entry per change - never a version heading, never VERSION itself (R18). The maintainer alone promotes this section into a release: https://github.com/repository-standards/core/blob/main/docs/method/changelog-process.md -->
 
+### Testing strategy recorded (2026-11-12)
+
+For every future spec author and agent: ADR-039 names the test levels and where each runs. `test` holds domain unit, use-case (in-memory port doubles) and type-level tests and needs no Docker; `test:e2e` holds behavioural tests through the driving adapter against `bf_test` and NATS. Test files sit next to the slice (`*.test.ts`, `*.e2e.test.ts`), port doubles are `*.in-memory.ts`. Money, access, personal data, external contracts, query filters and the outbox transaction need a behavioural test; there is no numeric coverage threshold. Nothing is wired yet: the Vitest preset, the `test:e2e` script, the database-name guard and the boundary-check exemption for test files are backlog rows TEST-2 and TEST-3.
+
 ### Security baseline recorded (2026-11-12)
 
 For the owner and every future spec author: ADR-037 answers all 16 axes of the standard's security baseline in one table (secrets, input validation, CI permissions, dependencies, data at rest, threat model and the rest), linking decisions already taken and naming the row that owns each deferral (authentication and authorization - AUTH-1). It was decided by the agent on the owner's blanket delegation of 2026-11-12, not item by item. Findings worth knowing: private vulnerability reporting, which `SECURITY.md` points reporters to, is switched off on GitHub, and `bfdb` backups have never been restore-tested (GHSET-1, BACKUP-1). `SECURITY.md` now states the embargo rule, and `docs/runbooks/github-settings.md` lists the security settings with their check commands.
