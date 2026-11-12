@@ -41,7 +41,7 @@ Serves: владелец-оператор и агент, действующий 
 | `argocd` | ArgoCD работает с 2026-11-11: Helm-релиз `argocd` (chart argo-cd 10.11.6, app v3.5.6) `deployed`; Deployment: server 2, repo-server 2, applicationset-controller, dex-server, notifications-controller, redis; StatefulSet application-controller; есть только `AppProject default`, приложений нет, репозиторий и доступ к UI не настроены |
 | `default` | пусто |
 
-Не установлено: Sealed Secrets (SEALED-1), NATS (NATS-1), Debezium (CDC-2), Loki и Grafana (OBS-2), чарт `app` (CHART-1), приложения.
+Не установлено: Sealed Secrets (файлы готовы, установка - SEALED-2), NATS (NATS-1), Debezium (CDC-2), Loki и Grafana (OBS-2), чарт `app` (CHART-1), приложения.
 
 ## Что видно и требует решения
 
@@ -61,6 +61,7 @@ Serves: владелец-оператор и агент, действующий 
 - Spaces: имена бакетов, регион, права, ключи.
 - Автопродление сертификата и делегирование зоны у регистратора домена.
 - Часовой пояс окна обслуживания, расход ресурсов узлов (нет metrics-server).
+- Sealed Secrets: чарт отрисован `helm template` (`pnpm charts`), на кластере не ставился; команды раздела ниже не выполнялись; поведение контроллера при `--key-renew-period 0` (число ключей после перезапуска) взято из README апстрима.
 - Откуда взялась ревизия 3 у `ingress-nginx` и какие значения чарта заданы (`helm get values`).
 
 ## Разбор: почему ArgoCD не установился (2026-11-11, только чтение)
@@ -101,6 +102,43 @@ Chart берётся командами `helm repo add argo https://argoproj.git
 6. Убрать старый контроллер: `helm -n ingress-nginx uninstall ingress-nginx`; DO удалит старый балансировщик (проверка: `doctl compute load-balancer list`). Namespace `ingress-nginx` удалить вручную, когда пуст.
 
 Откат до шага 6: вернуть в DNS `209.38.12.89` (старый IP). После шага 6 возврата к `ingress-nginx` нет (старый балансировщик удалён), поэтому шаг 6 делается, когда проверка по новому адресу и по DNS прошла.
+
+## Sealed Secrets: установка, копия ключа, ротация (ADR-020, ADR-045)
+
+Команды ниже не выполнялись: живой кластер агент не трогает, их запускает владелец. Файлы: `deploy/argocd/sealed-secrets.yaml` (чарт `sealed-secrets` 2.22.0, appVersion 0.41.2, `kube-system`, имя `sealed-secrets-controller`, автообновление ключа выключено), открытый сертификат - `deploy/sealed-secrets/pub-cert.pem` (появится после шага 6). Ключи контроллера - Secret в `kube-system` с меткой `sealedsecrets.bitnami.com/sealed-secrets-key` (значения метки у апстрима `active` и `compromised`).
+
+| Что | Значение |
+|---|---|
+| Контроллер | не установлен (SEALED-2) |
+| Последняя ротация ключа | не было; ключ создан при установке |
+| Следующая ротация | не позднее чем через год после установки (SEALED-3); дату вписывает владелец сюда |
+
+### Установка (SEALED-2)
+
+1. Предусловия, всё только чтение: `kubectl -n kube-system get secret -l sealedsecrets.bitnami.com/sealed-secrets-key` - пусто (если ключи есть, контроллер подхватит их; не ставить и сообщить агенту: ADR-020 говорит о «существующей паре»); `kubectl -n kube-system get deploy,svc,sa sealed-secrets-controller` - `NotFound` (имя не занято компонентом DO).
+2. Первый и единственный ручной шаг: `kubectl apply -n argocd -f deploy/argocd/sealed-secrets.yaml` (ArgoCD репозиторий не смотрит, RUNBOOK-1).
+3. Дождаться: `kubectl -n argocd get application sealed-secrets` - `Synced` и `Healthy`; `kubectl -n kube-system rollout status deploy/sealed-secrets-controller`; `kubectl get crd sealedsecrets.bitnami.com`.
+4. Автообновление выключено: `kubectl -n kube-system get deploy sealed-secrets-controller -o jsonpath='{.spec.template.spec.containers[0].args}'` содержит `--key-renew-period` и `0`.
+5. Ключ создан: `kubectl -n kube-system get secret -l sealedsecrets.bitnami.com/sealed-secrets-key --no-headers` - одна строка. Перезапустить `kubectl -n kube-system rollout restart deploy/sealed-secrets-controller`, дождаться `rollout status` и посчитать снова: должна остаться одна. Если стало две - апстрим создаёт ключ при каждом старте, сообщить агенту (меняется ADR-045 и порядок копии).
+6. Сертификат: поставить `kubeseal` (минорная версия как appVersion контроллера, 0.41; `kubeseal --version`; через Homebrew или из релизов апстрима), затем `mkdir -p deploy/sealed-secrets && kubeseal --fetch-cert > deploy/sealed-secrets/pub-cert.pem`; проверка `openssl x509 -in deploy/sealed-secrets/pub-cert.pem -noout -subject -dates`; закоммитить (это открытый сертификат). Имя и namespace контроллера - умолчания `kubeseal`, флаги `--controller-*` не нужны.
+7. Копия закрытого ключа, **только** в менеджер паролей, на диск и в чат не попадает: `kubectl -n kube-system get secret -l sealedsecrets.bitnami.com/sealed-secrets-key -o yaml | pbcopy`, вставить запись в менеджер паролей, затем `pbcopy < /dev/null`. Копия содержит все ключи с меткой, не только новейший.
+8. Сообщить результат (шаги 1-7, число ключей, дата) в строке SEALED-2: по нему строка закрывается, SECRETS-1 разблокируется.
+
+### Восстановление после потери кластера
+
+Контроллер ставится тем же Application. Ключи кладутся до первого запечатанного секрета: вставить копию из менеджера паролей в `kubectl apply -f -` (через `pbpaste`), затем `kubectl -n kube-system delete pod -l app.kubernetes.io/name=sealed-secrets` (по README апстрима: ключи вернуть и перезапустить контроллер). Затем `kubectl -n kube-system get secret -l sealedsecrets.bitnami.com/sealed-secrets-key` - те же ключи. Копия, снятая до ротации, не расшифрует то, что запечатано новым ключом: тогда значения перевыпускаются из первоисточников (ADR-020).
+
+### Ротация: раз в год и при подозрении на утечку (ADR-045)
+
+Автообновления нет, ключ меняется только так. При утечке закрытого ключа сначала поменять сами значения (пароль БД, ключ OpenAI, ключи Spaces: ADR-020), иначе новый ключ запечатает старые, уже скомпрометированные значения.
+
+1. Число ключей до: `kubectl -n kube-system get secret -l sealedsecrets.bitnami.com/sealed-secrets-key --no-headers | wc -l`.
+2. Новый ключ (по README апстрима, «Early key renewal»): `kubectl -n kube-system set env deploy/sealed-secrets-controller SEALED_SECRETS_KEY_CUTOFF_TIME="$(date -R)"`, дождаться `rollout status`; ключей стало на один больше. Не проверено на кластере.
+3. Убрать переменную: `kubectl -n kube-system set env deploy/sealed-secrets-controller SEALED_SECRETS_KEY_CUTOFF_TIME-`, дождаться `rollout status`; число ключей не изменилось (старые остаются и продолжают расшифровывать).
+4. Сертификат: `kubeseal --fetch-cert > deploy/sealed-secrets/pub-cert.pem`, закоммитить.
+5. Перешифровать секреты каждого приложения новым сертификатом: `pnpm secrets:seal` (SECRETS-1; пока скрипта нет - `kubeseal --raw --cert deploy/sealed-secrets/pub-cert.pem --scope strict --name <секрет> --namespace <namespace>` по одному значению), закоммитить `secrets.yaml`.
+6. Обновить копию в менеджере паролей, как шаг 7 установки: все ключи, заменить старую запись целиком.
+7. Вписать дату в таблицу выше и завести строку на следующую ротацию.
 
 ## Diagnose
 
