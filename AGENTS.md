@@ -59,7 +59,7 @@ checks them ([self-verify.md](docs/standards/vendor/repository-standards-core/me
 |------|---------|
 | `apps/`, `packages/` | backend (NestJS), frontend (Next.js), shared config package (ADR-008, ADR-009) |
 | `compose.yaml`, `deploy/` | local environment (ADR-033), ArgoCD bootstrap values; Helm charts and manifests arrive with CHART-1 |
-| `docs/PRODUCT.md`, `docs/personas.md` | what we build and for whom; personas (BDR-001) and the North Star with success metrics (BDR-002) confirmed by the owner |
+| `docs/PRODUCT.md`, `docs/personas.md` | what we build and for whom; personas confirmed by the owner (BDR-001), success defined in the owner's words, metrics deferred (METRICS-1) |
 | `docs/decision-records/` | ADR (technical why) and BDR (business why), MADR form |
 | `specs/` | living capability specs + `capability-map.json` (R8-R11); empty until the first capability |
 | `docs/backlog.md` | ordered, agent-first backlog and the alignment scope count |

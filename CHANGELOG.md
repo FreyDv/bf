@@ -6,9 +6,9 @@ All notable changes to this project, in [Keep a Changelog](https://keepachangelo
 
 <!-- A PR describes its change here, one entry per change - never a version heading, never VERSION itself (R18). The maintainer alone promotes this section into a release: https://github.com/repository-standards/core/blob/main/docs/method/changelog-process.md -->
 
-### North Star and success metrics (2026-11-12)
+### Success defined, metrics deferred (2026-11-12)
 
-For every future spec author: `PRODUCT.md` now names the North Star (fulfilled orders per month), four supporting metrics (revenue among them), one guardrail metric, the ~12-month horizon and the stake (BDR-002 Accepted). A spec's `Success metric` points at one of them; targets wait for three months of data (backlog METRICS-1).
+For every future spec author: `PRODUCT.md` now says what success means in the owner's words (each new pastry moves along course -> ingredients -> intermediate -> finished -> sold) and gives the ~12-month horizon and the stake. North Star numbers are deferred by the owner until the first features (backlog METRICS-1); a spec's `Success metric` names the step of the chain it moves.
 
 ### Personas confirmed by the owner (2026-11-11)
 
