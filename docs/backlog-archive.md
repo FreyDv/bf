@@ -6,6 +6,7 @@
 
 | id | title | type | where |
 |---|---|---|---|
+| PERSONAS-1 | Подтвердить BDR-001 и персоны | task | BDR-001 (Accepted 2026-11-11), `docs/personas.md` (четыре персоны, маркеры `[NEEDS INPUT]` и `[NEEDS REVIEW]` сняты; `[NEEDS DECISION]` о полномочиях MCP отложен владельцем до первой MCP-спеки), `docs/discovery/product-vision/` |
 | STACK-1 | Стек и развилки | task | `docs/decision-records/adr/README.md` - развилки записаны в ADR-007..023; остаток разделён на STACK-2 (объектное хранилище), STACK-3 (AI-провайдер), AUTH-1 (аутентификация) |
 | SCAFFOLD-1 | Каркас: pnpm workspaces, `turbo.json`, пакет конфигураций, пустые приложения backend и frontend | task | `package.json`, `pnpm-workspace.yaml`, `turbo.json`, `packages/config/`, `apps/backend/`, `apps/frontend/`; команды в AGENTS.md; Helm-команды перенесены в CHART-1 |
 | ENF-1 | Проверка границ dependency-cruiser в CI | task | `./.dependency-cruiser.mjs`, `scripts/boundaries.test.ts`, `.github/workflows/ci.yml` (шаг границ); команды в AGENTS.md; сопоставление с QRY-19 (правила QRY-7, QRY-12 для пакета фильтров) остаётся в QUERY-1 |

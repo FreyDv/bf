@@ -4,6 +4,6 @@ Business Decision Records - бизнес- и продуктовые причин
 
 | # | Title | Status |
 |---|-------|--------|
-| [001](BDR-001-target-personas.md) | Целевые персоны | Proposed |
+| [001](BDR-001-target-personas.md) | Целевые персоны | Accepted |
 
 Первая ячейка - номер-ссылка на файл. Шаблон: [`_template.md`](_template.md).
