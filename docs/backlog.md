@@ -9,28 +9,20 @@
 ```
 Alignment scope for this repo -> standard@1.0.19
   specs to write / raise to buildable .........  1
-  decisions to record or confirm (ADR/BDR) .... 10
+  decisions to record or confirm (ADR/BDR) ....  9
   drift to reconcile ..........................  0
   guards / structure to install ...............  0
   ---------------------------------------------
-  11 tasks to full alignment
+  10 tasks to full alignment
 ```
 
-Из чего число: спека - SPEC-1; решения - PRODUCT-1, BUDGET-1, SEC-1, TEST-1, CI-1, AUTH-1, STACK-2, STACK-3, OBS-1, DBSEC-2; гардов нет. Роль-владелец - в строке каждого id ниже.
+Из чего число: спека - SPEC-1; решения - BUDGET-1, SEC-1, TEST-1, CI-1, AUTH-1, STACK-2, STACK-3, OBS-1, DBSEC-2; гардов нет. Роль-владелец - в строке каждого id ниже.
 
 `drift 0` и ненулевое число не противоречат друг другу: дрейф измеряет то, что стандарт проверяет механически, а число - то, что механически не проверить.
 
 ## Order
 
-Вверху - следующее. Эпики идут в порядке зависимостей: продукт -> открытые решения -> гарды -> каркас -> кластер -> события. Внутри эпика строка опирается только на строки выше; `blocked:<id>` называет, чего ждёт строка. Формат строки - в [стандарте](standards/vendor/repository-standards-core/standard/docs/backlog.md).
-
-## Epic: Продукт
-
-| id | title | cap | persona | owner | assignee | size | why | source | DoD | status |
-|----|-------|-----|---------|-------|----------|------|-----|--------|-----|--------|
-| PRODUCT-1 | North Star и метрики успеха в `PRODUCT.md` | - | `Владелец-оператор` | product |  | S | без них спеки пишут `Success metric: n/a` без причины | onboarding | раздел «Success metrics» заполнен | todo |
-| BUDGET-1 | BDR: бюджет облака | - | `Владелец-оператор` | product |  | S | ADR-022 опирается на бюджет $100-150 в месяц, `PRODUCT.md` ссылается на BDR о бюджете, а записи нет | decision: реорганизация ADR 2026-11-07 | BDR с потолком затрат и правилом выбора (дёшево простаивает) Accepted | todo |
-| SPEC-1 | Первая спека возможности | - | `Владелец-оператор` | product |  | M | без спеки нет работы по циклу стандарта | asked: owner 2026-11-05 | спека проходит clarify-гейт и записана в `capability-map.json` | todo |
+Вверху - следующее. Владелец 2026-11-12: сначала инфраструктура до прода, чтобы фичи ложились на готовое; продуктовые вопросы - после. Эпики идут в порядке: открытые решения -> гарды -> каркас -> кластер -> продукт -> события. Внутри эпика строка опирается только на строки выше; `blocked:<id>` называет, чего ждёт строка. Формат строки - в [стандарте](standards/vendor/repository-standards-core/standard/docs/backlog.md).
 
 ## Epic: Открытые решения
 
@@ -74,6 +66,14 @@ Alignment scope for this repo -> standard@1.0.19
 | NATS-1 | Установка NATS JetStream: Helm-чарт в `deploy/argocd/`, одна реплика, PVC, стрим для событий | - | Maintainer (internal) | dev |  | M | очередь для событий и задач; Debezium пишет в стрим, который должен существовать (ADR-022) | decision: ADR-022 | ArgoCD-приложение синхронизировано, PVC привязан, публикация и чтение в стриме проходят, версия чарта с кулдауном | todo |
 | OBS-2 | Установка Loki и Grafana: ArgoCD-приложения в `deploy/argocd/`, чанки в Spaces, версии закреплены | - | Maintainer (internal) | dev |  | M | поиск по логам (ADR-032) | asked: owner 2026-11-11 | приложения синхронизированы; логи подов backend видны и ищутся в Grafana | blocked:RUNBOOK-1 |
 | DEPLOY-1 | Первый выкат backend и frontend в кластер: образы из CI в GHCR, ArgoCD-приложения, ingress | - | Maintainer (internal) | dev |  | L | без выката в кластере нечего проверять (ADR-018, ADR-019, ADR-026) | asked: owner 2026-11-11 | оба приложения в состоянии Synced и Healthy; frontend отвечает по адресу из CI-1 | blocked:CI-1 |
+
+## Epic: Продукт
+
+| id | title | cap | persona | owner | assignee | size | why | source | DoD | status |
+|----|-------|-----|---------|-------|----------|------|-----|--------|-----|--------|
+| BUDGET-1 | BDR: бюджет облака | - | `Владелец-оператор` | product |  | S | ADR-022 опирается на бюджет $100-150 в месяц, `PRODUCT.md` ссылается на BDR о бюджете, а записи нет | decision: реорганизация ADR 2026-11-07 | BDR с потолком затрат и правилом выбора (дёшево простаивает) Accepted | todo |
+| METRICS-1 | North Star и метрики успеха - после первых фич | - | `Владелец-оператор` | product |  | S | владелец 2026-11-12: успех - движение по цепочке «курс -> ингредиенты -> заготовка -> готовое -> продано», мерить только деньгами или заказами не хочет, числа отложил: «мы только начинаем» | decision: PRODUCT-1, владелец 2026-11-12 | владелец выбрал числа по опыту первых фич, раздел «Success metrics» в `PRODUCT.md` их называет, порог ставки записан; кандидаты - досье `product-vision` 2026-11-12 | blocked:SPEC-1 |
+| SPEC-1 | Первая спека возможности | - | `Владелец-оператор` | product |  | M | без спеки нет работы по циклу стандарта | asked: owner 2026-11-05 | спека проходит clarify-гейт и записана в `capability-map.json` | todo |
 
 ## Epic: События (CDC)
 

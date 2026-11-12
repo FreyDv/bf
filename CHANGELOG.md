@@ -6,6 +6,10 @@ All notable changes to this project, in [Keep a Changelog](https://keepachangelo
 
 <!-- A PR describes its change here, one entry per change - never a version heading, never VERSION itself (R18). The maintainer alone promotes this section into a release: https://github.com/repository-standards/core/blob/main/docs/method/changelog-process.md -->
 
+### Success defined, metrics deferred (2026-11-12)
+
+For every future spec author: `PRODUCT.md` now says what success means in the owner's words (each new pastry moves along course -> ingredients -> intermediate -> finished -> sold) and gives the ~12-month horizon and the stake. North Star numbers are deferred by the owner until the first features (backlog METRICS-1); a spec's `Success metric` names the step of the chain it moves.
+
 ### Personas confirmed by the owner (2026-11-11)
 
 For every future spec author: the four personas are now confirmed and binding (BDR-001 Accepted) - `Владелец-оператор` (Даня, primary), `Кондитер` (Валерия), `Покупатель`, `ChatGPT через MCP` - with every field filled in `docs/personas.md`. The owner's product story is filed under `docs/discovery/product-vision/`; `PRODUCT.md` no longer says the platform serves one person.
