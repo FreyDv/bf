@@ -91,6 +91,10 @@ pnpm contracts:check                    # fails when that file is out of date (C
 pnpm local:up | local:cdc | local:down | local:reset   # docker compose: Postgres, NATS (+ Debezium with local:cdc), ADR-033
 pnpm charts                             # helm lint + helm template for the shared chart and every app under deploy/apps (ADR-019)
 pnpm charts:test                        # chart behaviour: what it renders and refuses; needs `helm` on PATH
+pnpm test:e2e                           # turbo run test:e2e against bf_test and NATS; start them with `pnpm local:up` first (ADR-036)
+pnpm migrations:check                   # applies the migrations of main, then of this branch, to a clean Postgres; skips when none changed (ADR-036); needs Docker
+pnpm migrations:test                    # the migration check on fixtures; needs Docker
+pnpm image:check lint|secrets|vulns|affected   # hadolint and Trivy as pinned Docker images, and which apps need an image (ADR-036); needs Docker
 ```
 
 Helm (v4) is a local requirement for the chart commands above. Before any of it the toolchain the
