@@ -9,14 +9,14 @@
 ```
 Alignment scope for this repo -> standard@1.0.19
   specs to write / raise to buildable .........  1
-  decisions to record or confirm (ADR/BDR) .... 11
+  decisions to record or confirm (ADR/BDR) .... 10
   drift to reconcile ..........................  0
   guards / structure to install ...............  0
   ---------------------------------------------
-  12 tasks to full alignment
+  11 tasks to full alignment
 ```
 
-Из чего число: спека - SPEC-1; решения - PERSONAS-1, PRODUCT-1, BUDGET-1, SEC-1, TEST-1, CI-1, AUTH-1, STACK-2, STACK-3, OBS-1, DBSEC-2; гардов нет. Роль-владелец - в строке каждого id ниже.
+Из чего число: спека - SPEC-1; решения - PRODUCT-1, BUDGET-1, SEC-1, TEST-1, CI-1, AUTH-1, STACK-2, STACK-3, OBS-1, DBSEC-2; гардов нет. Роль-владелец - в строке каждого id ниже.
 
 `drift 0` и ненулевое число не противоречат друг другу: дрейф измеряет то, что стандарт проверяет механически, а число - то, что механически не проверить.
 
@@ -28,7 +28,6 @@ Alignment scope for this repo -> standard@1.0.19
 
 | id | title | cap | persona | owner | assignee | size | why | source | DoD | status |
 |----|-------|-----|---------|-------|----------|------|-----|--------|-----|--------|
-| PERSONAS-1 | Подтвердить BDR-001 и персоны | - | `Владелец-оператор` | product |  | S | персоны - ворота валидации для каждой спеки; поля недоверия, целей и признаков успеха владелец отложил до первой спеки (2026-11-05), `[NEEDS DECISION]` о полномочиях MCP - до первой спеки про MCP | onboarding | маркеры `[NEEDS INPUT]` и `[NEEDS REVIEW]` сняты, BDR-001 Accepted | todo |
 | PRODUCT-1 | North Star и метрики успеха в `PRODUCT.md` | - | `Владелец-оператор` | product |  | S | без них спеки пишут `Success metric: n/a` без причины | onboarding | раздел «Success metrics» заполнен | todo |
 | BUDGET-1 | BDR: бюджет облака | - | `Владелец-оператор` | product |  | S | ADR-022 опирается на бюджет $100-150 в месяц, `PRODUCT.md` ссылается на BDR о бюджете, а записи нет | decision: реорганизация ADR 2026-11-07 | BDR с потолком затрат и правилом выбора (дёшево простаивает) Accepted | todo |
 | SPEC-1 | Первая спека возможности | - | `Владелец-оператор` | product |  | M | без спеки нет работы по циклу стандарта | asked: owner 2026-11-05 | спека проходит clarify-гейт и записана в `capability-map.json` | todo |
@@ -42,7 +41,7 @@ Alignment scope for this repo -> standard@1.0.19
 | CI-1 | Окружения, TLS и ingress, исключение бота для коммита тега (ADR-030: проверить, подходит ли GITHUB_TOKEN) | - | Maintainer (internal) | architect |  | M | без них не собрать и не выкатить первый образ (ADR-018, ADR-019) | decision | ADR Accepted на каждый пункт | todo |
 | AUTH-1 | Аутентификация и авторизация | - | `Владелец-оператор` | architect |  | M | развилка R7 без записи; нужна до первой спеки с доступом | decision | ADR Accepted | todo |
 | STACK-2 | Объектное хранилище (DO Spaces создан, решения нет) | - | Maintainer (internal) | architect |  | S | ресурс существует, решение не записано (ADR-017) | decision | ADR Accepted или «не нужно» одной строкой | todo |
-| STACK-3 | AI-провайдер (OpenAI) | - | `Владелец-оператор` | architect |  | S | ключ OpenAI уже назван в ADR-020, выбора нет | decision | ADR Accepted | todo |
+| STACK-3 | AI-провайдер (OpenAI) | - | `Владелец-оператор` | architect |  | S | ключ OpenAI уже назван в ADR-020; владелец выбрал OpenAI 2026-11-11 (разбор видео и аудио курсов, подсказки при готовке; `docs/discovery/product-vision/`), ADR не записан | decision | ADR Accepted | todo |
 | OBS-1 | Логи: срок хранения, потолок цены, сборщик, размеры, доступ к Grafana, схема полей | - | Maintainer (internal) | architect |  | S | ADR-032 выбрал pino и Loki, но срок хранения владелец отложил (2026-11-11) | decision | срок и потолок цены записаны в ADR-032 или новом ADR | todo |
 | DBSEC-2 | Надёжность записи `bfdb`: `synchronous_commit=off` на DO - принять или включить `on` для команд (outbox, ADR-025) | - | Maintainer (internal) | architect |  | S | после сбоя узла подтверждённая команда может потерять последние транзакции; DO задаёт параметр на кластере (снимок 2026-11-11, `docs/runbooks/bfdb-postgres.md`) | decision: анализ bfdb 2026-11-11 | ADR Accepted: принято как есть или `SET LOCAL synchronous_commit=on` для критичных команд; решение внесено в ADR-025 или новый ADR | todo |
 
