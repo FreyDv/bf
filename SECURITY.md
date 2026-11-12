@@ -9,6 +9,10 @@ anything exploitable. Expect an acknowledgment within 3 business days.
 **No secrets in this repo.** Enforced by the gitleaks gate (`.github/workflows/gitleaks.yml`, `.gitleaks.toml`) -
 a leaked secret is rotated, not deleted from history and forgotten.
 
-**Baseline.** The security baseline (the axes of the standard's `security-baseline.md`) is an open decision:
-backlog `SEC-1`. Agent access to remote databases, force-pushes and CI secrets is write-blocked by
-`.claude/settings.json` and the hooks under `.claude/hooks/`.
+**Baseline.** The security baseline (the axes of the standard's `security-baseline.md`) is recorded in
+[ADR-037](docs/decision-records/adr/ADR-037-security-baseline.md). Agent access to remote databases, force-pushes and
+CI secrets is write-blocked by `.claude/settings.json` and the hooks under `.claude/hooks/`.
+
+**Embargo.** A fix for an undisclosed vulnerability is developed in the temporary private fork of a GitHub security
+advisory, not in a public branch, issue or pull request. The owner lifts the embargo by publishing the advisory once
+the fixed image is published.
