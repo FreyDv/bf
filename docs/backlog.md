@@ -9,14 +9,14 @@
 ```
 Alignment scope for this repo -> standard@1.0.19
   specs to write / raise to buildable .........  1
-  decisions to record or confirm (ADR/BDR) .... 10
+  decisions to record or confirm (ADR/BDR) ....  9
   drift to reconcile ..........................  0
   guards / structure to install ...............  0
   ---------------------------------------------
-  11 tasks to full alignment
+  10 tasks to full alignment
 ```
 
-Из чего число: спека - SPEC-1; решения - PRODUCT-1, BUDGET-1, SEC-1, TEST-1, CI-1, AUTH-1, STACK-2, STACK-3, OBS-1, DBSEC-2; гардов нет. Роль-владелец - в строке каждого id ниже.
+Из чего число: спека - SPEC-1; решения - BUDGET-1, SEC-1, TEST-1, CI-1, AUTH-1, STACK-2, STACK-3, OBS-1, DBSEC-2; гардов нет. Роль-владелец - в строке каждого id ниже.
 
 `drift 0` и ненулевое число не противоречат друг другу: дрейф измеряет то, что стандарт проверяет механически, а число - то, что механически не проверить.
 
@@ -28,8 +28,8 @@ Alignment scope for this repo -> standard@1.0.19
 
 | id | title | cap | persona | owner | assignee | size | why | source | DoD | status |
 |----|-------|-----|---------|-------|----------|------|-----|--------|-----|--------|
-| PRODUCT-1 | North Star и метрики успеха в `PRODUCT.md` | - | `Владелец-оператор` | product |  | S | без них спеки пишут `Success metric: n/a` без причины | onboarding | раздел «Success metrics» заполнен | todo |
 | BUDGET-1 | BDR: бюджет облака | - | `Владелец-оператор` | product |  | S | ADR-022 опирается на бюджет $100-150 в месяц, `PRODUCT.md` ссылается на BDR о бюджете, а записи нет | decision: реорганизация ADR 2026-11-07 | BDR с потолком затрат и правилом выбора (дёшево простаивает) Accepted | todo |
+| METRICS-1 | Цифры-цели для метрик `PRODUCT.md` и порог ставки | - | `Владелец-оператор` | product |  | S | BDR-002 отложил цели до данных; без них метрики не говорят, хорошо или плохо, а ставка не срабатывает | decision: PRODUCT-1, владелец 2026-11-12 | у каждой метрики «Success metrics» есть цель и допуск плана закупки, порог «почти не идут» записан; blocked: три месяца данных о заказах | todo |
 | SPEC-1 | Первая спека возможности | - | `Владелец-оператор` | product |  | M | без спеки нет работы по циклу стандарта | asked: owner 2026-11-05 | спека проходит clarify-гейт и записана в `capability-map.json` | todo |
 
 ## Epic: Открытые решения

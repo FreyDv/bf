@@ -6,6 +6,7 @@
 
 | id | title | type | where |
 |---|---|---|---|
+| PRODUCT-1 | North Star и метрики успеха в `PRODUCT.md` | task | BDR-002 (Accepted 2026-11-12), `docs/PRODUCT.md` (Vision: горизонт и ставка; Success metrics: North Star, три вспомогательные, сторожевая), `docs/discovery/product-vision/2026-11-12-owner-north-star.md`; цели - METRICS-1 |
 | PERSONAS-1 | Подтвердить BDR-001 и персоны | task | BDR-001 (Accepted 2026-11-11), `docs/personas.md` (четыре персоны, маркеры `[NEEDS INPUT]` и `[NEEDS REVIEW]` сняты; `[NEEDS DECISION]` о полномочиях MCP отложен владельцем до первой MCP-спеки), `docs/discovery/product-vision/` |
 | STACK-1 | Стек и развилки | task | `docs/decision-records/adr/README.md` - развилки записаны в ADR-007..023; остаток разделён на STACK-2 (объектное хранилище), STACK-3 (AI-провайдер), AUTH-1 (аутентификация) |
 | SCAFFOLD-1 | Каркас: pnpm workspaces, `turbo.json`, пакет конфигураций, пустые приложения backend и frontend | task | `package.json`, `pnpm-workspace.yaml`, `turbo.json`, `packages/config/`, `apps/backend/`, `apps/frontend/`; команды в AGENTS.md; Helm-команды перенесены в CHART-1 |
