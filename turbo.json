@@ -11,6 +11,11 @@
     "typecheck": { "dependsOn": ["^build"] },
     "lint": { "dependsOn": ["^build"] },
     "test": { "dependsOn": ["^build"] },
+    "test:e2e": {
+      "dependsOn": ["^build"],
+      "cache": false,
+      "passThroughEnv": ["DATABASE_URL", "NATS_URL"]
+    },
     "dev": { "cache": false, "persistent": true }
   }
 }
