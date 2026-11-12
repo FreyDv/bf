@@ -10,6 +10,10 @@ name: ci
 on:
   push:
     branches: [main]
+    # The bot commits the image tag here (ADR-030). A GitHub App token starts workflows, so without this a tag commit
+    # would build, publish and commit a new tag forever (ADR-019, ADR-038). ArgoCD polls Git and needs no run.
+    paths-ignore:
+      - deploy/apps/*/image.yaml
   pull_request:
 
 permissions:
