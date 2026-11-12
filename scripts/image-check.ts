@@ -175,12 +175,16 @@ function affected(): number {
       .split('\n')
       .filter(Boolean);
     if (!changed.some((file) => SHARED_INPUTS.test(file))) {
-      const listing = JSON.parse(
-        execFileSync('pnpm', ['exec', 'turbo', 'ls', '--affected', '--output', 'json'], {
-          cwd: root,
-          encoding: 'utf8',
-        }),
-      ) as { packages: { items: { path: string }[] } };
+      const printed = execFileSync(
+        'pnpm',
+        ['exec', 'turbo', 'ls', '--affected', '--output', 'json'],
+        // Without this Turborepo looks for a local `main`, which a CI checkout does not have, and falls back to everything.
+        { cwd: root, encoding: 'utf8', env: { ...process.env, TURBO_SCM_BASE: `origin/${base}` } },
+      );
+      // Turborepo may print a line such as "Scope: all 5 workspace projects" before the JSON.
+      const listing = JSON.parse(printed.slice(printed.indexOf('{'))) as {
+        packages: { items: { path: string }[] };
+      };
       const paths = new Set(listing.packages.items.map((item) => item.path));
       selected = all.filter((app) => paths.has(`apps/${app}`));
     }
