@@ -1,0 +1,68 @@
+# Defaults for every application. An application supplies only values (ADR-019):
+# deploy/apps/<app>/values.yaml (plain), secrets.yaml (sealed, ADR-020), image.yaml (tag written by CI, ADR-030).
+
+image:
+  repository: '' # required, ghcr.io/<owner>/<app> (ADR-026)
+  tag: '' # required, the commit SHA; `latest` is refused
+  pullPolicy: IfNotPresent
+
+replicas: 1
+port: 3000
+
+# Empty keeps the image entrypoint.
+command: []
+args: []
+
+# Plain environment variables. Anything secret goes to `secret`.
+env: {}
+
+# Names of existing Secrets mounted whole as environment, in addition to the one built from `secret`.
+envFromSecrets: []
+
+# Values encrypted with kubeseal for exactly this name and namespace (strict scope, ADR-020);
+# `pnpm secrets:seal` writes them. The chart builds one SealedSecret named <release>-secrets.
+secret:
+  encryptedData: {}
+
+service:
+  enabled: true
+  port: 80
+
+ingress:
+  enabled: false
+  className: nginx
+  host: ''
+  path: /
+  pathType: Prefix
+  annotations: {}
+
+# Empty `path` probes the TCP port; set it once the application serves a health endpoint.
+probes:
+  path: ''
+  initialDelaySeconds: 5
+  periodSeconds: 10
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    memory: 512Mi
+
+# Matches the non-root user of the node image (ADR-027). The root filesystem is read-only; /tmp is writable.
+securityContext:
+  runAsUser: 1000
+  runAsGroup: 1000
+  readOnlyRootFilesystem: true
+
+# Each item: name, schedule, command, args, concurrencyPolicy (default Forbid). Same image, env and secrets as the Deployment.
+cronJobs: []
+
+# A hook Job that runs before the new version is synced; a failing migration stops the sync and the running
+# version stays (ADR-019). The database credentials must already exist as a Secret in the namespace.
+migration:
+  enabled: false
+  command: []
+  args: []
+  backoffLimit: 0
+  activeDeadlineSeconds: 600

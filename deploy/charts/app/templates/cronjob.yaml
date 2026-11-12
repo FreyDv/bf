@@ -1,0 +1,60 @@
+{{- range .Values.cronJobs }}
+{{- $name := printf "%s-%s" (include "app.fullname" $) .name }}
+{{- if gt (len $name) 52 }}
+{{- fail (printf "cron job name %s is longer than 52 characters" $name) }}
+{{- end }}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "app.labels" $ | nindent 4 }}
+spec:
+  schedule: {{ required "cronJobs[].schedule is required" .schedule | quote }}
+  concurrencyPolicy: {{ .concurrencyPolicy | default "Forbid" }}
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        metadata:
+          labels:
+            {{- include "app.selectorLabels" $ | nindent 12 }}
+            app.kubernetes.io/component: {{ .name }}
+        spec:
+          restartPolicy: Never
+          serviceAccountName: {{ include "app.fullname" $ }}
+          automountServiceAccountToken: false
+          securityContext:
+            {{- include "app.podSecurityContext" $ | nindent 12 }}
+          containers:
+            - name: {{ .name }}
+              image: {{ include "app.image" $ }}
+              imagePullPolicy: {{ $.Values.image.pullPolicy }}
+              {{- with .command }}
+              command:
+                {{- toYaml . | nindent 16 }}
+              {{- end }}
+              {{- with .args }}
+              args:
+                {{- toYaml . | nindent 16 }}
+              {{- end }}
+              {{- if include "app.env" $ }}
+              env:
+                {{- include "app.env" $ | trim | nindent 16 }}
+              {{- end }}
+              {{- if include "app.envFrom" $ }}
+              envFrom:
+                {{- include "app.envFrom" $ | trim | nindent 16 }}
+              {{- end }}
+              resources:
+                {{- toYaml $.Values.resources | nindent 16 }}
+              securityContext:
+                {{- include "app.containerSecurityContext" $ | nindent 16 }}
+              volumeMounts:
+                {{- include "app.tmpVolumeMount" $ | nindent 16 }}
+          volumes:
+            {{- include "app.tmpVolume" $ | nindent 12 }}
+{{- end }}

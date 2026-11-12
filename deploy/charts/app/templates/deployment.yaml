@@ -1,0 +1,78 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "app.fullname" . }}
+  labels:
+    {{- include "app.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicas }}
+  selector:
+    matchLabels:
+      {{- include "app.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "app.selectorLabels" . | nindent 8 }}
+      {{- if .Values.secret.encryptedData }}
+      annotations:
+        # A new secret restarts the pods: environment is read once at start (ADR-019).
+        checksum/secret: {{ include (print $.Template.BasePath "/sealedsecret.yaml") . | sha256sum }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "app.fullname" . }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- include "app.podSecurityContext" . | nindent 8 }}
+      containers:
+        - name: app
+          image: {{ include "app.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with .Values.command }}
+          command:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.args }}
+          args:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.port }}
+          {{- if include "app.env" . }}
+          env:
+            {{- include "app.env" . | trim | nindent 12 }}
+          {{- end }}
+          {{- if include "app.envFrom" . }}
+          envFrom:
+            {{- include "app.envFrom" . | trim | nindent 12 }}
+          {{- end }}
+          readinessProbe:
+            {{- if .Values.probes.path }}
+            httpGet:
+              path: {{ .Values.probes.path }}
+              port: http
+            {{- else }}
+            tcpSocket:
+              port: http
+            {{- end }}
+            initialDelaySeconds: {{ .Values.probes.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.periodSeconds }}
+          livenessProbe:
+            {{- if .Values.probes.path }}
+            httpGet:
+              path: {{ .Values.probes.path }}
+              port: http
+            {{- else }}
+            tcpSocket:
+              port: http
+            {{- end }}
+            initialDelaySeconds: {{ add .Values.probes.initialDelaySeconds 20 }}
+            periodSeconds: {{ .Values.probes.periodSeconds }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            {{- include "app.containerSecurityContext" . | nindent 12 }}
+          volumeMounts:
+            {{- include "app.tmpVolumeMount" . | nindent 12 }}
+      volumes:
+        {{- include "app.tmpVolume" . | nindent 8 }}

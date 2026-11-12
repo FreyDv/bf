@@ -1,0 +1,54 @@
+{{- if .Values.migration.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "app.fullname" . }}-migrate
+  labels:
+    {{- include "app.labels" . | nindent 4 }}
+  annotations:
+    # Runs before the new version is synced; a failure stops the sync and the running version stays (ADR-019).
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: {{ .Values.migration.backoffLimit }}
+  activeDeadlineSeconds: {{ .Values.migration.activeDeadlineSeconds }}
+  template:
+    metadata:
+      labels:
+        {{- include "app.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: migrate
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ include "app.fullname" . }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- include "app.podSecurityContext" . | nindent 8 }}
+      containers:
+        - name: migrate
+          image: {{ include "app.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with .Values.migration.command }}
+          command:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.migration.args }}
+          args:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- if include "app.env" . }}
+          env:
+            {{- include "app.env" . | trim | nindent 12 }}
+          {{- end }}
+          {{- if include "app.envFrom" . }}
+          envFrom:
+            {{- include "app.envFrom" . | trim | nindent 12 }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            {{- include "app.containerSecurityContext" . | nindent 12 }}
+          volumeMounts:
+            {{- include "app.tmpVolumeMount" . | nindent 12 }}
+      volumes:
+        {{- include "app.tmpVolume" . | nindent 8 }}
+{{- end }}

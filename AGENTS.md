@@ -89,9 +89,11 @@ pnpm deps:test                          # the rules fire on violating fixtures; 
 pnpm contracts:generate                 # rebuild packages/contracts/src/generated/server.ts (the AppRouter type, ADR-035); commit it
 pnpm contracts:check                    # fails when that file is out of date (CI and pre-commit); run after touching a router or request DTO
 pnpm local:up | local:cdc | local:down | local:reset   # docker compose: Postgres, NATS (+ Debezium with local:cdc), ADR-033
+pnpm charts                             # helm lint + helm template for the shared chart and every app under deploy/apps (ADR-019)
+pnpm charts:test                        # chart behaviour: what it renders and refuses; needs `helm` on PATH
 ```
 
-Helm commands are added here by `CHART-1`. Before any of it the toolchain the
+Helm (v4) is a local requirement for the chart commands above. Before any of it the toolchain the
 guards need must be present: [prerequisites.md](docs/standards/vendor/repository-standards-core/method/prerequisites.md).
 Node and `jq` are not optional: without `jq` the `PreToolUse` guards deny every Bash command rather than pass
 it unchecked.
