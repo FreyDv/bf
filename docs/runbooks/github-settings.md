@@ -43,6 +43,19 @@ Job `publish` обязательным не делают: на PR его нет,
 3. Actions -> красный run workflow `ci` на `main` (job `publish`) -> «Re-run failed jobs»: анонимный pull должен пройти.
 4. Проверить командой из раздела Diagnose.
 
+## Безопасность репозитория (ADR-037, GHSET-1)
+
+Состояние на 2026-11-12, команды чтения; три первых пункта выключены и ждут владельца.
+
+| Что | Сейчас | Нужно | Проверка |
+|---|---|---|---|
+| Private vulnerability reporting | выключен (`{"enabled":false}`) | включить: Settings -> Advanced Security -> «Private vulnerability reporting» -> Enable ([документация](https://docs.github.com/en/code-security/security-advisories/working-with-repository-security-advisories/configuring-private-vulnerability-reporting-for-a-repository)); `SECURITY.md` отправляет отчёты именно туда | `gh api repos/FreyDv/bf/private-vulnerability-reporting` -> `{"enabled":true}` |
+| Dependabot alerts | выключены (404) | включить: Settings -> Advanced Security -> «Dependabot alerts» -> Enable ([документация](https://docs.github.com/en/code-security/dependabot/dependabot-alerts/configuring-dependabot-alerts)) | `gh api -i repos/FreyDv/bf/vulnerability-alerts` -> 204 |
+| Dependabot security updates, version updates | выключены | не включать (ADR-037) | `gh api repos/FreyDv/bf --jq '.security_and_analysis.dependabot_security_updates.status'` -> `disabled` |
+| Токен Actions по умолчанию | read-only, без права одобрять PR | оставить | `gh api repos/FreyDv/bf/actions/permissions/workflow` -> `{"default_workflow_permissions":"read","can_approve_pull_request_reviews":false}` |
+| Запуск workflow от первых контрибьюторов | требует одобрения | оставить | `gh api repos/FreyDv/bf/actions/permissions/fork-pr-contributor-approval` -> `first_time_contributors` |
+| Secret scanning и push protection | включены | оставить | `gh api repos/FreyDv/bf --jq '.security_and_analysis'` |
+
 ## Common failures
 
 | Symptom | Cause | Fix |

@@ -6,6 +6,10 @@ All notable changes to this project, in [Keep a Changelog](https://keepachangelo
 
 <!-- A PR describes its change here, one entry per change - never a version heading, never VERSION itself (R18). The maintainer alone promotes this section into a release: https://github.com/repository-standards/core/blob/main/docs/method/changelog-process.md -->
 
+### Security baseline recorded (2026-11-12)
+
+For the owner and every future spec author: ADR-037 answers all 16 axes of the standard's security baseline in one table (secrets, input validation, CI permissions, dependencies, data at rest, threat model and the rest), linking decisions already taken and naming the row that owns each deferral (authentication and authorization - AUTH-1). It was decided by the agent on the owner's blanket delegation of 2026-11-12, not item by item. Findings worth knowing: private vulnerability reporting, which `SECURITY.md` points reporters to, is switched off on GitHub, and `bfdb` backups have never been restore-tested (GHSET-1, BACKUP-1). `SECURITY.md` now states the embargo rule, and `docs/runbooks/github-settings.md` lists the security settings with their check commands.
+
 ### CI builds, checks and publishes images; migrations and e2e are wired (2026-11-12)
 
 For every contributor and agent: `ci.yml` now has three jobs (ADR-036). `ci` keeps its name and adds the e2e and migration steps, which run only once a package defines `test:e2e` and only when a pull request touches `apps/backend/migrations/`. The new `image` job runs hadolint and builds and scans the images of the affected apps; the new `publish` job pushes `ghcr.io/freydv/bf-backend` and `bf-frontend`, tagged with the commit SHA, on `main` and is the only job with `packages: write`. Both apps now have a `Dockerfile` (ADR-027). The owner adds `image` to the required checks and makes the GHCR packages public by hand: paths in `docs/runbooks/github-settings.md`. New commands: `pnpm test:e2e`, `migrations:check`, `migrations:test`, `image:check`.
