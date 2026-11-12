@@ -1,8 +1,14 @@
 // `helm lint` and `helm template` for the shared chart with every fixture and for every application
-// under deploy/apps (ADR-019). Helm is a local requirement (AGENTS.md).
+// under deploy/apps, and `helm template` for every third-party chart an Application in deploy/argocd installs,
+// at its pinned version and with its inline values (ADR-019, ADR-045). Helm is a local requirement (AGENTS.md).
 import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
+import {
+  ChartFetchError,
+  readChartApplications,
+  renderApplication,
+} from './lib/argocd-application.ts';
 
 const deploy = resolve(import.meta.dirname, '../deploy');
 const chart = `${deploy}/charts/app`;
@@ -42,5 +48,26 @@ for (const { name, values } of cases) {
   }
 }
 
+// A third-party chart is fetched from its repository. Offline, that says nothing about the Application, so a
+// local run skips it with a warning; CI (`CI` is set) has the network and fails, so drift cannot hide there.
+const applications = readChartApplications(`${deploy}/argocd`);
+let rendered = 0;
+for (const app of applications) {
+  const label = `${app.chart} ${app.version} (${app.file.slice(deploy.length + 1)})`;
+  try {
+    renderApplication(app);
+    rendered += 1;
+  } catch (error) {
+    if (error instanceof ChartFetchError && !process.env.CI) {
+      console.warn(`SKIP helm template ${label}: chart repository not reachable\n${error.message}`);
+      continue;
+    }
+    failed += 1;
+    console.error(`FAIL helm template ${label}\n${(error as Error).message}`);
+  }
+}
+
 if (failed > 0) process.exit(1);
-console.log(`charts-check: OK (${cases.length} value sets, lint and template)`);
+console.log(
+  `charts-check: OK (${cases.length} value sets, lint and template; ${rendered} of ${applications.length} third-party charts rendered)`,
+);
