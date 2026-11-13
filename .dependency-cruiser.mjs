@@ -21,6 +21,13 @@ const INFRASTRUCTURE = `${MODULE}/infrastructure/`;
 const DTOS = `${MODULE}/dtos/`;
 const SLICE = `${MODULE}/(commands|queries)/`;
 
+// QRY-6, QRY-7 (ADR-024, ADR-050): the filter toolkit is one package with the entries core, zod and drizzle. The
+// patterns read the package name as well as the path it resolves to, so a rule holds before the package is
+// installed or built (the way the openai rule below does).
+const TOOLKIT = '^@bf/query-filter(/|$)|^packages/query-filter/';
+const TOOLKIT_ZOD = '^@bf/query-filter/zod(/|$)|^packages/query-filter/dist/zod/';
+const TOOLKIT_SRC = '^packages/query-filter/src/';
+
 const NPM = [
   'npm',
   'npm-dev',
@@ -184,6 +191,71 @@ export default {
       severity: 'error',
       from: { path: `^packages/kernel/.*${TEST}` },
       to: { dependencyTypes: NPM, pathNot: '(^|/)node_modules/(neverthrow|vitest)/' },
+    },
+    {
+      name: 'qry-7-domain-no-toolkit',
+      comment:
+        'QRY-7, ADR-050: the domain imports nothing from the filter toolkit. domain-packages-only-kernel catches the resolved path; this one catches the package name, so it also holds when the toolkit is not built.',
+      severity: 'error',
+      from: { path: DOMAIN_ANY },
+      to: { path: TOOLKIT },
+    },
+    {
+      name: 'qry-7-zod-entry-only-in-adapters',
+      comment:
+        'QRY-7, ADR-050: the zod entry (toZod) is imported by interface adapters only, the router and the request DTO. A filter spec, a query, a handler and an adapter of infrastructure read the core entry, which holds no Zod.',
+      severity: 'error',
+      from: { pathNot: [ADAPTER, TEST, TOOLKIT_SRC] },
+      to: { path: TOOLKIT_ZOD },
+    },
+    {
+      name: 'qry-6-core-no-libraries',
+      comment:
+        'QRY-6, ADR-050: the core entry of the toolkit is plain data and types, with no Zod and no Drizzle, so the application layer can read it.',
+      severity: 'error',
+      from: { path: `${TOOLKIT_SRC}core/`, pathNot: TEST },
+      to: { dependencyTypes: NPM },
+    },
+    {
+      name: 'qry-6-core-tests-only-vitest',
+      comment:
+        'QRY-6, ADR-050: a test file of the core entry may import vitest on top of the entry itself.',
+      severity: 'error',
+      from: { path: `${TOOLKIT_SRC}core/.*${TEST}` },
+      to: { dependencyTypes: NPM, pathNot: '(^|/)node_modules/vitest/' },
+    },
+    {
+      name: 'qry-6-zod-entry-only-zod',
+      comment: 'QRY-6, ADR-050: the zod entry imports from npm only zod.',
+      severity: 'error',
+      from: { path: `${TOOLKIT_SRC}zod/`, pathNot: TEST },
+      to: { dependencyTypes: NPM, pathNot: '(^|/)node_modules/zod/' },
+    },
+    {
+      name: 'qry-6-zod-tests-only-zod-and-vitest',
+      comment: 'QRY-6, ADR-050: a test file of the zod entry may import vitest on top of zod.',
+      severity: 'error',
+      from: { path: `${TOOLKIT_SRC}zod/.*${TEST}` },
+      to: { dependencyTypes: NPM, pathNot: '(^|/)node_modules/(zod|vitest)/' },
+    },
+    {
+      name: 'qry-6-entries-are-independent',
+      comment:
+        'QRY-6, ADR-050: the entries of the toolkit depend on core and on nothing else of the package, so what a layer imports from one entry does not drag in another.',
+      severity: 'error',
+      from: { path: `${TOOLKIT_SRC}(core|zod|drizzle)/` },
+      to: {
+        path: `${TOOLKIT_SRC}(core|zod|drizzle)/`,
+        pathNot: [`${TOOLKIT_SRC}$1/`, `${TOOLKIT_SRC}core/`],
+      },
+    },
+    {
+      name: 'qry-6-toolkit-no-apps',
+      comment:
+        'QRY-6, ADR-008: the toolkit is a package, so it imports nothing from an application.',
+      severity: 'error',
+      from: { path: '^packages/query-filter/' },
+      to: { path: '^apps/' },
     },
     {
       name: 'not-to-unresolvable',
