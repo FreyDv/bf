@@ -9,14 +9,14 @@
 ```
 Alignment scope for this repo -> standard@1.0.19
   specs to write / raise to buildable .........  1
-  decisions to record or confirm (ADR/BDR) ....  6
+  decisions to record or confirm (ADR/BDR) ....  5
   drift to reconcile ..........................  0
   guards / structure to install ...............  0
   ---------------------------------------------
-  7 tasks to full alignment
+  6 tasks to full alignment
 ```
 
-Из чего число: спека - SPEC-1; решения - BUDGET-1, PERF-1, COURSES-1, DBSEC-3, DBSEC-6, PRIVACY-1; гардов нет. Роль-владелец - в строке каждого id ниже.
+Из чего число: спека - SPEC-1; решения - BUDGET-1, COURSES-1, DBSEC-3, DBSEC-6, PRIVACY-1; гардов нет. Роль-владелец - в строке каждого id ниже.
 
 `drift 0` и ненулевое число не противоречат друг другу: дрейф измеряет то, что стандарт проверяет механически, а число - то, что механически не проверить.
 
@@ -30,7 +30,6 @@ Alignment scope for this repo -> standard@1.0.19
 |----|-------|-----|---------|-------|----------|------|-----|--------|-----|--------|
 | DBSEC-3 | Роль приложения в `bfdb` и режим SSL клиента: `doadmin` или отдельная роль | - | Maintainer (internal) | architect |  | S | в `bfdb` пока одна роль `doadmin` (CREATEROLE, REPLICATION, BYPASSRLS); `ssl_min_protocol_version` и права на схему `public` не проверены; приложение под ней получит больше прав, чем нужно (ADR-037, ось Data at rest; `docs/runbooks/bfdb-postgres.md`) | decision: ADR-037 | ADR Accepted или ADR-013 дополнен: под какой ролью работают миграции и приложение, какой режим SSL требует клиент; `ssl_min_protocol_version` сверен | todo |
 | DBSEC-6 | Счётчик неудачных попыток входа против отката транзакции на `Result.err` (ADR-025 п. 3, ADR-040 п. 8) | - | Maintainer (internal) | architect |  | S | ADR-025 п. 3 откатывает транзакцию на `Result.err`, неудачный вход - бизнес-ошибка, так что запись счётчика откатится вместе с ней; в корпусе это не согласовано (ADR-044 п. 4, оговорка) | decision: ADR-044 | ADR Accepted (или решение внесено в спеку доступа через AUTH-3): как счётчик переживает неудачный вход (отдельная транзакция, иной результат команды или иное); пункт списка критичных команд в ADR-044 п. 4 подтверждён или исключён | todo |
-| PERF-1 | Бюджет производительности: нужен ли и где | - | Maintainer (internal) | architect |  | S | пункт чек-листа «Performance & scaling budget» (R7) без записи; стандарт вместе с тестами предлагает Lighthouse (`DECISIONS.md`, раздел 9), ADR-039 это не решает | decision: ADR-039 | ADR Accepted: бюджет на горячие пути или «не применимо» одной строкой с сигналом пересмотра | todo |
 
 ## Epic: Гарды репозитория
 
