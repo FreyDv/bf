@@ -71,11 +71,17 @@ jobs:
         run: pnpm format:check
       - name: ESLint
         run: pnpm turbo run lint ${{ github.event_name == 'pull_request' && '--affected' || '' }}
+      - name: Contracts of a DTO-only change
+        # ADR-057: `--affected` does not reach frontend from backend DTO files; a push to `main` runs everything.
+        if: github.event_name == 'pull_request'
+        run: pnpm contracts:typecheck
       - name: Architecture boundaries
         # From the root, outside Turborepo (ADR-009): a violation cannot hide behind a cache hit.
         run: pnpm deps
       - name: Boundary rules fire on violations
         run: pnpm deps:test
+      - name: Contract typecheck selection
+        run: pnpm contracts:typecheck:test
       - name: Migration check works
         # The check itself on fixtures, against a real Postgres container; Docker is on the runner.
         run: pnpm migrations:test
