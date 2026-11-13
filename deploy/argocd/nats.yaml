@@ -1,7 +1,8 @@
 # NATS JetStream (ADR-022, backlog NATS-1). Applied by hand once:
 #   kubectl apply -n argocd -f deploy/argocd/nats.yaml
-# ArgoCD does not watch this repository yet (ARGOCD-1), so this file is the whole source: the chart comes from the
-# public Helm repository and the values are inline. Steps for the owner: docs/runbooks/malinina-kubernetes.md.
+# ArgoCD does not watch this repository until the owner applies root.yaml (ARGOCD-2); after that the root Application
+# syncs this file (ADR-046). Until then this file is the whole source: the chart comes from the public Helm
+# repository and the values are inline. Steps for the owner: docs/runbooks/malinina-kubernetes.md.
 #
 # Chart 2.15.2 (appVersion 2.15.2) was published 2026-10-29. ADR-005 needs 7 full days, so it was usable from
 # 2026-11-05; on 2026-11-12 it is 14 days old. The server image below is the chart's own appVersion, and the other two

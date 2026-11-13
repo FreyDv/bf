@@ -1,34 +1,34 @@
 # Runbook: ArgoCD
 
 Serves: владелец-оператор и агент, действующий за него. Как ArgoCD ставится с нуля, как открыть его UI, что сделать с начальным
-паролем и каким должно стать самоуправление из `deploy/argocd/` (ADR-019, ADR-038 п. 2, backlog RUNBOOK-1, RUNBOOK-2, ARGOCD-1).
+паролем и как устроено самоуправление из `deploy/argocd/` (ADR-019, ADR-038 п. 2, ADR-046, backlog RUNBOOK-1, RUNBOOK-2, ARGOCD-1, ARGOCD-2).
 
 Состояние на 2026-11-12: ArgoCD работает с 2026-11-11 (Helm-релиз `argocd`, chart `argo-cd` 10.11.6, app v3.5.6), есть только
-`AppProject default`, приложений и подключённого репозитория нет, UI не настроен, `argocd-initial-admin-secret` не менялся.
+`AppProject default`, репозиторий ArgoCD не смотрит (манифесты самоуправления готовы, ARGOCD-1; первое применение - ARGOCD-2), UI не настроен, `argocd-initial-admin-secret` не менялся.
 Подробный снимок кластера и разбор неудачной первой установки - [malinina-kubernetes.md](malinina-kubernetes.md) («Что работает в
 кластере», «Разбор: почему ArgoCD не установился»). Команды ниже не выполнялись в том виде, как записаны: живой кластер агент не
 трогает, их запускает владелец. Три команды установки выполнялись 2026-11-11 и прошли.
 
 ## Установка с нуля (bootstrap)
 
-ArgoCD ставится вручную один раз, дальше им управляют из git (ADR-019 п. 1; самоуправление - раздел ниже, пока не применено).
+ArgoCD ставится вручную один раз, дальше им управляют из git (ADR-019 п. 1, ADR-046; самоуправление - раздел ниже). Этот раздел нужен для кластера с нуля.
 Контекст `kubectl` - `do-tor1-malinina`, нужен Helm v4 (локальное требование, AGENTS.md, «Commands»). Namespace `argocd` должен
 существовать: на новом кластере `kubectl create namespace argocd` (как он появился в первый раз, не записано).
 
 Chart берётся командами `helm repo add argo https://argoproj.github.io/argo-helm` и `helm pull argo/argo-cd --version 10.11.6 --untar`.
-Значения - `deploy/argocd/argocd-values.yaml` (`repoServer.replicas=2`, `server.replicas=2`, `ARGOCD_API_SERVER_REPLICAS=2`). Порядок
+Значения - `deploy/argocd/argocd-values.yaml` (`repoServer.replicas=2`, `server.replicas=2`, `ARGOCD_API_SERVER_REPLICAS=2`, `crds.install=false`, `configs.secret.createSecret=false`); те же значения читает Application `argo-cd`. Порядок
 важен: Helm 4 не справляется с CRD `applicationsets` (около 1,4 МБ), поэтому CRD ставятся отдельно от Helm.
 
 1. Если есть зависший релиз `pending-install` (так было 2026-11-03): `helm uninstall argocd -n argocd`. CRD `applications` и
    `appprojects` остаются сами (`helm.sh/resource-policy: keep`). На чистом кластере шаг пропускается.
 2. CRD `applicationsets` серверным применением: `helm template argocd <каталог chart> -n argocd --show-only templates/crds/crd-applicationset.yaml > crd.yaml`,
    затем `kubectl apply --server-side --force-conflicts -f crd.yaml`; проверка - у CRD `Established=True`.
-3. `helm install argocd <каталог chart> -n argocd -f deploy/argocd/argocd-values.yaml --set crds.install=false --wait --timeout 10m`.
-   2026-11-11 релиз стал `deployed`, все поды `Running` за 47 секунд.
+3. `helm install argocd <каталог chart> -n argocd -f deploy/argocd/argocd-values.yaml --set crds.install=false --set configs.secret.createSecret=true --wait --timeout 10m`.
+   2026-11-11 релиз стал `deployed`, все поды `Running` за 47 секунд (тогда без `createSecret`: до ARGOCD-1 файл значений его не задавал). `createSecret=true` в командной строке нужен, чтобы chart создал `argocd-secret` на новом кластере; в файле стоит `false`, чтобы самосинк не затирал хэш пароля. Не проверялось: что без этого флага `argocd-server` создал бы секрет сам.
 
 Проверка: `helm -n argocd status argocd`, `kubectl -n argocd get pods` - все `Running`.
 
-Обновление chart: шаг 2 повторяется перед каждым `helm upgrade` (CRD вне Helm), новая версия - не раньше чем через 7 дней после
+Обновление chart после ARGOCD-2: `helm upgrade` запрещён (раздел о самоуправлении); меняется `targetRevision` в `deploy/argocd/argo-cd.yaml`, до слияния в `main` выполняется шаг 2 (CRD вне Helm). Новая версия - не раньше чем через 7 дней после
 выхода (ADR-005). Версия 10.11.6 остаётся до отдельной работы над обновлением: сведения об актуальной версии chart на Artifact Hub
 противоречивы, проверять по релизам апстрима.
 
@@ -67,55 +67,65 @@ UI наружу не публикуется (ADR-038 п. 2), доступ чер
 
 Репозиторий публичный (решение владельца 2026-11-12): ArgoCD читает его по обычному HTTPS-адресу, **без учётных данных**. Ни
 deploy key, ни токена, ни Secret с репозиторием не нужно: адрес указывается в `source.repoURL` Application. Адрес репозитория на
-GitHub - `FreyDv/bf` (ADR-038 п. 7), то есть `https://github.com/FreyDv/bf` (форму с `.git` или без выбирает ARGOCD-1 при первой
-синхронизации; не проверялось).
+GitHub - `FreyDv/bf` (ADR-038 п. 7), то есть `https://github.com/FreyDv/bf` (в манифестах - форма без `.git`; принимает ли её ArgoCD, видно при первой
+синхронизации в ARGOCD-2; не проверялось).
 
 Проверка владельца: `gh repo view FreyDv/bf --json visibility` - `PUBLIC`. Смена видимости репозитория на приватную - условие пересмотра: до неё способ доступа выбирается
 записью (в схеме сейчас секрета нет).
 
-## Самоуправление из `deploy/argocd/` (целевое, не применено)
+## Самоуправление из `deploy/argocd/` (ADR-019 п. 1, ADR-046)
 
-Цель (ADR-019 п. 1): ArgoCD смотрит этот репозиторий и управляет всем из `deploy/argocd/`, включая себя. Сейчас файлы Application
-(`sealed-secrets.yaml`, `nats.yaml`) применяются руками (`kubectl apply -n argocd -f deploy/argocd/<файл>.yaml`), ArgoCD
-репозиторий не смотрит. Манифесты - отдельная строка **ARGOCD-1**: их нельзя проверить без живого кластера, а ошибка в
-самоуправляемом релизе ArgoCD опасна. Здесь - что ARGOCD-1 должна учесть, это не инструкция к исполнению.
+Манифесты готовы (ARGOCD-1), на кластере не применены: первое применение - шаг владельца ARGOCD-2. Устройство:
 
-- Корневое Application (`deploy/argocd/`, источник - этот репозиторий, публичный URL, раздел выше) и Application для самого
-  `argo-cd` с теми же значениями и версией chart, что в bootstrap.
-- CRD `applicationsets` вне Helm: при самоуправлении значение `crds.install=false` и шаг 2 bootstrap остаются, иначе повторится
-  отказ Helm 4. Как это выражается в Application (серверное применение, исключение CRD из синхронизации), решает ARGOCD-1.
-- В `deploy/argocd/` лежит не только манифесты: `argocd-values.yaml` - файл значений, не объект Kubernetes; корневое Application
-  не должно пытаться применить его как манифест.
-- Уже работающие объекты (Helm-релиз `argocd`, Application, применённые руками) принимаются без пересоздания; автосинхронизация для
-  самого ArgoCD без `prune` до первой проверки, откат - `git revert` (ADR-019).
-- Первое применение корневого Application - последний ручной шаг; после него `kubectl apply` из `sealed-secrets.yaml` и `nats.yaml`
-  больше не нужен, их комментарии «ArgoCD репозиторий не смотрит» обновляются вместе (строка ARGOCD-1).
+- `deploy/argocd/root.yaml` - корневое Application: смотрит `deploy/argocd/` в `https://github.com/FreyDv/bf`, ветка `main`, без учётных данных, и применяет каждое Application из каталога. Исключены `argocd-values.yaml` (файл значений, не объект Kubernetes) и `traefik.yaml` (плейсхолдер сертификата, до TRAEFIK-2).
+- `deploy/argocd/argo-cd.yaml` - Application самого ArgoCD: chart `argo-cd` 10.11.6, значения - файл `argocd-values.yaml` из этого же репозитория (второй источник `ref: values`), имя релиза `argocd`, namespace `argocd`, поэтому рендер даёт живые имена (`argocd-server`, ...) и первый синк принимает существующие объекты, а не создаёт второй ArgoCD.
+- Синк корня и `argo-cd`: автоматический, без `prune`, без `selfHeal`, `ServerSideApply=true`, без finalizer: удаление Application ничего не удаляет, а удалённый из git объект остаётся, пока его не удалит человек.
+- CRD вне Helm и вне синка (`crds.install=false`), `argocd-secret` не рендерится (`configs.secret.createSecret=false`): самосинк не затирает CRD и хэш пароля `admin`. Порядок со сменой пароля (RUNBOOK-2) любой: до ARGOCD-2 или после, хэш остаётся.
+- После ARGOCD-2 `kubectl apply` из `sealed-secrets.yaml` и `nats.yaml` не нужен: их применяет корень; новый файл Application в каталоге разворачивается слиянием в `main`.
+
+### Первое применение (ARGOCD-2, шаги владельца, не выполнялись)
+
+Предусловие: изменения ARGOCD-1 слиты в `main` (ArgoCD читает `main`, не ветку); `gh repo view FreyDv/bf --json visibility` - `PUBLIC`.
+
+1. Перед применением, только чтение: `kubectl -n argocd get applications` (допустимы `sealed-secrets`, `nats`, если применялись руками), `kubectl -n argocd get deploy,sts` (список объектов ArgoCD запомнить).
+2. `kubectl apply -n argocd -f deploy/argocd/root.yaml -f deploy/argocd/argo-cd.yaml`.
+3. Ждать минуты три: `kubectl -n argocd get applications` - `root`, `argo-cd` и уже применённые `sealed-secrets`, `nats` в `Synced` и `Healthy`; `traefik` в списке нет (исключён).
+4. Второго ArgoCD нет: `kubectl -n argocd get deploy,sts` показывает те же объекты, что в шаге 1, с теми же именами (`argocd-server`, `argocd-repo-server`, `argocd-application-controller`, ...) и без новых с префиксом `argo-cd-`; `kubectl -n argocd get pods` - все `Running`; `helm -n argocd status argocd` по-прежнему `deployed`.
+5. Что проверить глазами: `argocd-secret` на месте и вход `admin` работает прежним паролем; у `argo-cd` нет расхождений (`kubectl -n argocd describe application argo-cd`), особенно по Job `argocd-redis-secret-init` и по `argocd-notifications-secret`, которые chart рендерит и без `argocd-secret`.
+6. Если `argo-cd` в `OutOfSync` или `Degraded`: ничего не удалять и не править руками; откат - `kubectl -n argocd delete application argo-cd root` (без finalizer объекты остаются) и сообщить агенту.
+7. Сообщить в строке ARGOCD-2: дата, `Synced` и `Healthy`, второго ArgoCD нет.
+
+### Дальше
+
+- **Обновление ArgoCD:** новая версия chart, прошедшая окно ADR-005, - смена `targetRevision` в `deploy/argocd/argo-cd.yaml` в PR; перед слиянием владелец выполняет шаг 2 установки (CRD).
+- **`helm upgrade`, `helm rollback` и `helm uninstall` для релиза `argocd` запрещены с ARGOCD-2:** Helm-запись остаётся как след установки, объекты принадлежат ArgoCD, команда Helm разойдётся с git.
+- **Откат конфигурации и версии:** `git revert` и слияние; синк применит.
+- **Удаление Application из `deploy/argocd/`** не удаляет объекты (нет `prune`): удалить вручную, если так и задумано.
 
 ## Diagnose
 
 - Состояние: `helm -n argocd status argocd`, `kubectl -n argocd get pods`, `kubectl -n argocd get applications`.
 - Приложение не синхронизируется: `kubectl -n argocd describe application <имя>`; логи контроллера `kubectl -n argocd logs statefulset/argocd-application-controller`, репозитория `kubectl -n argocd logs deploy/argocd-repo-server`.
-- Три вероятные причины, по убыванию: ArgoCD не смотрит репозиторий (сейчас так: файлы применяются руками); chart или значения расходятся с `deploy/argocd/`; CRD вне Helm не обновлены перед `helm upgrade`.
+- Три вероятные причины, по убыванию: ArgoCD не смотрит репозиторий (так до ARGOCD-2: файлы применяются руками); chart или значения расходятся с `deploy/argocd/`; CRD вне Helm не обновлены перед сменой версии chart.
 
 ## Common failures
 
 | Симптом | Причина | Что делать |
 |---|---|---|
 | `helm install` зависает в `pending-install` | CRD `applicationsets` слишком большой для Helm 4 | шаги 1-3 установки |
-| `helm upgrade` падает на CRD | CRD вне Helm не обновлены | шаг 2 установки, затем `helm upgrade ... --set crds.install=false` |
+| синк `argo-cd` падает на CRD после смены версии chart | CRD вне Helm не обновлены | шаг 2 установки, затем повторить синк (`helm upgrade` с ARGOCD-2 запрещён) |
 | UI не открывается через `port-forward` | неверное имя сервиса или порт | `kubectl -n argocd get svc`; предупреждение о сертификате в браузере ожидаемо |
 | Вход `admin` не проходит после смены | начальный секрет удалён до проверки нового пароля | сброс пароля по документации апстрима (раздел выше) |
 
 ## Rollback
 
-Откат конфигурации - `git revert` и повторное применение (ADR-019). Откат самого ArgoCD: `helm -n argocd rollback argocd <ревизия>`
-(CRD вне Helm откатом не меняются). Потеря кластера - порядок в [recovery.md](recovery.md).
+Откат конфигурации и самого ArgoCD - `git revert` и слияние в `main`; синк применит (ADR-019, ADR-046). До ARGOCD-2, пока корень не применён, откат ArgoCD - `helm -n argocd rollback argocd <ревизия>`; после - запрещён. CRD вне Helm откатом не меняются. Потеря кластера - порядок в [recovery.md](recovery.md).
 
 ## Не проверено
 
 - Имя сервиса `argocd-server` и поведение `port-forward` на этом кластере.
 - Видимость репозитория сейчас (`gh repo view`): решение исходит из того, что он публичный.
 - Сброс пароля после удаления начального секрета и работа User Info -> Update Password в версии 10.11.6.
-- Всё из раздела о самоуправлении: манифестов нет (ARGOCD-1).
+- Всё из раздела о самоуправлении: манифесты проверены только `helm template` (`pnpm charts`), на кластере не применялись (ARGOCD-2): принятие существующих объектов Helm, хуки chart, достижимость `https://github.com/FreyDv/bf` без `.git`.
 
-Связано: [malinina-kubernetes.md](malinina-kubernetes.md), [recovery.md](recovery.md), ADR-005, ADR-019, ADR-020, ADR-038.
+Связано: [malinina-kubernetes.md](malinina-kubernetes.md), [recovery.md](recovery.md), ADR-005, ADR-019, ADR-020, ADR-038, ADR-046.

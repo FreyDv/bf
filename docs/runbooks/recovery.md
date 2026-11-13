@@ -61,8 +61,8 @@ Secrets, Full-access ключ Spaces, пароль `admin` ArgoCD), образы
 
 ### 5. Приложения платформы
 
-Каждое - свой Application из `deploy/argocd/`; пока ArgoCD не смотрит репозиторий (ARGOCD-1), применяются руками
-(`kubectl apply -n argocd -f deploy/argocd/<файл>.yaml`), после - синхронизацией.
+Каждое - свой Application из `deploy/argocd/`; пока владелец не применил корневое Application (ARGOCD-2), они применяются руками
+(`kubectl apply -n argocd -f deploy/argocd/<файл>.yaml`), после - синхронизацией из `deploy/argocd/` (ADR-046).
 
 | Приложение | Что делать | Состояние на 2026-11-12 |
 |---|---|---|

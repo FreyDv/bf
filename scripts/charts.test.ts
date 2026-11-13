@@ -2,7 +2,7 @@
 // Runs `helm template`, so Helm is a local requirement (AGENTS.md).
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, it } from 'node:test';
 import { readChartApplications, renderApplication } from './lib/argocd-application.ts';
@@ -277,5 +277,99 @@ describe('traefik Application (ADR-038, backlog TRAEFIK-1)', () => {
 
   it('serves the IngressClass that the app chart names by default', () => {
     assert.match(find(renderApplication(app), 'IngressClass'), /\n {2}name: traefik\n/);
+  });
+});
+
+describe('ArgoCD self-management (ADR-019, ADR-046, backlog ARGOCD-1)', () => {
+  const dir = `${deploy}/argocd`;
+  const [app] = readChartApplications(dir).filter((item) => item.chart === 'argo-cd');
+  const argoSource = readFileSync(`${dir}/argo-cd.yaml`, 'utf8');
+  const rootSource = readFileSync(`${dir}/root.yaml`, 'utf8');
+  const exclude = /exclude: "\{([^}]*)\}"/.exec(rootSource)?.[1].split(',') ?? [];
+  const repoURL = 'https://github.com/FreyDv/bf';
+
+  it('pins an exact chart version, takes the values file of this repository and keeps the live release name', () => {
+    assert.ok(app, 'deploy/argocd has an argo-cd Application');
+    assert.equal(app.version, '10.11.6');
+    assert.equal(app.namespace, 'argocd');
+    assert.equal(app.releaseName, 'argocd');
+    assert.deepEqual(app.valueFiles, [`${dir}/argocd-values.yaml`]);
+    assert.equal(app.values, '', 'no inline values: the file is the one source');
+    assert.match(
+      argoSource,
+      new RegExp(`- repoURL: ${repoURL}\\n\\s+targetRevision: main\\n\\s+ref: values`),
+    );
+  });
+
+  it('renders the objects the live release has, under the names kubectl and the runbook use', () => {
+    const output = renderApplication(app);
+    for (const name of ['argocd-server', 'argocd-repo-server', 'argocd-application-controller']) {
+      assert.match(output, new RegExp(`\\n {2}name: ${name}\\n`), `${name} is rendered`);
+    }
+    assert.doesNotMatch(output, /name: argocd-argo-cd/);
+    assert.match(find(output, 'Service'), /namespace: argocd\n/);
+  });
+
+  it('takes the replica counts from the values file', () => {
+    const deployments = docs(renderApplication(app)).filter((doc) => kindOf(doc) === 'Deployment');
+    const server = deployments.find((doc) => /name: argocd-server\n/.test(doc)) ?? '';
+    const repo = deployments.find((doc) => /name: argocd-repo-server\n/.test(doc)) ?? '';
+    assert.match(server, /\n {2}replicas: 2\n/);
+    assert.match(repo, /\n {2}replicas: 2\n/);
+    assert.match(server, /ARGOCD_API_SERVER_REPLICAS\n\s+value: "2"/);
+  });
+
+  it('leaves the CRDs and argocd-secret out of the sync, so self-sync cannot touch them', () => {
+    const output = renderApplication(app);
+    assert.ok(!kinds(output).includes('CustomResourceDefinition'), 'CRDs stay outside Helm');
+    assert.doesNotMatch(output, /\n {2}name: argocd-secret\n/, 'the admin password hash stays');
+  });
+
+  it('syncs automatically but never prunes, never self-heals and never deletes what it deployed', () => {
+    for (const source of [argoSource, rootSource]) {
+      assert.match(source, /automated:\n\s+(#.*\n\s+)*prune: false\n/);
+      assert.match(source, /- ServerSideApply=true/);
+      assert.doesNotMatch(source, /^\s*selfHeal:\s*true/m);
+      assert.doesNotMatch(source, /^\s*-?\s*resources-finalizer|finalizers:/m);
+    }
+  });
+
+  it('points the root Application at this directory of the public repository, without credentials', () => {
+    assert.match(
+      rootSource,
+      new RegExp(`repoURL: ${repoURL}\\n\\s+targetRevision: main\\n\\s+path: deploy/argocd\\n`),
+    );
+    assert.match(rootSource, /directory:\n\s+recurse: false\n/);
+    assert.doesNotMatch(rootSource + argoSource, /secretRef|usernameSecret|password:|token:/);
+  });
+
+  it('applies every file of deploy/argocd as an Application, except the ones the root excludes', () => {
+    assert.deepEqual([...exclude].sort(), ['argocd-values.yaml', 'traefik.yaml']);
+    const synced = readdirSync(dir).filter(
+      (name) => name.endsWith('.yaml') && !exclude.includes(name),
+    );
+    assert.deepEqual(synced.sort(), [
+      'argo-cd.yaml',
+      'nats.yaml',
+      'root.yaml',
+      'sealed-secrets.yaml',
+    ]);
+    for (const name of synced) {
+      assert.match(
+        readFileSync(`${dir}/${name}`, 'utf8'),
+        /^kind: Application$/m,
+        `${name} is an Application`,
+      );
+    }
+  });
+
+  it('keeps traefik.yaml out of the sync for as long as it holds the certificate placeholder (TRAEFIK-2)', () => {
+    const traefik = readFileSync(`${dir}/traefik.yaml`, 'utf8').replace(/^#.*$/gm, '');
+    if (/CERTIFICATE_ID_OF_MALININA_CA/.test(traefik)) {
+      assert.ok(
+        exclude.includes('traefik.yaml'),
+        'a sync would create a balancer with a wrong certificate',
+      );
+    }
   });
 });

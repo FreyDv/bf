@@ -1,4 +1,6 @@
-# Bootstrap values for the argo-cd chart (runbook docs/runbooks/malinina-kubernetes.md, ADR-019).
+# Values for the argo-cd chart, read by deploy/argocd/argo-cd.yaml (ArgoCD manages itself, ADR-046) and, for a rebuild
+# from nothing, by the bootstrap install (runbook docs/runbooks/argocd.md). This is a values file, not a Kubernetes
+# object: the root Application excludes it from the sync (root.yaml, directory.exclude).
 repoServer:
   replicas: 2
 server:
@@ -6,3 +8,13 @@ server:
   - name: ARGOCD_API_SERVER_REPLICAS
     value: "2"
   replicas: 2
+# The CRD `applicationsets` (about 1.4 MB) is too big for Helm 4, so the CRDs are applied by hand with server-side
+# apply (runbook, step 2 of the bootstrap) and stay outside the chart and outside the sync.
+crds:
+  install: false
+configs:
+  secret:
+    # argocd-secret holds the admin password hash set in RUNBOOK-2 and the server signing key. A self-sync that rendered
+    # it would overwrite both, so the chart does not render it. The bootstrap install sets createSecret=true on the
+    # command line, so a cluster built from nothing still gets the Secret.
+    createSecret: false

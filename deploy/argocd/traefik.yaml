@@ -1,7 +1,9 @@
 # Traefik ingress controller (ADR-038, backlog TRAEFIK-1). Applied by hand once, after the certificate id below is filled:
 #   kubectl apply -n argocd -f deploy/argocd/traefik.yaml
-# ArgoCD does not watch this repository yet (ARGOCD-1), so this file is the whole source: the chart comes from the
-# public Helm repository and the values are inline. Steps for the owner (TRAEFIK-2): docs/runbooks/malinina-kubernetes.md,
+# ArgoCD does not watch this repository until the owner applies root.yaml (ARGOCD-2); even then root.yaml excludes
+# this file until TRAEFIK-2 sets the certificate id and removes the exclusion in the same commit, because a sync
+# with the placeholder would create a load balancer with a wrong certificate (ADR-046). Until then this file is the
+# whole source: the chart comes from the public Helm repository and the values are inline. Steps for the owner (TRAEFIK-2): docs/runbooks/malinina-kubernetes.md,
 # section "Миграция ingress".
 #
 # Chart 42.3.0 (appVersion v3.7.17) was published 2026-11-03. ADR-005 needs 7 full days, so it was usable from
