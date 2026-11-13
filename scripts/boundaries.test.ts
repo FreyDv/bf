@@ -128,6 +128,72 @@ const files: Record<string, string> = {
   'apps/frontend/src/feature/domain/bad-contracts.ts':
     "import { contracts } from '@bf/contracts';\nexport const a = contracts;",
 
+  // The filter toolkit (QRY-6, QRY-7, ADR-050): one package, entries core and zod, built to dist/ like a
+  // real install. The tree simulates it, so the rules are proven before a module imports it.
+  'packages/query-filter/package.json': JSON.stringify({
+    name: '@bf/query-filter',
+    type: 'module',
+    exports: {
+      './core': './dist/core/index.js',
+      './zod': './dist/zod/index.js',
+    },
+  }),
+  'packages/query-filter/dist/core/index.js': 'export const Op = 1;',
+  'packages/query-filter/dist/zod/index.js': 'export const toZod = 1;',
+  'packages/query-filter/src/core/index.ts': 'export const Op = 1;',
+  'packages/query-filter/src/core/limits.test.ts':
+    "import { it } from 'vitest';\nimport { Op } from './index.js';\nexport const t = [it, Op];",
+  'packages/query-filter/src/zod/to-zod.ts':
+    "import { z } from 'zod';\nimport { Op } from '../core/index.js';\nexport const a = [z, Op];",
+  'packages/query-filter/src/zod/to-zod.test.ts':
+    "import { it } from 'vitest';\nimport { z } from 'zod';\nimport { a } from './to-zod.js';\nexport const t = [it, z, a];",
+  // legal: core from every layer but the domain, the zod entry from a router, a request DTO and a test
+  [`${S}/orders/queries/find/find.filter-spec.ts`]:
+    "import { Op } from '@bf/query-filter/core';\nexport const spec = Op;",
+  [`${S}/orders/queries/find/find.request.dto.ts`]:
+    "import { toZod } from '@bf/query-filter/zod';\nexport const dto = toZod;",
+  [`${S}/orders/queries/find/find.router.ts`]:
+    "import { toZod } from '@bf/query-filter/zod';\nexport const router = toZod;",
+  [`${S}/orders/queries/find/find.query.ts`]:
+    "import { Op } from '@bf/query-filter/core';\nexport const query = Op;",
+  [`${S}/orders/application/uses-toolkit-core.service.ts`]:
+    "import { Op } from '@bf/query-filter/core';\nexport const a = Op;",
+  [`${S}/orders/infrastructure/order-read.adapter.ts`]:
+    "import { Op } from '@bf/query-filter/core';\nexport const a = Op;",
+  [`${S}/orders/commands/place/place.router.test.ts`]:
+    "import { toZod } from '@bf/query-filter/zod';\nexport const t = toZod;",
+  // violations
+  [`${S}/orders/domain/bad-toolkit-core.ts`]:
+    "import { Op } from '@bf/query-filter/core';\nexport const a = Op;",
+  [`${S}/orders/domain/bad-toolkit-zod.test.ts`]:
+    "import { toZod } from '@bf/query-filter/zod';\nexport const a = toZod;",
+  [`${S}/orders/application/bad-toolkit-zod.service.ts`]:
+    "import { toZod } from '@bf/query-filter/zod';\nexport const a = toZod;",
+  [`${S}/orders/infrastructure/bad-toolkit-zod.adapter.ts`]:
+    "import { toZod } from '@bf/query-filter/zod';\nexport const a = toZod;",
+  [`${S}/orders/queries/find/bad-toolkit-zod.filter-spec.ts`]:
+    "import { toZod } from '@bf/query-filter/zod';\nexport const a = toZod;",
+  [`${S}/orders/queries/find/bad-toolkit-zod.query-handler.ts`]:
+    "import { toZod } from '@bf/query-filter/zod';\nexport const a = toZod;",
+  'packages/query-filter/src/core/bad-library.ts': "import { z } from 'zod';\nexport const a = z;",
+  'packages/query-filter/src/core/bad-library.test.ts':
+    "import { z } from 'zod';\nexport const a = z;",
+  'packages/query-filter/src/core/bad-entry.ts':
+    "import { a } from '../zod/to-zod.js';\nexport const b = a;",
+  'packages/query-filter/src/zod/bad-library.ts':
+    "import { ok } from 'neverthrow';\nexport const a = ok;",
+  'packages/query-filter/src/zod/bad-vitest.ts':
+    "import { it } from 'vitest';\nexport const a = it;",
+  'packages/query-filter/src/zod/bad-library.test.ts':
+    "import { ok } from 'neverthrow';\nexport const a = ok;",
+  'packages/query-filter/src/zod/bad-drizzle-entry.ts':
+    "import { a } from '../drizzle/compile.js';\nexport const b = a;",
+  'packages/query-filter/src/drizzle/compile.ts':
+    "import { Op } from '../core/index.js';\nexport const a = Op;",
+  'packages/query-filter/src/drizzle/bad-zod-entry.ts':
+    "import { a } from '../zod/to-zod.js';\nexport const b = a;",
+  'packages/query-filter/src/zod/bad-app.ts': `import { order } from '../../../../apps/backend/src/orders/domain/order.aggregate.js';\nexport const a = order;`,
+
   // What the kernel itself may import (ADR-049): neverthrow, and vitest in a test file
   'packages/kernel/src/uses-neverthrow.ts':
     "import { ok } from 'neverthrow';\nexport const a = ok;",
@@ -171,6 +237,22 @@ const expected: Array<[rule: string, from: string]> = [
   ['domain-packages-only-kernel', `${S}/orders/domain/bad-contracts.test.ts`],
   ['domain-packages-only-kernel', `${S}/orders/domain/bad-contracts-relative.ts`],
   ['domain-packages-only-kernel', 'apps/frontend/src/feature/domain/bad-contracts.ts'],
+  ['qry-7-domain-no-toolkit', `${S}/orders/domain/bad-toolkit-core.ts`],
+  ['qry-7-domain-no-toolkit', `${S}/orders/domain/bad-toolkit-zod.test.ts`],
+  ['domain-packages-only-kernel', `${S}/orders/domain/bad-toolkit-core.ts`],
+  ['qry-7-zod-entry-only-in-adapters', `${S}/orders/application/bad-toolkit-zod.service.ts`],
+  ['qry-7-zod-entry-only-in-adapters', `${S}/orders/infrastructure/bad-toolkit-zod.adapter.ts`],
+  ['qry-7-zod-entry-only-in-adapters', `${S}/orders/queries/find/bad-toolkit-zod.filter-spec.ts`],
+  ['qry-7-zod-entry-only-in-adapters', `${S}/orders/queries/find/bad-toolkit-zod.query-handler.ts`],
+  ['qry-6-core-no-libraries', 'packages/query-filter/src/core/bad-library.ts'],
+  ['qry-6-core-tests-only-vitest', 'packages/query-filter/src/core/bad-library.test.ts'],
+  ['qry-6-entries-are-independent', 'packages/query-filter/src/core/bad-entry.ts'],
+  ['qry-6-zod-entry-only-zod', 'packages/query-filter/src/zod/bad-library.ts'],
+  ['qry-6-zod-entry-only-zod', 'packages/query-filter/src/zod/bad-vitest.ts'],
+  ['qry-6-zod-tests-only-zod-and-vitest', 'packages/query-filter/src/zod/bad-library.test.ts'],
+  ['qry-6-entries-are-independent', 'packages/query-filter/src/zod/bad-drizzle-entry.ts'],
+  ['qry-6-entries-are-independent', 'packages/query-filter/src/drizzle/bad-zod-entry.ts'],
+  ['qry-6-toolkit-no-apps', 'packages/query-filter/src/zod/bad-app.ts'],
   ['apps-do-not-import-each-other', 'apps/frontend/app/bad-app-import.ts'],
   ['contracts-only-dtos-from-backend', 'packages/contracts/src/bad-domain.ts'],
 ];
@@ -266,8 +348,9 @@ function cruiseTree(
   linkNodeModules(join(root, 'node_modules'), join(tmp, 'node_modules'), extra);
   const appNodeModules = join(root, 'apps/backend/node_modules');
   linkNodeModules(appNodeModules, join(tmp, 'apps/backend/node_modules'), {});
-  // a pnpm package carries its own node_modules; the kernel needs vitest and zod to resolve
+  // a pnpm package carries its own node_modules; the kernel and the toolkit need vitest and zod to resolve
   linkNodeModules(appNodeModules, join(tmp, 'packages/kernel/node_modules'), {});
+  linkNodeModules(appNodeModules, join(tmp, 'packages/query-filter/node_modules'), {});
 
   let stdout = '';
   try {
@@ -297,7 +380,11 @@ describe('dependency-cruiser boundaries', () => {
 
   before(() => {
     let cruise: Cruise;
-    [cruise, tmp] = cruiseTree(files, ['kernel', 'contracts'], ['neverthrow', 'openai']);
+    [cruise, tmp] = cruiseTree(
+      files,
+      ['kernel', 'contracts', 'query-filter'],
+      ['neverthrow', 'openai'],
+    );
     ({ violations, modules } = cruise);
   });
 
@@ -323,6 +410,23 @@ describe('dependency-cruiser boundaries', () => {
     const kernelFile = modules.find((m) => m.source === 'packages/kernel/src/uses-neverthrow.ts');
     assert.ok(
       kernelFile?.dependencies.some((d) => /(^|\/)node_modules\/neverthrow\//.test(d.resolved)),
+    );
+  });
+
+  // The same reason for the toolkit: the zod entry of a package built to dist/ must show in the graph.
+  it('sees the router import of the toolkit zod entry in dist/ and finds it legal', () => {
+    const router = modules.find((m) => m.source === `${S}/orders/queries/find/find.router.ts`);
+    assert.ok(
+      router?.dependencies.some((d) => d.resolved === 'packages/query-filter/dist/zod/index.js'),
+    );
+  });
+
+  it('sees the application import of the toolkit core entry in dist/ and finds it legal', () => {
+    const service = modules.find(
+      (m) => m.source === `${S}/orders/application/uses-toolkit-core.service.ts`,
+    );
+    assert.ok(
+      service?.dependencies.some((d) => d.resolved === 'packages/query-filter/dist/core/index.js'),
     );
   });
 
@@ -388,6 +492,53 @@ describe('dependency-cruiser boundaries with packages exported from dist/', () =
     assert.deepEqual(
       cruise.violations.filter((v) => v.from.startsWith('packages/')),
       [],
+    );
+  });
+});
+
+// ADR-050: the toolkit is imported by a name the checker cannot resolve (not installed, not built). The rules
+// read the name too, so the import is judged although the file behind it is not there.
+describe('dependency-cruiser boundaries with the toolkit not installed', () => {
+  const tree: Record<string, string> = {
+    [`${S}/orders/domain/bad-toolkit-core.ts`]:
+      "import { Op } from '@bf/query-filter/core';\nexport const a = Op;",
+    [`${S}/orders/application/bad-toolkit-zod.service.ts`]:
+      "import { toZod } from '@bf/query-filter/zod';\nexport const a = toZod;",
+    [`${S}/orders/queries/find/find.request.dto.ts`]:
+      "import { toZod } from '@bf/query-filter/zod';\nexport const dto = toZod;",
+  };
+  let tmp = '';
+  let cruise: Cruise = { violations: [], modules: [] };
+
+  before(() => {
+    [cruise, tmp] = cruiseTree(tree, [], []);
+  });
+
+  after(() => rmSync(tmp, { recursive: true, force: true }));
+
+  const fires = (rule: string, from: string) =>
+    cruise.violations.some((v) => v.rule.name === rule && v.from === from);
+
+  it('rejects the toolkit in the domain by name', () => {
+    assert.ok(fires('qry-7-domain-no-toolkit', `${S}/orders/domain/bad-toolkit-core.ts`));
+  });
+
+  it('rejects the zod entry outside an adapter by name', () => {
+    assert.ok(
+      fires(
+        'qry-7-zod-entry-only-in-adapters',
+        `${S}/orders/application/bad-toolkit-zod.service.ts`,
+      ),
+    );
+  });
+
+  it('lets the request DTO import the zod entry by name', () => {
+    assert.ok(
+      !cruise.violations.some(
+        (v) =>
+          v.from === `${S}/orders/queries/find/find.request.dto.ts` &&
+          v.rule.name.startsWith('qry-'),
+      ),
     );
   });
 });

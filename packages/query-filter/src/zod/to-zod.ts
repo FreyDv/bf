@@ -51,6 +51,10 @@ const condition = (field: ValueField): z.ZodType => {
   );
 };
 
+// A refinement runs after `strict` reported an unknown key, on what is left of the node; that would add a
+// second, misleading error ("empty") to the one that names the key.
+const noIssues = (payload: { issues: readonly unknown[] }): boolean => payload.issues.length === 0;
+
 const isEmptyNode = (node: Record<string, unknown>): boolean =>
   Object.values(node).every((entry) => entry === undefined);
 
@@ -63,9 +67,10 @@ const nodeSchema = (spec: FilterSpec): z.ZodType => {
     shape['AND'] = z.array(node).min(1).optional();
     shape['OR'] = z.array(node).min(1).optional();
     shape['NOT'] = node.optional();
-    return z
-      .strictObject(shape)
-      .refine((value) => !isEmptyNode(value), { error: 'a filter node must not be empty' });
+    return z.strictObject(shape).refine((value) => !isEmptyNode(value), {
+      error: 'a filter node must not be empty',
+      when: noIssues,
+    });
   });
   return node;
 };
@@ -79,6 +84,7 @@ const fieldSchema = (field: FieldSpec): z.ZodType => {
     .strictObject({ some: related.optional(), none: related.optional(), every: related.optional() })
     .refine((value) => Object.values(value).filter((entry) => entry !== undefined).length === 1, {
       error: 'a one-to-many relation takes exactly one of some, none, every',
+      when: noIssues,
     });
 };
 

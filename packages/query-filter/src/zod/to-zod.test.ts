@@ -182,6 +182,13 @@ describe('toZod, validation errors of QRY-5', () => {
     );
   });
 
+  it('names an unknown key once, without a second error that the node is empty', () => {
+    const result = schema.safeParse({ password: eq('x') });
+    expect(result.error?.issues.map((issue) => issue.code)).toEqual(['unrecognized_keys']);
+    const quantifier = schema.safeParse({ orders: { any: {} } });
+    expect(quantifier.error?.issues.map((issue) => issue.code)).toEqual(['unrecognized_keys']);
+  });
+
   it('names the failing branch, not the whole union', () => {
     expect(paths({ age: { operator: 'between', value: ['a', 'b'] } })).toEqual([
       'age.value.0',
