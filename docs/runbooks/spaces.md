@@ -17,7 +17,7 @@ Serves: владелец-оператор и агент, действующий 
 | Доступ к объектам | только `private`; `public-read` не используется (ADR-042 п. 2) |
 | Ключи приложений | Limited, по одному на бакет и потребителя: ключ медиа - в Sealed Secret backend, ключ Loki - в Sealed Secret Loki (ADR-042 п. 3.2) |
 | Ключ владельца | Full-access, **только в менеджере паролей**; в кластер, репозиторий, чат и GitHub Secrets не попадает (ADR-042 п. 3.3) |
-| CORS | бакет медиа: origin `https://malinina.ca`, методы `PUT`, `GET`, `HEAD`, `ExposeHeader` `ETag`; бакет Loki: не задаётся (браузер к нему не ходит) |
+| CORS | бакет медиа: origin `https://malinina.ca`, методы `PUT`, `GET`, `HEAD`, `AllowedHeader` `Content-Type`, `ExposeHeader` `ETag`, `MaxAgeSeconds` 3600; бакет Loki: не задаётся (браузер к нему не ходит) |
 | Незавершённые multipart | отмена через 7 суток на **обоих** бакетах |
 | Срок хранения объектов | на бакете Loki правила удаления нет: 30 дней обеспечивает компактор Loki (ADR-043 п. 3); будущее правило обязано переживать эту выдержку и действовать только на префикс `chunks`; на бакете медиа срок - решение спеки курсов, сейчас правила нет |
 
@@ -89,7 +89,9 @@ multipart. Работа с ним руками, через `s3cmd`, которы
     <AllowedMethod>PUT</AllowedMethod>
     <AllowedMethod>GET</AllowedMethod>
     <AllowedMethod>HEAD</AllowedMethod>
+    <AllowedHeader>Content-Type</AllowedHeader>
     <ExposeHeader>ETag</ExposeHeader>
+    <MaxAgeSeconds>3600</MaxAgeSeconds>
   </CORSRule>
 </CORSConfiguration>
 ```
@@ -97,8 +99,7 @@ multipart. Работа с ним руками, через `s3cmd`, которы
 Применить: `s3cmd -c ~/.s3cfg-bf-spaces setcors cors.xml s3://<бакет медиа>`. Источник формата и команды:
 https://docs.digitalocean.com/products/spaces/how-to/configure-cors/ (2026-11-12).
 
-`AllowedHeader` и `MaxAgeSeconds` решением не заданы. Если проверка 6 покажет, что предзапрос браузера отвергается из-за заголовка
-(например `Content-Type` у presigned PUT), это не правка по месту, а новое решение: сообщить агенту, значения вносятся записью.
+`AllowedHeader` `Content-Type` нужен presigned PUT с типом файла, `MaxAgeSeconds` 3600 кеширует предзапрос на час (агент по поручению владельца, 2026-11-12). Если проверка 6 покажет, что предзапрос отвергается из-за другого заголовка, его добавляют сюда и в таблицу выше.
 Если CDN Spaces включён, после смены CORS очистить его кэш (по документации DO ответы из кэша остаются без заголовков CORS);
 presigned-ссылки через CDN-адрес не работают (ADR-042), CDN для медиа не включается.
 
