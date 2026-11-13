@@ -244,16 +244,10 @@ export default {
     {
       name: 'qry-7-drizzle-entry-only-in-infrastructure',
       comment:
-        'QRY-7, ADR-051: the drizzle entry (compile) is imported by infrastructure only, where the read adapter holds the Drizzle query. The one other place is the filter compiler a module publishes in public/ (QRY-12), which is that same code offered to the infrastructure of another module.',
+        'QRY-7, ADR-051: the drizzle entry (compile) is imported by infrastructure only, where the read adapter holds the Drizzle query. A filter compiler a module publishes in public/ for other modules (ADR-024 item 7) is not exempt here: that is left to QUERY-4.',
       severity: 'error',
       from: {
-        pathNot: [
-          INFRASTRUCTURE,
-          FILTER_COMPILER,
-          TEST,
-          TOOLKIT_SRC,
-          '^packages/query-filter/test/',
-        ],
+        pathNot: [INFRASTRUCTURE, TEST, TOOLKIT_SRC, '^packages/query-filter/test/'],
       },
       to: { path: TOOLKIT_DRIZZLE },
     },

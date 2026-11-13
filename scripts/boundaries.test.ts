@@ -201,12 +201,11 @@ const files: Record<string, string> = {
     "import { it } from 'vitest';\nexport const a = it;",
   'packages/query-filter/src/drizzle/bad-library.test.ts':
     "import { z } from 'zod';\nexport const a = z;",
-  // legal: the drizzle entry from infrastructure and from a filter compiler in public/, the compiler from the
-  // infrastructure of another module, a spec from any layer but the domain
+  // legal: the drizzle entry from infrastructure, a compiler from the public/ of another module imported by
+  // infrastructure, a spec from any layer but the domain
   [`${S}/orders/infrastructure/find-orders.filter-binding.ts`]:
     "import { compile } from '@bf/query-filter/drizzle';\nexport const a = compile;",
-  [`${S}/billing/public/invoice.filter-compiler.ts`]:
-    "import { compile } from '@bf/query-filter/drizzle';\nexport const a = compile;",
+  [`${S}/billing/public/invoice.filter-compiler.ts`]: 'export const a = 1;',
   [`${S}/billing/public/invoice.filter-spec.ts`]:
     "import { Op } from '@bf/query-filter/core';\nexport const spec = Op;",
   [`${S}/orders/infrastructure/uses-billing-compiler.adapter.ts`]:
@@ -225,6 +224,8 @@ const files: Record<string, string> = {
   [`${S}/orders/queries/find/bad-toolkit-drizzle.query-handler.ts`]:
     "import { compile } from '@bf/query-filter/drizzle';\nexport const a = compile;",
   [`${S}/orders/queries/find/bad-toolkit-drizzle.filter-spec.ts`]:
+    "import { compile } from '@bf/query-filter/drizzle';\nexport const a = compile;",
+  [`${S}/billing/public/bad-drizzle.filter-compiler.ts`]:
     "import { compile } from '@bf/query-filter/drizzle';\nexport const a = compile;",
   [`${S}/orders/application/bad-billing-compiler.service.ts`]:
     "import { a } from '../../billing/public/invoice.filter-compiler.js';\nexport const b = a;",
@@ -308,6 +309,10 @@ const expected: Array<[rule: string, from: string]> = [
   [
     'qry-12-filter-compiler-only-from-infrastructure',
     `${S}/orders/queries/find/bad-billing-compiler.router.ts`,
+  ],
+  [
+    'qry-7-drizzle-entry-only-in-infrastructure',
+    `${S}/billing/public/bad-drizzle.filter-compiler.ts`,
   ],
   ['qry-6-drizzle-entry-only-drizzle-orm', 'packages/query-filter/src/drizzle/bad-library.ts'],
   ['qry-6-drizzle-entry-only-drizzle-orm', 'packages/query-filter/src/drizzle/bad-pg.ts'],

@@ -23,7 +23,7 @@
 | Значения в SQL | всегда параметры через шаблон `sql` без кодировщика колонки: тип значения решает Postgres по колонке | `eq(column, value)` из drizzle: кодировщик колонки (например `mode: 'date'` у `timestamp`) не принимает строку ISO с провода; `sql.raw` и `sql.identifier` (запрещены QRY-15, тест читает исходники) |
 | Пустой `in` / `nin` | `in []` - `case when col is null then null else false end`, `nin []` - то же с `true`: `nin` - отрицание `in`, ни тот ни другой не возвращает строку с NULL (QRY-14), `NOT in []` равен `nin []` | `in []` - `false`, `nin []` - `true` (`nin []` вернул бы строки с NULL, а `nin [x]` нет; `NOT` над `in []` разошёлся бы с `nin []`) |
 | Кривой ввод в `compile` | `TypeError` на пустой узел, неизвестное поле, оператор вне набора поля, значение не того вида (по `kind`), `value` у `isnull`, пару не из двух, не один квантор; `RangeError` на лимит. Это ошибка программиста при ручной сборке (ERR-3): запрос приходит с границы уже разобранным `toZod` | молча собирать то, что понял; Result (бизнес-исхода тут нет) |
-| Где компилятор модуля | `public/<x>.filter-compiler.ts` вызывает entry `drizzle`; правило `qry-7-drizzle-entry-only-in-infrastructure` разрешает ему это единственное исключение из `infrastructure/`; `qry-12-filter-compiler-only-from-infrastructure`: компилятор импортирует только `infrastructure/` | запретить `public/` импорт `drizzle` (компилятор из ADR-024 п. 7 тогда негде написать) |
+| Где компилятор модуля | entry `drizzle` импортируется только из `infrastructure/` (решение владельца, QRY-7); исключения для `public/<x>.filter-compiler.ts` нет, где писать компилятор из ADR-024 п. 7 решает QUERY-4; `qry-12-filter-compiler-only-from-infrastructure`: чужой `public/*.filter-compiler.ts` импортируется только из `infrastructure/` | разрешить `public/` импорт `drizzle` (решение не принято владельцем) |
 | Разделение тестов | `*.e2e.test.ts` не входят в `test`, идут в `test:e2e` (`vitest.e2e.config.ts`); тесты, которым нужны несколько entry, лежат в `test/` пакета (правило `qry-6-entries-are-independent` читает только `src/`) | один конфиг на всё (`pnpm test` потребовал бы Postgres) |
 
 ## Decision
@@ -45,7 +45,7 @@
 - Negative: `in []` и `nin []` в SQL длиннее, чем `false` и `true`.
 - Negative: без алиасов связь на себя не собирается (п. 1).
 - Negative: `pg` и `@types/pg` лежат только в dev; боевой драйвер выберет первый модуль, тесты `drizzle` проверяют SQL на `pg`, не на нём.
-- Follow-ups: TEST-2 обобщает хелпер `test/db.ts` и снимает исключение ADR-050 п. 12; QUERY-4 - суффиксы в регэкспах слоёв.
+- Follow-ups: TEST-2 обобщает хелпер `test/db.ts` и снимает исключение ADR-050 п. 12; QUERY-4 - суффиксы в регэкспах слоёв и место компилятора фильтра в `public/` (импорт `drizzle` оттуда сейчас запрещён).
 - Не проверено: CI на GitHub (шаг e2e начнёт выполняться, потому что у пакета появился `test:e2e`); образ backend с `drizzle-orm`.
 
 ## Confirmation
