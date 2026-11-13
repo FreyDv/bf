@@ -69,4 +69,4 @@
 
 ## Related
 
-ADR-037 (ось Logging and privacy), ADR-040 п. 6, ADR-041 п. 5, ADR-043; BDR-001; `docs/personas.md` (`Покупатель`); backlog PRIVACY-1 (закрыта), SPEC-1, COURSES-1 (контент курсов - не здесь).
+ADR-037 (ось Logging and privacy), ADR-040 п. 6, ADR-041 п. 5, ADR-043; BDR-001; `docs/personas.md` (`Покупатель`); backlog PRIVACY-1 (закрыта), SPEC-1.
