@@ -53,7 +53,7 @@
 - Negative: границу порта вне домена машина не держит: `dep-3-domain-no-libraries` запрещает npm-импорты только в `domain/`, импорт `openai` из `application/` `pnpm deps` пропустит. Ловит только ревью, правило - новая строка.
 - Negative: ключ в кластер не доставить, пока нет контроллера, скрипта и порядка первого выката (SEALED-1, SECRETS-1, CHART-2); запись описывает правило, не работающую доставку.
 - Negative: что провайдер разбирает именно видео и аудио курсов в нужном виде, эта запись не проверяла: проверка - первая спека.
-- Follow-ups: BUDGET-1 и PRIVACY-1 дополнены ссылкой на эту запись; новые строки OPENAI-1 (правило границ для `openai`) и COURSES-1 (права на контент курсов и политика данных у провайдера).
+- Follow-ups: BUDGET-1 и PRIVACY-1 дополнены ссылкой на эту запись; новая строка OPENAI-1 (правило границ для `openai`).
 
 ## Confirmation
 
@@ -71,4 +71,4 @@
 
 ## Related
 
-ADR-005, ADR-008, ADR-012, ADR-020, ADR-022, ADR-037, ADR-039; BDR-001; PRG-3, DEP-3, DEP-4, APP-12, INF-1..3, VAL-4, ERR-2, ERR-3, TST-5; backlog BUDGET-1, PRIVACY-1, SEALED-1, SECRETS-1, CHART-2, STACK-3, OPENAI-1, COURSES-1.
+ADR-005, ADR-008, ADR-012, ADR-020, ADR-022, ADR-037, ADR-039; BDR-001; PRG-3, DEP-3, DEP-4, APP-12, INF-1..3, VAL-4, ERR-2, ERR-3, TST-5; backlog BUDGET-1, PRIVACY-1, SEALED-1, SECRETS-1, CHART-2, STACK-3, OPENAI-1.
