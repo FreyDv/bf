@@ -41,7 +41,7 @@
 
 ## Related
 
-Бизнес-решения: [BDR](decision-records/bdr/README.md) (персоны, бюджет). Технические: [ADR](decision-records/adr/README.md). Архитектура: [ARCHITECTURE.md](ARCHITECTURE.md).
+Бизнес-решения: [BDR](decision-records/bdr/README.md) (персоны). Технические: [ADR](decision-records/adr/README.md). Архитектура: [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Success metrics
 
