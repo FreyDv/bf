@@ -6,9 +6,13 @@ All notable changes to this project, in [Keep a Changelog](https://keepachangelo
 
 <!-- A PR describes its change here, one entry per change - never a version heading, never VERSION itself (R18). The maintainer alone promotes this section into a release: https://github.com/repository-standards/core/blob/main/docs/method/changelog-process.md -->
 
+### NATS JetStream live on the cluster (NATS-2, 2026-11-13)
+
+For the owner: you ran the NATS checks on `malinina`. JetStream is on, stream `BF` exists with the limits from ADR-022 (7 days, 6 GiB, discard old), and a test message was published, read, survived a restart of `nats-0` and was removed. The runbook's `nats stream add` failed as written (`-1` after a space is read as a flag); it now passes values with `=`. NATS-2 is archived; CDC-2 (Debezium) and NATS-4 (NetworkPolicy) are no longer blocked.
+
 ### Backlog after ARGOCD-2 (2026-11-13)
 
-For the owner: NATS-2, SEALED-2 and TRAEFIK-2 now state what is already live. `nats` is `Synced` and `Healthy` after #49, `nats-0` runs and its 10Gi volume is bound, so NATS-2 owes only steps 4-9 of the runbook (JetStream, the `BF` stream, publish and read). The Sealed Secrets controller runs, so SEALED-2 owes the certificate and the key copy. TRAEFIK-2 no longer offers `kubectl apply`: the root deploys `traefik.yaml` once it is merged.
+For the owner: SEALED-2 and TRAEFIK-2 now state what is already live (NATS-2 closed, entry above). The Sealed Secrets controller runs, so SEALED-2 owes the certificate and the key copy. TRAEFIK-2 no longer offers `kubectl apply`: the root deploys `traefik.yaml` once it is merged.
 
 ### ArgoCD manages itself from the repository (ARGOCD-2, 2026-11-13)
 
