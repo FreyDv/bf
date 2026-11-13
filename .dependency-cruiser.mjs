@@ -125,6 +125,14 @@ export default {
       to: { path: '^apps/', pathNot: '\\.(request\\.dto|response\\.dto|enum)\\.ts$' },
     },
     {
+      name: 'kernel-is-domain-free',
+      comment:
+        'ENF-4, ADR-048: the shared kernel holds no domain concept, so it imports nothing from an application. The domain may import the kernel, which is why the kernel cannot reach back.',
+      severity: 'error',
+      from: { path: '^packages/kernel/' },
+      to: { path: '^apps/' },
+    },
+    {
       name: 'not-to-unresolvable',
       comment: 'An import the checker cannot resolve is an import it cannot check.',
       severity: 'error',
