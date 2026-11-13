@@ -112,6 +112,32 @@ const files: Record<string, string> = {
   [`${S}/orders/application/bad-openai.service.ts`]:
     "import { ok } from 'openai';\nexport const a = ok;",
   [`${S}/bad-openai-root.ts`]: "import { ok } from 'openai';\nexport const a = ok;",
+  // The domain whitelist for packages/ (ADR-049): the kernel is importable, any other package is not
+  'packages/contracts/package.json': JSON.stringify({
+    name: '@bf/contracts',
+    type: 'module',
+    exports: { '.': './src/index.ts' },
+  }),
+  'packages/contracts/src/index.ts': 'export const contracts = 1;',
+  [`${S}/orders/domain/bad-contracts.ts`]:
+    "import { contracts } from '@bf/contracts';\nexport const a = contracts;",
+  [`${S}/orders/domain/bad-contracts.test.ts`]:
+    "import { contracts } from '@bf/contracts';\nexport const a = contracts;",
+  [`${S}/orders/domain/bad-contracts-relative.ts`]:
+    "import { contracts } from '../../../../../packages/contracts/src/index.js';\nexport const a = contracts;",
+  'apps/frontend/src/feature/domain/bad-contracts.ts':
+    "import { contracts } from '@bf/contracts';\nexport const a = contracts;",
+
+  // What the kernel itself may import (ADR-049): neverthrow, and vitest in a test file
+  'packages/kernel/src/uses-neverthrow.ts':
+    "import { ok } from 'neverthrow';\nexport const a = ok;",
+  'packages/kernel/src/result.test.ts':
+    "import { it } from 'vitest';\nimport { ok } from 'neverthrow';\nexport const t = [it, ok];",
+  'packages/kernel/src/bad-library.ts': "import { z } from 'zod';\nexport const a = z;",
+  'packages/kernel/src/bad-vitest.ts': "import { it } from 'vitest';\nexport const a = it;",
+  'packages/kernel/src/bad-library.test.ts': "import { z } from 'zod';\nexport const a = z;",
+  'packages/kernel/src/bad-contracts.ts':
+    "import { contracts } from '@bf/contracts';\nexport const a = contracts;",
   'packages/kernel/src/bad-backend.ts': `import { order } from '../../../apps/backend/src/orders/domain/order.aggregate.js';\nexport const a = order;`,
 };
 
@@ -137,6 +163,14 @@ const expected: Array<[rule: string, from: string]> = [
   ['dep-4-openai-only-in-infrastructure', `${S}/orders/application/bad-openai.service.ts`],
   ['dep-4-openai-only-in-infrastructure', `${S}/bad-openai-root.ts`],
   ['kernel-is-domain-free', 'packages/kernel/src/bad-backend.ts'],
+  ['kernel-is-domain-free', 'packages/kernel/src/bad-contracts.ts'],
+  ['kernel-npm-only-neverthrow', 'packages/kernel/src/bad-library.ts'],
+  ['kernel-npm-only-neverthrow', 'packages/kernel/src/bad-vitest.ts'],
+  ['kernel-tests-only-neverthrow-and-vitest', 'packages/kernel/src/bad-library.test.ts'],
+  ['domain-packages-only-kernel', `${S}/orders/domain/bad-contracts.ts`],
+  ['domain-packages-only-kernel', `${S}/orders/domain/bad-contracts.test.ts`],
+  ['domain-packages-only-kernel', `${S}/orders/domain/bad-contracts-relative.ts`],
+  ['domain-packages-only-kernel', 'apps/frontend/src/feature/domain/bad-contracts.ts'],
   ['apps-do-not-import-each-other', 'apps/frontend/app/bad-app-import.ts'],
   ['contracts-only-dtos-from-backend', 'packages/contracts/src/bad-domain.ts'],
 ];
@@ -149,6 +183,12 @@ interface Module {
 interface Violation {
   rule: { name: string };
   from: string;
+  to: string;
+}
+
+interface Cruise {
+  violations: Violation[];
+  modules: Module[];
 }
 
 /**
@@ -179,13 +219,75 @@ function linkNodeModules(real: string, into: string, extra: Record<string, strin
   }
 }
 
-/** A package directory with an entry file, standing in for a library the repository has not installed. */
-function stubPackage(dir: string, name: string): string {
+/**
+ * A package directory with an entry file, standing in for a library the repository has not
+ * installed. `entry` places the file the way real packages ship it, often under dist/.
+ */
+function stubPackage(dir: string, name: string, entry = 'index.js'): string {
   const path = join(dir, name);
-  mkdirSync(path, { recursive: true });
-  writeFileSync(join(path, 'package.json'), JSON.stringify({ name, main: 'index.js' }));
-  writeFileSync(join(path, 'index.js'), 'exports.ok = 1;');
+  mkdirSync(dirname(join(path, entry)), { recursive: true });
+  writeFileSync(join(path, 'package.json'), JSON.stringify({ name, main: entry }));
+  writeFileSync(join(path, entry), 'exports.ok = 1;');
   return path;
+}
+
+/**
+ * Writes `tree` into a temp directory next to the repository's real config, links the packages
+ * it names, runs the real depcruise command over it and returns what it found.
+ */
+function cruiseTree(
+  tree: Record<string, string>,
+  links: string[],
+  stubs: string[],
+): [Cruise, string] {
+  const tmp = mkdtempSync(join(tmpdir(), 'bf-boundaries-'));
+  for (const [path, content] of Object.entries(tree)) {
+    mkdirSync(dirname(join(tmp, path)), { recursive: true });
+    writeFileSync(join(tmp, path), content);
+  }
+  writeFileSync(
+    join(tmp, 'apps/backend/tsconfig.json'),
+    readFileSync(join(root, 'apps/backend/tsconfig.json')),
+  );
+  writeFileSync(
+    join(tmp, 'apps/backend/package.json'),
+    readFileSync(join(root, 'apps/backend/package.json')),
+  );
+  const extra: Record<string, string> = {};
+  for (const name of links) extra[`@bf/${name}`] = join(tmp, `packages/${name}`);
+  for (const name of stubs) {
+    // neverthrow ships its entry under dist/, the shape that used to leave the graph
+    extra[name] = stubPackage(
+      join(tmp, '.stubs/node_modules'),
+      name,
+      name === 'neverthrow' ? 'dist/index.js' : 'index.js',
+    );
+  }
+  linkNodeModules(join(root, 'node_modules'), join(tmp, 'node_modules'), extra);
+  const appNodeModules = join(root, 'apps/backend/node_modules');
+  linkNodeModules(appNodeModules, join(tmp, 'apps/backend/node_modules'), {});
+  // a pnpm package carries its own node_modules; the kernel needs vitest and zod to resolve
+  linkNodeModules(appNodeModules, join(tmp, 'packages/kernel/node_modules'), {});
+
+  let stdout = '';
+  try {
+    stdout = execFileSync(
+      join(root, 'node_modules/.bin/depcruise'),
+      [
+        'apps',
+        'packages',
+        '--config',
+        join(root, '.dependency-cruiser.mjs'),
+        '--output-type',
+        'json',
+      ],
+      { cwd: tmp, encoding: 'utf8', maxBuffer: 1 << 26 },
+    );
+  } catch (error) {
+    stdout = (error as { stdout: string }).stdout;
+  }
+  const report = JSON.parse(stdout) as { modules: Module[]; summary: { violations: Violation[] } };
+  return [{ violations: report.summary.violations, modules: report.modules }, tmp];
 }
 
 describe('dependency-cruiser boundaries', () => {
@@ -194,53 +296,9 @@ describe('dependency-cruiser boundaries', () => {
   let modules: Module[] = [];
 
   before(() => {
-    tmp = mkdtempSync(join(tmpdir(), 'bf-boundaries-'));
-    for (const [path, content] of Object.entries(files)) {
-      mkdirSync(dirname(join(tmp, path)), { recursive: true });
-      writeFileSync(join(tmp, path), content);
-    }
-    writeFileSync(
-      join(tmp, 'apps/backend/tsconfig.json'),
-      readFileSync(join(root, 'apps/backend/tsconfig.json')),
-    );
-    writeFileSync(
-      join(tmp, 'apps/backend/package.json'),
-      readFileSync(join(root, 'apps/backend/package.json')),
-    );
-    linkNodeModules(join(root, 'node_modules'), join(tmp, 'node_modules'), {
-      '@bf/kernel': join(tmp, 'packages/kernel'),
-      neverthrow: stubPackage(join(tmp, '.stubs/node_modules'), 'neverthrow'),
-      openai: stubPackage(join(tmp, '.stubs/node_modules'), 'openai'),
-    });
-    linkNodeModules(
-      join(root, 'apps/backend/node_modules'),
-      join(tmp, 'apps/backend/node_modules'),
-      {},
-    );
-
-    let stdout = '';
-    try {
-      stdout = execFileSync(
-        join(root, 'node_modules/.bin/depcruise'),
-        [
-          'apps',
-          'packages',
-          '--config',
-          join(root, '.dependency-cruiser.mjs'),
-          '--output-type',
-          'json',
-        ],
-        { cwd: tmp, encoding: 'utf8', maxBuffer: 1 << 26 },
-      );
-    } catch (error) {
-      stdout = (error as { stdout: string }).stdout;
-    }
-    const report = JSON.parse(stdout) as {
-      modules: Module[];
-      summary: { violations: Violation[] };
-    };
-    violations = report.summary.violations;
-    modules = report.modules;
+    let cruise: Cruise;
+    [cruise, tmp] = cruiseTree(files, ['kernel', 'contracts'], ['neverthrow', 'openai']);
+    ({ violations, modules } = cruise);
   });
 
   after(() => rmSync(tmp, { recursive: true, force: true }));
@@ -260,11 +318,76 @@ describe('dependency-cruiser boundaries', () => {
     assert.ok(domainFile?.dependencies.some((d) => d.resolved === 'packages/kernel/src/index.ts'));
   });
 
+  // Same reason: a rule that allows an import must have been shown that import.
+  it('sees the kernel importing neverthrow, which ships from dist/, and finds it legal', () => {
+    const kernelFile = modules.find((m) => m.source === 'packages/kernel/src/uses-neverthrow.ts');
+    assert.ok(
+      kernelFile?.dependencies.some((d) => /(^|\/)node_modules\/neverthrow\//.test(d.resolved)),
+    );
+  });
+
   it('reports nothing on the legal imports', () => {
     const legal = new Set(Object.keys(files).filter((p) => !expected.some(([, f]) => f === p)));
     const falsePositives = violations.filter(
       (v) => legal.has(v.from) && !/cycle-|bad-/.test(v.from),
     );
     assert.deepEqual(falsePositives, []);
+  });
+});
+
+// ADR-049: a package that exports from dist/ must not drop out of the graph. The same rules are
+// proven on a tree where the kernel and the contracts both resolve to a built file.
+describe('dependency-cruiser boundaries with packages exported from dist/', () => {
+  const dist = (name: string): Record<string, string> => ({
+    [`packages/${name}/package.json`]: JSON.stringify({
+      name: `@bf/${name}`,
+      type: 'module',
+      exports: { '.': './dist/index.js' },
+    }),
+    // the build output imports a library the kernel may not: it is a leaf, so nothing reads it
+    [`packages/${name}/dist/index.js`]: "import 'zod';\nexport const ok = 1;",
+  });
+  const tree: Record<string, string> = {
+    ...dist('kernel'),
+    ...dist('contracts'),
+    [`${S}/orders/domain/uses-kernel.ts`]: "import { ok } from '@bf/kernel';\nexport const a = ok;",
+    [`${S}/orders/domain/bad-contracts.ts`]:
+      "import { ok } from '@bf/contracts';\nexport const a = ok;",
+  };
+  let tmp = '';
+  let cruise: Cruise = { violations: [], modules: [] };
+
+  before(() => {
+    [cruise, tmp] = cruiseTree(tree, ['kernel', 'contracts'], []);
+  });
+
+  after(() => rmSync(tmp, { recursive: true, force: true }));
+
+  it('sees the domain import of the kernel in dist/ and finds it legal', () => {
+    const domainFile = cruise.modules.find((m) => m.source === `${S}/orders/domain/uses-kernel.ts`);
+    assert.ok(domainFile?.dependencies.some((d) => d.resolved === 'packages/kernel/dist/index.js'));
+    assert.deepEqual(
+      cruise.violations.filter((v) => v.from === `${S}/orders/domain/uses-kernel.ts`),
+      [],
+    );
+  });
+
+  it('rejects the domain import of the contracts in dist/', () => {
+    assert.ok(
+      cruise.violations.some(
+        (v) =>
+          v.rule.name === 'domain-packages-only-kernel' &&
+          v.from === `${S}/orders/domain/bad-contracts.ts` &&
+          v.to === 'packages/contracts/dist/index.js',
+      ),
+      JSON.stringify(cruise.violations.map((v) => [v.rule.name, v.from, v.to])),
+    );
+  });
+
+  it('keeps dist/ a leaf: what the build output imports is not judged', () => {
+    assert.deepEqual(
+      cruise.violations.filter((v) => v.from.startsWith('packages/')),
+      [],
+    );
   });
 });

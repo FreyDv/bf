@@ -54,6 +54,7 @@ Architecture Decision Records - технические причины. Тест 
 | [046](ADR-046-argocd-self-management.md) | Самоуправление ArgoCD: корневое Application, значения из репозитория, синк без prune | Accepted |
 | [047](ADR-047-first-rollout-order.md) | Порядок первого выката: миграционный Job - хук Sync на волне 0, секрет и ServiceAccount раньше, рабочие нагрузки позже (уточняет ADR-019) | Accepted |
 | [048](ADR-048-shared-kernel-and-result-in-domain.md) | Shared kernel - пакет `@bf/kernel`; `Result` попадает в domain только через него (уточняет ADR-009 и ADR-015) | Accepted |
+| [049](ADR-049-domain-packages-whitelist-and-dist-visibility.md) | Проверка границ - из `domain/` в `packages/` только `@bf/kernel`, что импортирует сам kernel, `dist/` пакетов виден графу (уточняет ADR-048 п. 6) | Accepted |
 
 Первая ячейка - номер-ссылка на файл; остальное - свободный текст. `scripts/decision-records-check.mjs` сверяет таблицу с файлами. Нумерация без пропусков, номера не переиспользуются. Шаблон: [`_template.md`](_template.md). Решения прототипа не переносятся (ADR-006).
 
@@ -71,7 +72,7 @@ Architecture Decision Records - технические причины. Тест 
 
 | Развилка | Ответ |
 |---|---|
-| Границы доменов и модулей | ADR-002, проверка - ADR-014; shared kernel и `Result` в domain - ADR-048 |
+| Границы доменов и модулей | ADR-002, проверка - ADR-014; shared kernel и `Result` в domain - ADR-048; из `domain/` в `packages/` только kernel, граф с `dist/` - ADR-049 |
 | Ветвление и релизы | ADR-003; откат деплоя - ADR-019 |
 | Зависимости и цепочка поставок | ADR-005 |
 | Язык, рантайм, фреймворки, инструменты | ADR-007, ADR-010, ADR-011, ADR-016; UI-библиотека - ADR-031 |
