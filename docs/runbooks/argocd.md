@@ -102,6 +102,31 @@ GitHub - `FreyDv/bf` (ADR-038 п. 7), то есть `https://github.com/FreyDv/b
 - **Откат конфигурации и версии:** `git revert` и слияние; синк применит.
 - **Удаление Application из `deploy/argocd/`** не удаляет объекты (нет `prune`): удалить вручную, если так и задумано.
 
+## Первый выкат приложения: порядок и проверки (ADR-047, CHART-2)
+
+Порядок задан в чарте `deploy/charts/app/`, приложение его не пишет. Все ресурсы идут в фазе Sync, по волнам (ArgoCD берёт следующую волну, когда предыдущая применена и здорова):
+
+| Волна | Что | Зачем раньше следующей |
+|---|---|---|
+| -1 | SealedSecret, ServiceAccount | Job читает секрет `<app>-secrets` и работает под ServiceAccount; контроллер Sealed Secrets собирает Secret из SealedSecret |
+| 0 | Job `<app>-migrate` (хук `Sync`, `BeforeHookCreation`), Service, Ingress | миграция до выката новой версии |
+| 1 | Deployment, CronJob | стартуют только после успешного Job |
+
+Почему не `PreSync`: он идёт целиком до Sync, и на первом выкате секрета с ServiceAccount ещё нет.
+
+Как читать провал:
+
+- **Job упал или не уложился в `activeDeadlineSeconds`:** синк в `Failed`, волна 1 не применена, старый Deployment работает (на первом выкате его просто нет). Волна -1 остаётся: SealedSecret, Secret и ServiceAccount на месте, это ожидаемо. Причина: `kubectl -n <ns> logs job/<app>-migrate`, `kubectl -n <ns> describe job <app>-migrate`. Исправление - новый коммит и синк: `BeforeHookCreation` удалит старый Job перед созданием нового. Схема идёт только вперёд (ADR-013): частично применённую миграцию откатывает следующая миграция, не `git revert` образа.
+- **Под Job в `CreateContainerConfigError`:** Secret ещё нет. Смотреть `kubectl -n <ns> get sealedsecret,secret` и события `kubectl -n <ns> get events --sort-by=.lastTimestamp`: статус SealedSecret (`Synced` или ошибка расшифровки), логи `kubectl -n kube-system logs deploy/sealed-secrets-controller`. Типичная причина - SealedSecret запечатан другим ключом, с другим именем или namespace (строгий scope, ADR-020).
+- **Хук Sync выполняется на каждом синке,** в том числе при смене одной конфигурации; команда миграции обязана безопасно повторяться, когда новых миграций нет (выбор механизма - ADR-013, ADR-036).
+
+### Проверки владельца на первом выкате (DEPLOY-1, не выполнялись)
+
+1. `argocd app sync <app>` (или автосинк): порядок - SealedSecret и ServiceAccount, Job `migrate`, затем Deployment и CronJob. Во время выката `kubectl -n <ns> get sealedsecret,secret` и `kubectl get events -n <ns>`: Secret появился до старта пода Job, под не завис в `CreateContainerConfigError`.
+2. SealedSecret получает статус `Synced`, и ArgoCD ждёт его перед волной 0 (ArgoCD v3.5.6, контроллер 0.41.2). Если Job стартовал раньше Secret - сообщить агенту: нужна собственная проверка здоровья SealedSecret (ADR-047, «Revisit when»).
+3. После синка приложение `Synced` и `Healthy`.
+4. Сломанная миграция (тестовое приложение или заведомо падающая команда) оставляет прежний Deployment на месте, волна 1 не применяется.
+
 ## Diagnose
 
 - Состояние: `helm -n argocd status argocd`, `kubectl -n argocd get pods`, `kubectl -n argocd get applications`.
@@ -126,6 +151,7 @@ GitHub - `FreyDv/bf` (ADR-038 п. 7), то есть `https://github.com/FreyDv/b
 - Имя сервиса `argocd-server` и поведение `port-forward` на этом кластере.
 - Видимость репозитория сейчас (`gh repo view`): решение исходит из того, что он публичный.
 - Сброс пароля после удаления начального секрета и работа User Info -> Update Password в версии 10.11.6.
+- Порядок волн первого выката и ожидание расшифровки SealedSecret: проверено только `helm template` и `pnpm charts:test`, на кластере нет (проверки владельца - DEPLOY-1, раздел «Первый выкат приложения»).
 - Всё из раздела о самоуправлении: манифесты проверены только `helm template` (`pnpm charts`), на кластере не применялись (ARGOCD-2): принятие существующих объектов Helm, хуки chart, достижимость `https://github.com/FreyDv/bf` без `.git`.
 
-Связано: [malinina-kubernetes.md](malinina-kubernetes.md), [recovery.md](recovery.md), ADR-005, ADR-019, ADR-020, ADR-038, ADR-046.
+Связано: [malinina-kubernetes.md](malinina-kubernetes.md), [recovery.md](recovery.md), ADR-005, ADR-019, ADR-020, ADR-038, ADR-046, ADR-047.
