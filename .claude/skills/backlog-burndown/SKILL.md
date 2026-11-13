@@ -78,7 +78,7 @@ git switch main && git pull --ff-only && git switch -c <type>/<id-lowercase>
 The elicitation guard reads the transcript of the session that writes, so subagents cannot
 write `specs/**/spec.md` or `docs/discovery/**`. You write those yourself, through the owning
 skill (`spec-specify` + `spec-clarify` for SPEC-1, `discovery-digest` for raw material), and commit.
-For interview-driven items (PERSONAS-1, PRODUCT-1, BUDGET-1, SPEC-1) run the owning skill
+For interview-driven items (PERSONAS-1, PRODUCT-1, SPEC-1) run the owning skill
 (`personas-write`, `product-write`, `bdr-write`, `spec-specify`) here in the main session -
 the owner's words go in, not a draft - and use `mode: "review-only"` in step 6.
 
