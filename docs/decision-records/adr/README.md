@@ -63,6 +63,7 @@ Architecture Decision Records - технические причины. Тест 
 | [055](ADR-055-csp-static-policy.md) | Content-Security-Policy: статическая политика через `headers()` с `'unsafe-inline'` (nonce из `headers()` недоступен), остаточный риск XSS, строгая политика до AUTH-2 (CSP-2); уточняет п. 5 ADR-038 | Accepted |
 | [056](ADR-056-agent-ask-list-live-infra-and-gh-api-writes.md) | Ask-список агента: `kubectl`, `doctl`, `kubeseal`, `argocd`, изменяющие подкоманды `helm`, запись через `gh api` в `ask`, `DELETE` в `deny` в любой позиции; хуки не правятся; остаточные пробелы (AGENT-2); дополняет ось Agent boundaries ADR-037 | Accepted |
 | [057](ADR-057-backend-contract-files-frontend-checks.md) | Файлы контракта backend и проверки frontend: итог спайка (рёбра, образ, `verbatimModuleSyntax`, слепой кеш), шаг CI `typecheck` и `lint` contracts и frontend при правке одного DTO, один дом шаблона файлов (исполняет ADR-050 п. 11) | Accepted |
+| [058](ADR-058-turbo-inputs-for-backend-contract-files.md) | Входы `typecheck` и `lint` у contracts и frontend с файлами DTO backend вместо `--force`: `turbo.json` пакетов, шаг CI остаётся селектором (заменяет пункт 2 ADR-057 в части кеша, уточняет ADR-009) | Accepted |
 
 Первая ячейка - номер-ссылка на файл; остальное - свободный текст. `scripts/decision-records-check.mjs` сверяет таблицу с файлами. Нумерация без пропусков, номера не переиспользуются. Шаблон: [`_template.md`](_template.md). Решения прототипа не переносятся (ADR-006).
 
@@ -86,7 +87,7 @@ Architecture Decision Records - технические причины. Тест 
 | Язык, рантайм, фреймворки, инструменты | ADR-007, ADR-010, ADR-011, ADR-016; UI-библиотека - ADR-031 |
 | Логи и наблюдаемость | ADR-032; срок хранения, потолок цены, сборщик, доступ к Grafana, правила схемы - ADR-043; метрики и алерты не по логам - открыто: backlog MON-1 |
 | Топология репозитория и сборка | ADR-008, ADR-009; пакет shared kernel - ADR-048 |
-| Стиль API и контракта | ADR-012; тип роутера во frontend - ADR-035; фильтр query - ADR-024, пакет и его границы - ADR-050, entry `drizzle` - ADR-051; проверки frontend на файлы контракта backend - ADR-057 |
+| Стиль API и контракта | ADR-012; тип роутера во frontend - ADR-035; фильтр query - ADR-024, пакет и его границы - ADR-050, entry `drizzle` - ADR-051; проверки frontend на файлы контракта backend - ADR-057; входы задач с файлами DTO вместо `--force` - ADR-058 вместо пункта 2 ADR-057 в части кеша |
 | Хранилище данных | ADR-013; размещение - ADR-017; надёжность записи (`synchronous_commit`) - ADR-044, оговорка его п. 4 про счётчик входа снята и пункт подтверждён в ADR-054; роли, база и SSL клиента - ADR-053 (п. 3 ADR-033 заменён в части роли приложения) |
 | Модель ошибок | ERR-1..6 (ADR-002); тип результата - ADR-015; откуда `Result` в domain - ADR-048; отказ, обязанный оставить след (неудачный вход): `ok` с исходом вместо `err` - ADR-054 |
 | Платформа и описание инфраструктуры | ADR-017 |
