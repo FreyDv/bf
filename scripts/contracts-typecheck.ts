@@ -22,6 +22,9 @@ export const COMMAND = [
   'lint',
   '--filter=@bf/contracts',
   '--filter=@bf/frontend',
+  // The DTO files are not inputs of these tasks in the Turborepo graph, so their hash does not change when only a DTO
+  // does and a cached green result would be replayed (seen on a spike, ADR-057).
+  '--force',
 ];
 
 export const matching = (changed: string[]): string[] =>

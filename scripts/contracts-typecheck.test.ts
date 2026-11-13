@@ -54,7 +54,7 @@ describe('which files are backend contract files', () => {
     assert.deepEqual(matching(['docs/a.md', `${S}/o/x.enum.ts`]), [`${S}/o/x.enum.ts`]);
   });
 
-  it('runs typecheck and lint for contracts and frontend only', () => {
+  it('runs typecheck and lint for contracts and frontend only, without the cache', () => {
     assert.deepEqual(COMMAND.slice(1), [
       'turbo',
       'run',
@@ -62,6 +62,7 @@ describe('which files are backend contract files', () => {
       'lint',
       '--filter=@bf/contracts',
       '--filter=@bf/frontend',
+      '--force',
     ]);
   });
 });
@@ -111,7 +112,7 @@ describe('the step on a repository with a pull request branch', () => {
     assert.match(result.stdout, /find\.request\.dto\.ts/);
     assert.match(
       result.stdout,
-      /turbo run typecheck lint --filter=@bf\/contracts --filter=@bf\/frontend/,
+      /turbo run typecheck lint --filter=@bf\/contracts --filter=@bf\/frontend --force/,
     );
   });
 
