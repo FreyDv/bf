@@ -105,6 +105,14 @@ export default {
       to: { path: TEST },
     },
     {
+      name: 'dep-4-openai-only-in-infrastructure',
+      comment:
+        'DEP-4, ADR-041 items 2 and 4: the openai SDK is imported only by an adapter in infrastructure/; application code reaches the provider through a port. The pattern also matches the bare name, so the rule holds before the package is installed.',
+      severity: 'error',
+      from: { pathNot: INFRASTRUCTURE },
+      to: { path: '(^|/)node_modules/openai/|^openai(/|$)' },
+    },
+    {
       name: 'dep-5-modules-only-through-public',
       comment: 'DEP-5, QRY-12: another module is reachable only through its public/ folder.',
       severity: 'error',
