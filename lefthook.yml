@@ -40,9 +40,9 @@ pre-commit:
 
     - name: helm lint and template
       # Last, and only when the deploy files changed (ADR-019). Helm is a local requirement (AGENTS.md).
-      glob: '{deploy/charts/**,deploy/apps/**,scripts/charts-check.ts}'
+      glob: '{deploy/charts/**,deploy/apps/**,deploy/argocd/**,scripts/charts-check.ts,scripts/lib/argocd-application.ts}'
       run: pnpm charts
 
     - name: chart behaviour
-      glob: '{deploy/charts/**,scripts/charts.test.ts}'
+      glob: '{deploy/charts/**,deploy/argocd/**,scripts/charts.test.ts,scripts/lib/argocd-application.ts}'
       run: pnpm charts:test

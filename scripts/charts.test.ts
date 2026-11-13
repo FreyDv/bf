@@ -4,8 +4,10 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { describe, it } from 'node:test';
+import { readChartApplications, renderApplication } from './lib/argocd-application.ts';
 
-const chart = resolve(import.meta.dirname, '../deploy/charts/app');
+const deploy = resolve(import.meta.dirname, '../deploy');
+const chart = `${deploy}/charts/app`;
 const minimal = `${chart}/ci/minimal.yaml`;
 const full = `${chart}/ci/full.yaml`;
 
@@ -121,5 +123,36 @@ describe('app chart: what it refuses', () => {
       [`cronJobs[0].name=${name}`, 'cronJobs[0].schedule=* * * * *'],
     );
     assert.match(failure, /longer than 52 characters/);
+  });
+});
+
+describe('sealed-secrets Application (ADR-020, ADR-045)', () => {
+  const [app] = readChartApplications(`${deploy}/argocd`).filter(
+    (item) => item.chart === 'sealed-secrets',
+  );
+
+  it('pins an exact chart version', () => {
+    assert.ok(app, 'deploy/argocd has a sealed-secrets Application');
+    assert.match(app.version, /^\d+\.\d+\.\d+$/);
+  });
+
+  it('installs the controller where kubeseal looks for it, under the name it expects', () => {
+    const output = renderApplication(app);
+    assert.equal(app.namespace, 'kube-system');
+    assert.match(
+      find(output, 'Deployment'),
+      /name: sealed-secrets-controller\n\s+namespace: kube-system/,
+    );
+    assert.match(find(output, 'Service'), /name: sealed-secrets-controller\n/);
+  });
+
+  it('turns automatic key renewal off, so the one-copy key backup cannot go stale (ADR-045)', () => {
+    assert.match(find(renderApplication(app), 'Deployment'), /--key-renew-period\n\s+- "0"/);
+  });
+
+  it('ships the SealedSecret CRD that the app chart renders', () => {
+    const crd = find(renderApplication(app), 'CustomResourceDefinition');
+    assert.match(crd, /name: sealedsecrets\.bitnami\.com/);
+    assert.match(crd, /v1alpha1/);
   });
 });

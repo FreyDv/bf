@@ -54,7 +54,7 @@ jobs:
       - name: Did the deploy files change
         id: deploy
         run: |
-          if git diff --name-only "origin/${{ github.base_ref || 'main' }}...HEAD" | grep -qE '^(deploy/(charts|apps)/|scripts/charts)'; then
+          if git diff --name-only "origin/${{ github.base_ref || 'main' }}...HEAD" | grep -qE '^(deploy/(charts|apps|argocd)/|scripts/charts|scripts/lib/argocd-application)'; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
           else
             echo "changed=false" >> "$GITHUB_OUTPUT"

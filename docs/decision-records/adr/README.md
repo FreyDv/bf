@@ -50,6 +50,7 @@ Architecture Decision Records - технические причины. Тест 
 | [042](ADR-042-object-storage-spaces.md) | Объектное хранилище: DO Spaces, приватные бакеты, presigned URL, порт без SDK | Accepted |
 | [043](ADR-043-logs-retention-cost-collector-access.md) | Логи: хранение 30 дней, потолок $10 в месяц, сборщик Alloy, Grafana только через port-forward | Accepted |
 | [044](ADR-044-synchronous-commit-critical-commands.md) | Надёжность записи bfdb: кластер остаётся на synchronous_commit=off, критичные команды включают on через SET LOCAL | Accepted |
+| [045](ADR-045-sealed-secrets-key-rotation.md) | Sealed Secrets: чарт 2.22.0 в kube-system, автообновление ключа выключено, ротация вручную | Accepted |
 
 Первая ячейка - номер-ссылка на файл; остальное - свободный текст. `scripts/decision-records-check.mjs` сверяет таблицу с файлами. Нумерация без пропусков, номера не переиспользуются. Шаблон: [`_template.md`](_template.md). Решения прототипа не переносятся (ADR-006).
 
@@ -79,7 +80,7 @@ Architecture Decision Records - технические причины. Тест 
 | Платформа и описание инфраструктуры | ADR-017 |
 | Конвейер проверок и доставки | ADR-018; реестр образов - ADR-026; образы - ADR-027, ADR-028, ADR-029; раскладка jobs, тестовая среда, миграции в CI - ADR-036; TLS на балансировщике - ADR-037; окружения, адреса, ingress, заголовки на границе, IP клиента, бот для коммита тега - ADR-038 |
 | Деплой | ADR-019; тег образа - ADR-030 вместо пункта 2 раздела «Тег образа»; ingress-контроллер и бот для коммита тега - ADR-038 |
-| Секреты | ADR-020 |
+| Секреты | ADR-020; установка контроллера, версия чарта, ротация ключа - ADR-045 |
 | События и очередь | ADR-021, ADR-022, ADR-023, ADR-025 |
 | Объектное хранилище | ADR-042; размещение - ADR-017 |
 | AI-провайдер | ADR-041 |
