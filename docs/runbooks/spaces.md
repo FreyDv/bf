@@ -128,7 +128,7 @@ https://docs.digitalocean.com/products/spaces/how-to/configure-lifecycle-rules/ 
 | 4 | Правила жизненного цикла | `s3cmd getlifecycle s3://<бакет>` | до настройки пусто; после - только отмена multipart 7 суток; на бакете Loki нет правила удаления |
 | 5 | Список ключей | панель DO -> Access Keys | Limited-ключи по одному на бакет и потребителя с правами на один бакет, один Full-access; лишние и забытые ключи - удалить или записать, зачем они |
 | 6 | Работа CORS из браузерного origin | `curl -si -X OPTIONS -H 'Origin: https://malinina.ca' -H 'Access-Control-Request-Method: PUT' https://<бакет медиа>.<регион>.digitaloceanspaces.com/cors-probe` | заголовки `Access-Control-Allow-Origin: https://malinina.ca` и `Access-Control-Allow-Methods` с `PUT`; нет - см. примечание про `AllowedHeader` выше |
-| 7 | Подписка и расход | панель DO -> Billing, Spaces | платная ли подписка активна, сколько занято; базовая цена и квота (по документации DO на 2026-11-12: 250 GiB хранения и 1 TiB исходящего трафика, https://docs.digitalocean.com/products/spaces/details/pricing/) - для потолка из ADR-043 п. 2 и BUDGET-1 |
+| 7 | Подписка и расход | панель DO -> Billing, Spaces | платная ли подписка активна, сколько занято; базовая цена и квота (по документации DO на 2026-11-12: 250 GiB хранения и 1 TiB исходящего трафика, https://docs.digitalocean.com/products/spaces/details/pricing/) - для потолка из ADR-043 п. 2 |
 
 Все команды `s3cmd` и `aws` не запускались: синтаксис сверить с `s3cmd --help`, `s3cmd <команда> --help`; расхождение - сообщить агенту,
 не править runbook по догадке.
@@ -140,7 +140,7 @@ https://docs.digitalocean.com/products/spaces/how-to/configure-lifecycle-rules/ 
   Data at rest).
 - Сроки хранения медиа курсов: решает спека курсов.
 - `media-src` в CSP для показа медиа: правка `apps/frontend/next.config.ts` вместе с функцией (ADR-055 п. 2, ADR-042 п. 2.2).
-- Цена и потолок расхода: BUDGET-1, ADR-043 п. 2.
+- Цена и потолок расхода: ADR-043 п. 2.
 
 ## Diagnose
 
