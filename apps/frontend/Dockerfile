@@ -9,7 +9,13 @@ RUN npm install --global "pnpm@$(node -p "require('./package.json').packageManag
 
 FROM base AS prune
 COPY . .
-RUN turbo prune @bf/frontend --docker
+# Two scopes, not one: the generated packages/contracts/src/generated/server.ts imports backend *.request.dto.ts,
+# *.response.dto.ts and *.enum.ts by relative path (ADR-035), a link `turbo prune` cannot see in package.json.
+# With @bf/frontend alone, `next build` fails with TS2307 at the first router; adding @bf/backend brings those
+# sources and the node_modules they resolve zod and the filter toolkit from into this stage. The runtime stage
+# below is still the Next standalone output and carries no backend files. See ADR-027 Consequences (prune misses a
+# dependency that package.json does not declare) and ADR-035.
+RUN turbo prune @bf/frontend @bf/backend --docker
 
 FROM base AS build
 # Dependencies first: this layer is rebuilt only when a package.json or the lockfile changes.
