@@ -36,6 +36,16 @@ ingress:
   pathType: Prefix
   annotations: {}
 
+# Ingress-only NetworkPolicy on the pods of this release, on by default (ADR-037 item 4): the application port is
+# reachable from the ingress controller (only when `ingress.enabled`) and from `allowFrom`, nothing else. Egress is not
+# restricted here. Without an ingress and without neighbours the pods accept no incoming connection at all.
+networkPolicy:
+  enabled: true
+  ingressControllerNamespace: traefik # ADR-038
+  # Further peers, each a standard NetworkPolicyPeer (podSelector and/or namespaceSelector). Without a
+  # namespaceSelector a peer means pods of the release namespace. A non-list or an empty peer is refused.
+  allowFrom: []
+
 # Empty `path` probes the TCP port; set it once the application serves a health endpoint.
 probes:
   path: ''

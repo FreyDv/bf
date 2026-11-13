@@ -1,4 +1,4 @@
-# Every feature on: sealed secret, ingress, cron jobs and the migration Job.
+# Every feature on: sealed secret, ingress, a neighbour allowed through the NetworkPolicy, cron jobs and the migration Job.
 image:
   repository: ghcr.io/example/app
   tag: 0123456789abcdef0123456789abcdef01234567
@@ -17,6 +17,11 @@ secret:
 ingress:
   enabled: true
   host: app.example.test
+networkPolicy:
+  allowFrom:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: frontend
 probes:
   path: /health
 cronJobs:

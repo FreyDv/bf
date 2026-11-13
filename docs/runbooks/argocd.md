@@ -126,6 +126,14 @@ GitHub - `FreyDv/bf` (ADR-038 п. 7), то есть `https://github.com/FreyDv/b
 2. SealedSecret получает статус `Synced`, и ArgoCD ждёт его перед волной 0 (ArgoCD v3.5.6, контроллер 0.41.2). Если Job стартовал раньше Secret - сообщить агенту: нужна собственная проверка здоровья SealedSecret (ADR-047, «Revisit when»).
 3. После синка приложение `Synced` и `Healthy`.
 4. Сломанная миграция (тестовое приложение или заведомо падающая команда) оставляет прежний Deployment на месте, волна 1 не применяется.
+5. NetworkPolicy чарта `app` (CHART-3) применяется Cilium. Политика входа включена по умолчанию: под релиза принимает соединения на порт приложения только из namespace `traefik` (если у приложения `ingress.enabled`) и от peer из `networkPolicy.allowFrom`; egress чарт не ограничивает.
+   - Политика на месте, а namespace Traefik несёт метку, по которой она выбирает: `kubectl -n bf get networkpolicy <app> -o yaml` и `kubectl get namespace traefik --show-labels` (`kubernetes.io/metadata.name=traefik`).
+   - Cilium считает под защищённым: `kubectl -n kube-system exec ds/cilium -- cilium-dbg endpoint list`, у эндпоинта пода приложения `INGRESS POLICY` в `Enabled` (в старых версиях Cilium команда `cilium`, не `cilium-dbg`).
+   - Под вне списка не подключается: `kubectl -n bf run np-probe --rm -it --restart=Never --image=busybox:1.37 -- wget -qO- -T 3 http://<service>.<ns>.svc:<port>/` завершается таймаутом, а не ответом.
+   - Под из списка подключается: то же с пода, подходящего под `allowFrom` (если такого соседа у приложения ещё нет, пункт пропустить и записать это).
+   - Через Traefik работает: `curl -sI https://malinina.ca/` отвечает (запрос идёт через ingress-контроллер из namespace `traefik`).
+   - Пробы kubelet проходят: `kubectl -n bf get pods` показывает `Ready`, события пода без `Readiness probe failed` после старта.
+   - Если под вне списка всё же получил ответ - Cilium политику не применяет (режим принудительного применения или версия): сообщить агенту, это решается строкой бэклога, а не правкой чарта вслепую. Если не прошёл запрос через Traefik - сверить метку namespace и `networkPolicy.ingressControllerNamespace`.
 
 ## Diagnose
 
@@ -151,7 +159,8 @@ GitHub - `FreyDv/bf` (ADR-038 п. 7), то есть `https://github.com/FreyDv/b
 - Имя сервиса `argocd-server` и поведение `port-forward` на этом кластере.
 - Видимость репозитория сейчас (`gh repo view`): решение исходит из того, что он публичный.
 - Сброс пароля после удаления начального секрета и работа User Info -> Update Password в версии 10.11.6.
+- Применение NetworkPolicy чарта `app` Cilium на DOKS (версия Cilium и режим принудительного применения политик в репозитории не записаны): проверено только `helm template` и `pnpm charts:test`, на кластере нет (DEPLOY-1, п. 5 выше).
 - Порядок волн первого выката и ожидание расшифровки SealedSecret: проверено только `helm template` и `pnpm charts:test`, на кластере нет (проверки владельца - DEPLOY-1, раздел «Первый выкат приложения»).
 - Всё из раздела о самоуправлении: манифесты проверены только `helm template` (`pnpm charts`), на кластере не применялись (ARGOCD-2): принятие существующих объектов Helm, хуки chart, достижимость `https://github.com/FreyDv/bf` без `.git`.
 
-Связано: [malinina-kubernetes.md](malinina-kubernetes.md), [recovery.md](recovery.md), ADR-005, ADR-019, ADR-020, ADR-038, ADR-046, ADR-047.
+Связано: [malinina-kubernetes.md](malinina-kubernetes.md), [recovery.md](recovery.md), ADR-005, ADR-019, ADR-020, ADR-037, ADR-038, ADR-046, ADR-047.

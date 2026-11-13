@@ -38,7 +38,12 @@ const checksum = (output: string) =>
 
 describe('app chart: what it renders', () => {
   it('renders a Deployment, a Service and a ServiceAccount from an image alone', () => {
-    assert.deepEqual(kinds(render([minimal])), ['Deployment', 'Service', 'ServiceAccount']);
+    assert.deepEqual(kinds(render([minimal])), [
+      'Deployment',
+      'NetworkPolicy',
+      'Service',
+      'ServiceAccount',
+    ]);
   });
 
   it('renders every optional object when its feature is on', () => {
@@ -47,6 +52,7 @@ describe('app chart: what it renders', () => {
       'Deployment',
       'Ingress',
       'Job',
+      'NetworkPolicy',
       'SealedSecret',
       'Service',
       'ServiceAccount',
@@ -122,6 +128,63 @@ describe('app chart: ingress', () => {
   });
 });
 
+describe('app chart: network policy (ADR-037 item 4, backlog CHART-3)', () => {
+  const policy = (values: string[], set: string[] = []) =>
+    find(render(values, set), 'NetworkPolicy');
+
+  it('selects the pods of the release and restricts ingress only', () => {
+    const doc = policy([minimal]);
+    assert.match(
+      doc,
+      /podSelector:\n    matchLabels:\n      app\.kubernetes\.io\/name: web\n      app\.kubernetes\.io\/instance: web\n/,
+    );
+    assert.match(doc, /policyTypes:\n    - Ingress\n/);
+    assert.doesNotMatch(doc, /Egress|egress:/);
+  });
+
+  it('admits nobody when there is no ingress and no neighbour', () => {
+    const doc = policy([minimal]);
+    assert.match(doc, /^ {2}ingress: \[\]$/m);
+    assert.doesNotMatch(doc, /from:/);
+  });
+
+  it('admits the ingress controller namespace on the application port only when the ingress is on', () => {
+    const doc = policy([full]);
+    assert.match(doc, /kubernetes\.io\/metadata\.name: traefik\n/);
+    assert.match(doc, /ports:\n {8}- protocol: TCP\n {10}port: 4000\n/);
+    const off = policy([full], ['ingress.enabled=false']);
+    assert.doesNotMatch(off, /kubernetes\.io\/metadata\.name/);
+  });
+
+  it('takes the controller namespace from the values', () => {
+    const doc = policy([full], ['networkPolicy.ingressControllerNamespace=edge']);
+    assert.match(doc, /kubernetes\.io\/metadata\.name: edge\n/);
+  });
+
+  it('passes the named neighbours through as peers', () => {
+    const doc = policy([full]);
+    assert.match(
+      doc,
+      /podSelector:\n {12}matchLabels:\n {14}app\.kubernetes\.io\/name: frontend\n/,
+    );
+    const alone = policy([minimal, full], ['ingress.enabled=false']);
+    assert.match(alone, /app\.kubernetes\.io\/name: frontend/);
+    assert.doesNotMatch(alone, /metadata\.name/);
+  });
+
+  it('is rendered by default and gone when switched off', () => {
+    assert.ok(kinds(render([minimal])).includes('NetworkPolicy'));
+    assert.ok(!kinds(render([full], ['networkPolicy.enabled=false'])).includes('NetworkPolicy'));
+  });
+
+  it('is applied before the workloads: no sync wave, so wave 0 against their wave 1 (ADR-047)', () => {
+    const output = render([full]);
+    assert.doesNotMatch(find(output, 'NetworkPolicy'), /sync-wave/);
+    assert.match(find(output, 'Deployment'), /sync-wave: "1"/);
+    assert.match(find(output, 'CronJob'), /sync-wave: "1"/);
+  });
+});
+
 describe('app chart: what it refuses', () => {
   it('refuses a missing image tag', () => {
     assert.match(renderFails([minimal], ['image.tag=']), /image\.tag is required/);
@@ -133,6 +196,22 @@ describe('app chart: what it refuses', () => {
 
   it('refuses an enabled ingress without a host', () => {
     assert.match(renderFails([minimal], ['ingress.enabled=true']), /ingress\.host is required/);
+  });
+
+  it('refuses networkPolicy.allowFrom that is not a list', () => {
+    const failure = renderFails([minimal], ['networkPolicy.allowFrom=frontend']);
+    assert.match(failure, /networkPolicy\.allowFrom must be a list/);
+  });
+
+  it('refuses an empty peer in networkPolicy.allowFrom, which would admit every pod', () => {
+    const failure = renderFails([minimal], ['networkPolicy.allowFrom[0]={}']);
+    assert.match(failure, /networkPolicy\.allowFrom\[0\] must be a non-empty NetworkPolicyPeer/);
+    const scalar = renderFails([minimal], ['networkPolicy.allowFrom[0]=frontend']);
+    assert.match(scalar, /allowFrom\[0\] must be a non-empty NetworkPolicyPeer/);
+  });
+
+  it('does not check allowFrom when the policy is off', () => {
+    render([minimal], ['networkPolicy.enabled=false', 'networkPolicy.allowFrom=frontend']);
   });
 
   it('refuses a cron job name that would not fit the CronJob limit', () => {
