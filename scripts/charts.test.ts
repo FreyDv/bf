@@ -53,12 +53,22 @@ describe('app chart: what it renders', () => {
     ]);
   });
 
-  it('runs the migration Job before the sync and seals the secret before the Job', () => {
+  it('orders the first rollout: secret and account, then the migration Job, then the workloads (ADR-047)', () => {
     const output = render([full]);
+    const wave = (doc: string) =>
+      Number(/argocd\.argoproj\.io\/sync-wave: "(-?\d+)"/.exec(doc)?.[1]);
     const job = find(output, 'Job');
-    assert.match(job, /argocd\.argoproj\.io\/hook: PreSync/);
+    assert.match(job, /argocd\.argoproj\.io\/hook: Sync\n/);
     assert.match(job, /argocd\.argoproj\.io\/hook-delete-policy: BeforeHookCreation/);
-    assert.match(find(output, 'SealedSecret'), /argocd\.argoproj\.io\/sync-wave: "-1"/);
+    assert.doesNotMatch(output, /hook: PreSync/, 'PreSync runs before wave -1 exists');
+    const before = ['SealedSecret', 'ServiceAccount'].map((kind) => wave(find(output, kind)));
+    const after = ['Deployment', 'CronJob'].map((kind) => wave(find(output, kind)));
+    assert.deepEqual([wave(job), ...before, ...after], [0, -1, -1, 1, 1]);
+    assert.equal(
+      docs(output).filter((doc) => /hook:/.test(doc)).length,
+      1,
+      'only the Job is a hook',
+    );
   });
 
   it('mounts the built secret and the named ones into the Deployment, the CronJob and the Job', () => {
