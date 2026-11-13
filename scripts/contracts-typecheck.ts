@@ -4,7 +4,8 @@
 // frontend or contracts in the Turborepo graph, while packages/contracts/src/generated/server.ts (ADR-035) imports
 // the DTO files by relative path and both packages compile them, under `verbatimModuleSyntax: true` where the backend
 // has it off. Lint is included because the shared ESLint config is type-aware (ADR-016). Which files count lives in
-// scripts/lib/backend-contract-files.ts.
+// scripts/lib/backend-contract-files.ts. This step is the selector; the cache sees the DTO files through the `inputs`
+// of these tasks (ADR-058), so the command runs without `--force`.
 //
 //   node scripts/contracts-typecheck.ts [--base <ref>] [--root <dir>] [--dry-run]
 //
@@ -22,9 +23,6 @@ export const COMMAND = [
   'lint',
   '--filter=@bf/contracts',
   '--filter=@bf/frontend',
-  // The DTO files are not inputs of these tasks in the Turborepo graph, so their hash does not change when only a DTO
-  // does and a cached green result would be replayed (seen on a spike, ADR-057).
-  '--force',
 ];
 
 export const matching = (changed: string[]): string[] =>

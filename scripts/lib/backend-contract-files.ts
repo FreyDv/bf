@@ -2,6 +2,10 @@
 // typecheck step (contracts-typecheck.ts) and .dependency-cruiser.mjs read it. The generated
 // packages/contracts/src/generated/server.ts imports the DTO files by relative path, and `turbo --affected` does not
 // see them: backend is not a dependency of frontend in the Turborepo graph.
+//
+// The `inputs` of the typecheck and lint tasks in packages/contracts/turbo.json and apps/frontend/turbo.json (ADR-058)
+// are static JSON and cannot import this module: BACKEND_CONTRACT_TURBO_GLOBS is what they must list, and
+// contracts-typecheck.test.ts fails when they do not.
 
 // What the generated file may import directly: the files of a procedure's input, output and client enums.
 const DTO_SUFFIXES = ['request.dto', 'response.dto', 'enum'];
@@ -21,3 +25,8 @@ export const BACKEND_CONTRACT_FILES = new RegExp(
 
 export const touchesBackendContract = (changed: string[]): boolean =>
   changed.some((file) => BACKEND_CONTRACT_FILES.test(file));
+
+// The same suffixes as turbo `inputs` globs, so that a DTO edit changes the hash of the tasks that compile it.
+export const BACKEND_CONTRACT_TURBO_GLOBS = CONTRACT_SUFFIXES.map(
+  (suffix) => `$TURBO_ROOT$/apps/backend/src/**/*.${suffix}.ts`,
+);

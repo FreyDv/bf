@@ -2,12 +2,13 @@
 // changes one of them. Fixtures are throwaway git repositories; nothing here runs Turborepo.
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, matchesGlob } from 'node:path';
 import { after, describe, it } from 'node:test';
 import {
   BACKEND_CONTRACT_FILES,
+  BACKEND_CONTRACT_TURBO_GLOBS,
   GENERATED_FILE_IMPORTS,
   touchesBackendContract,
 } from './lib/backend-contract-files.ts';
@@ -15,30 +16,35 @@ import { COMMAND, matching } from './contracts-typecheck.ts';
 
 const script = join(import.meta.dirname, 'contracts-typecheck.ts');
 const S = 'apps/backend/src';
+const repositoryRoot = join(import.meta.dirname, '..');
+
+// Files that decide the tasks of these packages: the selected and the ignored examples of the next block.
+const SELECTED = [
+  `${S}/orders/queries/find/find.request.dto.ts`,
+  `${S}/orders/dtos/order.response.dto.ts`,
+  `${S}/orders/order-status.enum.ts`,
+  `${S}/orders/queries/find/find.filter-spec.ts`,
+  `${S}/orders/public/order.filter-spec.ts`,
+];
+const IGNORED = [
+  `${S}/orders/domain/order.aggregate.ts`,
+  `${S}/orders/queries/find/find.router.ts`,
+  `${S}/orders/infrastructure/find.filter-binding.ts`,
+  `${S}/orders/queries/find/find.request.dto.test.ts`,
+  `${S}/orders/queries/find/find.filter-spec.test.ts`,
+  `${S}/orders/order-status.enum.js`,
+  'apps/frontend/app/order-status.enum.ts',
+  'packages/contracts/src/order.request.dto.ts',
+  'apps/backend/package.json',
+  'docs/backlog.md',
+];
 
 describe('which files are backend contract files', () => {
-  for (const file of [
-    `${S}/orders/queries/find/find.request.dto.ts`,
-    `${S}/orders/dtos/order.response.dto.ts`,
-    `${S}/orders/order-status.enum.ts`,
-    `${S}/orders/queries/find/find.filter-spec.ts`,
-    `${S}/orders/public/order.filter-spec.ts`,
-  ]) {
+  for (const file of SELECTED) {
     it(`selects ${file}`, () => assert.ok(BACKEND_CONTRACT_FILES.test(file)));
   }
 
-  for (const file of [
-    `${S}/orders/domain/order.aggregate.ts`,
-    `${S}/orders/queries/find/find.router.ts`,
-    `${S}/orders/infrastructure/find.filter-binding.ts`,
-    `${S}/orders/queries/find/find.request.dto.test.ts`,
-    `${S}/orders/queries/find/find.filter-spec.test.ts`,
-    `${S}/orders/order-status.enum.js`,
-    'apps/frontend/app/order-status.enum.ts',
-    'packages/contracts/src/order.request.dto.ts',
-    'apps/backend/package.json',
-    'docs/backlog.md',
-  ]) {
+  for (const file of IGNORED) {
     it(`ignores ${file}`, () => assert.equal(BACKEND_CONTRACT_FILES.test(file), false));
   }
 
@@ -54,7 +60,7 @@ describe('which files are backend contract files', () => {
     assert.deepEqual(matching(['docs/a.md', `${S}/o/x.enum.ts`]), [`${S}/o/x.enum.ts`]);
   });
 
-  it('runs typecheck and lint for contracts and frontend only, without the cache', () => {
+  it('runs typecheck and lint for contracts and frontend only, on the cache that sees the DTO files', () => {
     assert.deepEqual(COMMAND.slice(1), [
       'turbo',
       'run',
@@ -62,8 +68,51 @@ describe('which files are backend contract files', () => {
       'lint',
       '--filter=@bf/contracts',
       '--filter=@bf/frontend',
-      '--force',
     ]);
+  });
+});
+
+// ADR-058: the cache sees a DTO edit through `inputs` in these two files; they are JSON and cannot import the module.
+describe('turbo inputs of the tasks that compile backend contract files', () => {
+  const root = '$TURBO_ROOT$/';
+  const globs = BACKEND_CONTRACT_TURBO_GLOBS.map((glob) => glob.slice(root.length));
+
+  it('lists the globs under the repository root', () => {
+    assert.ok(BACKEND_CONTRACT_TURBO_GLOBS.every((glob) => glob.startsWith(root)));
+  });
+
+  for (const file of SELECTED) {
+    it(`matches ${file} in a glob like the pattern does`, () =>
+      assert.ok(globs.some((glob) => matchesGlob(file, glob))));
+  }
+
+  for (const file of IGNORED) {
+    it(`leaves ${file} out like the pattern does`, () =>
+      assert.equal(
+        globs.some((glob) => matchesGlob(file, glob)),
+        false,
+      ));
+  }
+
+  for (const directory of ['packages/contracts', 'apps/frontend']) {
+    const config = JSON.parse(readFileSync(join(repositoryRoot, directory, 'turbo.json'), 'utf8'));
+
+    it(`${directory}/turbo.json extends the root and lists the globs for typecheck and lint`, () => {
+      assert.deepEqual(config.extends, ['//']);
+      assert.deepEqual(Object.keys(config.tasks).sort(), ['lint', 'typecheck']);
+      for (const task of ['typecheck', 'lint']) {
+        // $TURBO_DEFAULT$ keeps the package's own files; without it only the DTO files would be hashed.
+        assert.deepEqual(config.tasks[task], {
+          inputs: ['$TURBO_DEFAULT$', ...BACKEND_CONTRACT_TURBO_GLOBS],
+        });
+      }
+    });
+  }
+
+  it('keeps the dependencies of the tasks in the root file, where ADR-009 has the graph', () => {
+    const rootConfig = JSON.parse(readFileSync(join(repositoryRoot, 'turbo.json'), 'utf8'));
+    assert.deepEqual(rootConfig.tasks.typecheck, { dependsOn: ['^build'] });
+    assert.deepEqual(rootConfig.tasks.lint, { dependsOn: ['^build'] });
   });
 });
 
@@ -112,8 +161,9 @@ describe('the step on a repository with a pull request branch', () => {
     assert.match(result.stdout, /find\.request\.dto\.ts/);
     assert.match(
       result.stdout,
-      /turbo run typecheck lint --filter=@bf\/contracts --filter=@bf\/frontend --force/,
+      /turbo run typecheck lint --filter=@bf\/contracts --filter=@bf\/frontend\n/,
     );
+    assert.doesNotMatch(result.stdout, /--force/);
   });
 
   it('selects it for a filter spec behind a DTO', () => {
