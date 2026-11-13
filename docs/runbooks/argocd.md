@@ -3,8 +3,8 @@
 Serves: владелец-оператор и агент, действующий за него. Как ArgoCD ставится с нуля, как открыть его UI, что сделать с начальным
 паролем и как устроено самоуправление из `deploy/argocd/` (ADR-019, ADR-038 п. 2, ADR-046, backlog RUNBOOK-1, RUNBOOK-2, ARGOCD-1, ARGOCD-2).
 
-Состояние на 2026-11-12: ArgoCD работает с 2026-11-11 (Helm-релиз `argocd`, chart `argo-cd` 10.11.6, app v3.5.6), есть только
-`AppProject default`, репозиторий ArgoCD не смотрит (манифесты самоуправления готовы, ARGOCD-1; первое применение - ARGOCD-2), UI не настроен, `argocd-initial-admin-secret` не менялся.
+Состояние на 2026-11-13: ArgoCD работает с 2026-11-11 (Helm-релиз `argocd`, chart `argo-cd` 10.11.6, app v3.5.6), есть только
+`AppProject default`; с 2026-11-13 ArgoCD управляет собой и всеми Application из `deploy/argocd/` (ARGOCD-2): `root`, `argo-cd`, `sealed-secrets`, `nats`. UI - только через port-forward, `argocd-initial-admin-secret` не менялся (RUNBOOK-2).
 Подробный снимок кластера и разбор неудачной первой установки - [malinina-kubernetes.md](malinina-kubernetes.md) («Что работает в
 кластере», «Разбор: почему ArgoCD не установился»). Команды ниже не выполнялись в том виде, как записаны: живой кластер агент не
 трогает, их запускает владелец. Три команды установки выполнялись 2026-11-11 и прошли.
@@ -67,15 +67,15 @@ UI наружу не публикуется (ADR-038 п. 2), доступ чер
 
 Репозиторий публичный (решение владельца 2026-11-12): ArgoCD читает его по обычному HTTPS-адресу, **без учётных данных**. Ни
 deploy key, ни токена, ни Secret с репозиторием не нужно: адрес указывается в `source.repoURL` Application. Адрес репозитория на
-GitHub - `FreyDv/bf` (ADR-038 п. 7), то есть `https://github.com/FreyDv/bf` (в манифестах - форма без `.git`; принимает ли её ArgoCD, видно при первой
-синхронизации в ARGOCD-2; не проверялось).
+GitHub - `FreyDv/bf` (ADR-038 п. 7), то есть `https://github.com/FreyDv/bf` (в манифестах - форма без `.git`; ArgoCD её принимает: первая
+синхронизация `root` 2026-11-13 прошла, ARGOCD-2).
 
 Проверка владельца: `gh repo view FreyDv/bf --json visibility` - `PUBLIC`. Смена видимости репозитория на приватную - условие пересмотра: до неё способ доступа выбирается
 записью (в схеме сейчас секрета нет).
 
 ## Самоуправление из `deploy/argocd/` (ADR-019 п. 1, ADR-046)
 
-Манифесты готовы (ARGOCD-1), на кластере не применены: первое применение - шаг владельца ARGOCD-2. Устройство:
+Применено владельцем 2026-11-13 (ARGOCD-2, результат - ниже). Устройство:
 
 - `deploy/argocd/root.yaml` - корневое Application: смотрит `deploy/argocd/` в `https://github.com/FreyDv/bf`, ветка `main`, без учётных данных, и применяет каждое Application из каталога. Исключены `argocd-values.yaml` (файл значений, не объект Kubernetes) и `traefik.yaml` (плейсхолдер сертификата, до TRAEFIK-2).
 - `deploy/argocd/argo-cd.yaml` - Application самого ArgoCD: chart `argo-cd` 10.11.6, значения - файл `argocd-values.yaml` из этого же репозитория (второй источник `ref: values`), имя релиза `argocd`, namespace `argocd`, поэтому рендер даёт живые имена (`argocd-server`, ...) и первый синк принимает существующие объекты, а не создаёт второй ArgoCD.
@@ -83,13 +83,15 @@ GitHub - `FreyDv/bf` (ADR-038 п. 7), то есть `https://github.com/FreyDv/b
 - CRD вне Helm и вне синка (`crds.install=false`), `argocd-secret` не рендерится (`configs.secret.createSecret=false`): самосинк не затирает CRD и хэш пароля `admin`. Порядок со сменой пароля (RUNBOOK-2) любой: до ARGOCD-2 или после, хэш остаётся.
 - После ARGOCD-2 `kubectl apply` из `sealed-secrets.yaml` и `nats.yaml` не нужен: их применяет корень; новый файл Application в каталоге разворачивается слиянием в `main`.
 
-### Первое применение (ARGOCD-2, шаги владельца, не выполнялись)
+### Первое применение (ARGOCD-2, выполнено 2026-11-13)
+
+Результат: `root`, `argo-cd`, `sealed-secrets` - `Synced` и `Healthy`; `nats` - `Healthy`, но `OutOfSync` из-за полей, которые API-сервер дописывает в `volumeClaimTemplates` (исправлено `ignoreDifferences` в `deploy/argocd/nats.yaml`); `traefik` в списке нет. Второго ArgoCD нет: те же 6 Deployment и 1 StatefulSet, все 9 подов `Running` без перезапусков, `helm -n argocd status argocd` - `deployed`, ревизия 1; вход `admin` прежним паролем работает. До применения `sealed-secrets` и `nats` руками не применялись, поэтому первый синк корня развернул их впервые. Шаги ниже - для повтора на новом кластере.
 
 Предусловие: изменения ARGOCD-1 слиты в `main` (ArgoCD читает `main`, не ветку); `gh repo view FreyDv/bf --json visibility` - `PUBLIC`.
 
 1. Перед применением, только чтение: `kubectl -n argocd get applications` (допустимы `sealed-secrets`, `nats`, если применялись руками), `kubectl -n argocd get deploy,sts` (список объектов ArgoCD запомнить).
 2. `kubectl apply -n argocd -f deploy/argocd/root.yaml -f deploy/argocd/argo-cd.yaml`.
-3. Ждать минуты три: `kubectl -n argocd get applications` - `root`, `argo-cd` и уже применённые `sealed-secrets`, `nats` в `Synced` и `Healthy`; `traefik` в списке нет (исключён).
+3. Ждать минуты три: `kubectl -n argocd get applications` - `root`, `argo-cd`, `sealed-secrets`, `nats` (корень разворачивает их, даже если руками они не применялись) в `Synced` и `Healthy`; `traefik` в списке нет (исключён).
 4. Второго ArgoCD нет: `kubectl -n argocd get deploy,sts` показывает те же объекты, что в шаге 1, с теми же именами (`argocd-server`, `argocd-repo-server`, `argocd-application-controller`, ...) и без новых с префиксом `argo-cd-`; `kubectl -n argocd get pods` - все `Running`; `helm -n argocd status argocd` по-прежнему `deployed`.
 5. Что проверить глазами: `argocd-secret` на месте и вход `admin` работает прежним паролем; у `argo-cd` нет расхождений (`kubectl -n argocd describe application argo-cd`), особенно по Job `argocd-redis-secret-init` и по `argocd-notifications-secret`, которые chart рендерит и без `argocd-secret`.
 6. Если `argo-cd` в `OutOfSync` или `Degraded`: ничего не удалять и не править руками; откат - `kubectl -n argocd delete application argo-cd root` (без finalizer объекты остаются) и сообщить агенту.
@@ -161,6 +163,6 @@ GitHub - `FreyDv/bf` (ADR-038 п. 7), то есть `https://github.com/FreyDv/b
 - Сброс пароля после удаления начального секрета и работа User Info -> Update Password в версии 10.11.6.
 - Применение NetworkPolicy чарта `app` Cilium на DOKS (версия Cilium и режим принудительного применения политик в репозитории не записаны): проверено только `helm template` и `pnpm charts:test`, на кластере нет (DEPLOY-1, п. 5 выше).
 - Порядок волн первого выката и ожидание расшифровки SealedSecret: проверено только `helm template` и `pnpm charts:test`, на кластере нет (проверки владельца - DEPLOY-1, раздел «Первый выкат приложения»).
-- Всё из раздела о самоуправлении: манифесты проверены только `helm template` (`pnpm charts`), на кластере не применялись (ARGOCD-2): принятие существующих объектов Helm, хуки chart, достижимость `https://github.com/FreyDv/bf` без `.git`.
+- Самоуправление на кластере проверено 2026-11-13 (ARGOCD-2): объекты Helm приняты без пересоздания, адрес без `.git` работает. Не проверялось: поведение хуков chart при смене версии `argo-cd`.
 
 Связано: [malinina-kubernetes.md](malinina-kubernetes.md), [recovery.md](recovery.md), ADR-005, ADR-019, ADR-020, ADR-037, ADR-038, ADR-046, ADR-047.

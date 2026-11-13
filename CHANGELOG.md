@@ -6,6 +6,10 @@ All notable changes to this project, in [Keep a Changelog](https://keepachangelo
 
 <!-- A PR describes its change here, one entry per change - never a version heading, never VERSION itself (R18). The maintainer alone promotes this section into a release: https://github.com/repository-standards/core/blob/main/docs/method/changelog-process.md -->
 
+### ArgoCD manages itself from the repository (ARGOCD-2, 2026-11-13)
+
+For the owner: you applied `root.yaml` and `argo-cd.yaml` to `malinina`. ArgoCD took over its own Helm objects without recreating them (same 6 Deployments and 1 StatefulSet, no pod restarts, the `admin` login still works) and deployed `sealed-secrets` and `nats` for the first time, since neither had been applied by hand. From now on a merge into `main` is a deploy, and `helm upgrade`, `helm rollback` and `helm uninstall` for `argocd` are forbidden. The result is recorded in `docs/runbooks/argocd.md`; `malinina-kubernetes.md` and `recovery.md` no longer describe the hand-applied steps. ARGOCD-2 is archived; SEALED-2 and NATS-2 now only owe the steps after the Application.
+
 ### NATS Application no longer stuck OutOfSync (2026-11-13)
 
 For the owner: on the first sync of the root Application (ARGOCD-2) `nats` came up `Healthy` but `OutOfSync`. The only difference was in the StatefulSet's `volumeClaimTemplates`: the API server adds `apiVersion`, `kind`, `spec.volumeMode` and `status`, which the chart does not render. `deploy/argocd/nats.yaml` now ignores exactly those four fields; size, storage class and access mode are still compared. Those templates cannot change after creation, so no real change is hidden. Takes effect once merged into `main`; nothing to apply by hand.
