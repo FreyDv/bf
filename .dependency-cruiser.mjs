@@ -9,11 +9,25 @@ const ADAPTER =
 const APPLICATION_IN_SLICE =
   '\\.(command|query|command-handler|query-handler|service|port|domain-event-handler)\\.ts$';
 
+// ADR-039 item 4: a test file is exempt from DEP-2 and, for vitest only, from DEP-3. DEP-5, DEP-8
+// and DEP-9 still hold for it, which keeps the exemption inside its own module.
+const TEST = '\\.(e2e\\.)?test\\.ts$';
+
 const DOMAIN = `${MODULE}/domain/`;
 const APPLICATION = `${MODULE}/application/`;
 const INFRASTRUCTURE = `${MODULE}/infrastructure/`;
 const DTOS = `${MODULE}/dtos/`;
 const SLICE = `${MODULE}/(commands|queries)/`;
+
+const NPM = [
+  'npm',
+  'npm-dev',
+  'npm-optional',
+  'npm-peer',
+  'npm-bundled',
+  'npm-no-pkg',
+  'npm-unknown',
+];
 
 /** @type {import('dependency-cruiser').IConfiguration} */
 export default {
@@ -22,7 +36,7 @@ export default {
       name: 'dep-2-domain-is-innermost',
       comment: 'DEP-2: the domain imports only the domain and the shared kernel.',
       severity: 'error',
-      from: { path: DOMAIN },
+      from: { path: DOMAIN, pathNot: TEST },
       to: {
         path: [APPLICATION, INFRASTRUCTURE, DTOS, `${SLICE}.*(${ADAPTER}|${APPLICATION_IN_SLICE})`],
       },
@@ -32,18 +46,16 @@ export default {
       comment:
         'DEP-3, DEP-6: no framework, ORM, driver, HTTP, logger, SDK or validation library in the domain. A single-purpose library needs an ADR.',
       severity: 'error',
-      from: { path: DOMAIN },
-      to: {
-        dependencyTypes: [
-          'npm',
-          'npm-dev',
-          'npm-optional',
-          'npm-peer',
-          'npm-bundled',
-          'npm-no-pkg',
-          'npm-unknown',
-        ],
-      },
+      from: { path: DOMAIN, pathNot: TEST },
+      to: { dependencyTypes: NPM },
+    },
+    {
+      name: 'dep-3-domain-tests-only-vitest',
+      comment:
+        'DEP-3, ADR-039 item 4.1: a test file in the domain may import vitest and no other library.',
+      severity: 'error',
+      from: { path: `${DOMAIN}.*${TEST}` },
+      to: { dependencyTypes: NPM, pathNot: '(^|/)node_modules/vitest/' },
     },
     {
       name: 'dep-3-domain-no-io',
@@ -59,7 +71,7 @@ export default {
       name: 'dep-2-application-no-outer-layers',
       comment: 'DEP-2: application code does not reach infrastructure or interface adapters.',
       severity: 'error',
-      from: { path: [APPLICATION, `${SLICE}.*${APPLICATION_IN_SLICE}`] },
+      from: { path: [APPLICATION, `${SLICE}.*${APPLICATION_IN_SLICE}`], pathNot: TEST },
       to: { path: [INFRASTRUCTURE, DTOS, `${SLICE}.*${ADAPTER}`] },
     },
     {
@@ -67,7 +79,7 @@ export default {
       comment:
         'DEP-2: infrastructure implements application ports and never imports other application code or adapters.',
       severity: 'error',
-      from: { path: INFRASTRUCTURE },
+      from: { path: INFRASTRUCTURE, pathNot: TEST },
       to: {
         path: [
           `${APPLICATION}(?!ports/)`,
@@ -81,8 +93,16 @@ export default {
       comment:
         'DEP-2, ADP-3: interface adapters talk to the application through commands, queries and the bus only.',
       severity: 'error',
-      from: { path: [`${SLICE}.*${ADAPTER}`, DTOS] },
+      from: { path: [`${SLICE}.*${ADAPTER}`, DTOS], pathNot: TEST },
       to: { path: [DOMAIN, INFRASTRUCTURE] },
+    },
+    {
+      name: 'tests-are-leaves',
+      comment:
+        'ADR-039 item 4.3: no file that is not a test imports one, so the test exemption cannot be reached from production code.',
+      severity: 'error',
+      from: { pathNot: TEST },
+      to: { path: TEST },
     },
     {
       name: 'dep-5-modules-only-through-public',
