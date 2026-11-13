@@ -14,6 +14,8 @@ const APPLICATION_IN_SLICE =
 const TEST = '\\.(e2e\\.)?test\\.ts$';
 
 const DOMAIN = `${MODULE}/domain/`;
+// ADR-049: a domain folder of any app, not only the backend modules the layer rules above read.
+const DOMAIN_ANY = ['^apps/[^/]+/src/domain/', '^apps/[^/]+/src/.*/domain/'];
 const APPLICATION = `${MODULE}/application/`;
 const INFRASTRUCTURE = `${MODULE}/infrastructure/`;
 const DTOS = `${MODULE}/dtos/`;
@@ -153,12 +155,35 @@ export default {
       to: { path: '^apps/', pathNot: '\\.(request\\.dto|response\\.dto|enum)\\.ts$' },
     },
     {
+      name: 'domain-packages-only-kernel',
+      comment:
+        'DEP-3, ENF-4, ADR-049: from a domain folder only packages/kernel/ is importable out of packages/. dep-3 sees npm types only, so a workspace package (the contracts of QRY-20, the filter toolkit of QRY-6) passes it.',
+      severity: 'error',
+      from: { path: DOMAIN_ANY },
+      to: { path: '^packages/', pathNot: '^packages/kernel/' },
+    },
+    {
       name: 'kernel-is-domain-free',
       comment:
-        'ENF-4, ADR-048: the shared kernel holds no domain concept, so it imports nothing from an application. The domain may import the kernel, which is why the kernel cannot reach back.',
+        'ENF-4, ADR-048, ADR-049: the shared kernel holds no domain concept and depends on no other workspace package, so it imports nothing from an application or from another package. The domain may import the kernel, which is why the kernel cannot reach back.',
       severity: 'error',
       from: { path: '^packages/kernel/' },
-      to: { path: '^apps/' },
+      to: { path: ['^apps/', '^packages/(?!kernel/)'] },
+    },
+    {
+      name: 'kernel-npm-only-neverthrow',
+      comment:
+        'ENF-4, DEP-6, ADR-049: the kernel imports from npm only neverthrow (ADR-048 item 3). A new library in the kernel needs an ADR.',
+      severity: 'error',
+      from: { path: '^packages/kernel/', pathNot: TEST },
+      to: { dependencyTypes: NPM, pathNot: '(^|/)node_modules/neverthrow/' },
+    },
+    {
+      name: 'kernel-tests-only-neverthrow-and-vitest',
+      comment: 'ENF-4, ADR-049: a test file in the kernel may import vitest on top of neverthrow.',
+      severity: 'error',
+      from: { path: `^packages/kernel/.*${TEST}` },
+      to: { dependencyTypes: NPM, pathNot: '(^|/)node_modules/(neverthrow|vitest)/' },
     },
     {
       name: 'not-to-unresolvable',
@@ -176,8 +201,10 @@ export default {
     },
   ],
   options: {
-    doNotFollow: { path: 'node_modules' },
-    exclude: { path: ['(^|/)dist/', '(^|/)\\.next/', '(^|/)coverage/'] },
+    // A package that exports from dist/ stays in the graph as a leaf (ADR-049): the import is seen
+    // and the rules judge it, while the build output behind it is not read.
+    doNotFollow: { path: ['node_modules', '^packages/[^/]+/dist/'] },
+    exclude: { path: ['^apps/[^/]+/dist/', '(^|/)\\.next/', '(^|/)coverage/'] },
     tsPreCompilationDeps: true,
     tsConfig: { fileName: 'apps/backend/tsconfig.json' },
     enhancedResolveOptions: {
