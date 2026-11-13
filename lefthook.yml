@@ -14,7 +14,7 @@ pre-commit:
       run: pnpm turbo run typecheck --affected
 
     - name: prettier
-      glob: '{apps/**,packages/**,package.json,turbo.json,.dependency-cruiser.mjs,scripts/boundaries.test.ts,scripts/charts-check.ts,scripts/charts.test.ts,scripts/contracts-generate.ts,scripts/check-migrations.ts,scripts/check-migrations.test.ts,scripts/image-check.ts}'
+      glob: '{apps/**,packages/**,package.json,turbo.json,.dependency-cruiser.mjs,scripts/boundaries.test.ts,scripts/charts-check.ts,scripts/charts.test.ts,scripts/contracts-generate.ts,scripts/contracts-typecheck.ts,scripts/contracts-typecheck.test.ts,scripts/lib/backend-contract-files.ts,scripts/check-migrations.ts,scripts/check-migrations.test.ts,scripts/image-check.ts}'
       run: pnpm exec prettier --write --ignore-unknown {staged_files}
       stage_fixed: true
 

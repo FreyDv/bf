@@ -1,6 +1,8 @@
 // Architecture boundaries (ENF-1, ADR-014). Layers are told apart by folder and by file suffix
 // (STR-6, STR-7). Loosening a rule needs an ADR naming its ID; fix the import instead.
 
+import { GENERATED_FILE_IMPORTS } from './scripts/lib/backend-contract-files.ts';
+
 const SRC = '^apps/backend/src';
 const MODULE = `${SRC}/([^/]+)`;
 
@@ -162,7 +164,8 @@ export default {
         'ADR-035: the generated router file reads from backend only request and response DTOs and enums, so the frontend never type-checks domain or infrastructure code.',
       severity: 'error',
       from: { path: '^packages/contracts/' },
-      to: { path: '^apps/', pathNot: '\\.(request\\.dto|response\\.dto|enum)\\.ts$' },
+      // The suffixes have one home, scripts/lib/backend-contract-files.ts (ADR-057).
+      to: { path: '^apps/', pathNot: GENERATED_FILE_IMPORTS.source },
     },
     {
       name: 'domain-packages-only-kernel',
