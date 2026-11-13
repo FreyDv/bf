@@ -6,6 +6,10 @@ All notable changes to this project, in [Keep a Changelog](https://keepachangelo
 
 <!-- A PR describes its change here, one entry per change - never a version heading, never VERSION itself (R18). The maintainer alone promotes this section into a release: https://github.com/repository-standards/core/blob/main/docs/method/changelog-process.md -->
 
+### NATS Application no longer stuck OutOfSync (2026-11-13)
+
+For the owner: on the first sync of the root Application (ARGOCD-2) `nats` came up `Healthy` but `OutOfSync`. The only difference was in the StatefulSet's `volumeClaimTemplates`: the API server adds `apiVersion`, `kind`, `spec.volumeMode` and `status`, which the chart does not render. `deploy/argocd/nats.yaml` now ignores exactly those four fields; size, storage class and access mode are still compared. Those templates cannot change after creation, so no real change is hidden. Takes effect once merged into `main`; nothing to apply by hand.
+
 ### Cloud budget record dropped (2026-11-13)
 
 For the owner and every future spec author: BUDGET-1 (a BDR on the cloud budget) is dropped at the owner's call of 2026-11-13; there is no cloud budget record and none is planned. ADR-022, ADR-041, ADR-042 and ADR-043 no longer point to it: the OpenAI key and Spaces have no recorded spending ceiling, and the $10 log ceiling of ADR-043 stands on its own as a technical limit. The alignment scope drops from 2 to 1 task.

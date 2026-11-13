@@ -104,3 +104,15 @@ spec:
       # The namespace is shared with the apps (ADR-038), so the Application creates it only if it is missing.
       - CreateNamespace=true
       - ServerSideApply=true
+  # The API server fills these into the StatefulSet's volumeClaimTemplates after apply; the chart does not render
+  # them, so without this the Application stays OutOfSync while the broker is Healthy (seen on the first sync,
+  # ARGOCD-2). volumeClaimTemplates cannot change after creation, so ignoring these fields hides no real change.
+  ignoreDifferences:
+    - group: apps
+      kind: StatefulSet
+      name: nats
+      jqPathExpressions:
+        - .spec.volumeClaimTemplates[]?.apiVersion
+        - .spec.volumeClaimTemplates[]?.kind
+        - .spec.volumeClaimTemplates[]?.spec.volumeMode
+        - .spec.volumeClaimTemplates[]?.status
