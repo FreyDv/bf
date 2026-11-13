@@ -56,6 +56,7 @@ Architecture Decision Records - технические причины. Тест 
 | [048](ADR-048-shared-kernel-and-result-in-domain.md) | Shared kernel - пакет `@bf/kernel`; `Result` попадает в domain только через него (уточняет ADR-009 и ADR-015) | Accepted |
 | [049](ADR-049-domain-packages-whitelist-and-dist-visibility.md) | Проверка границ - из `domain/` в `packages/` только `@bf/kernel`, что импортирует сам kernel, `dist/` пакетов виден графу (уточняет ADR-048 п. 6) | Accepted |
 | [050](ADR-050-query-filter-package.md) | Пакет фильтров `@bf/query-filter`: форма поставки, пины, границы, значения, лимиты, итог спайка (исполняет ADR-024) | Accepted |
+| [051](ADR-051-query-filter-drizzle-entry.md) | Entry `drizzle` пакета фильтров: привязка к колонкам, форма SQL, пустые списки, границы QRY-7 и QRY-12 (дополняет ADR-050) | Accepted |
 
 Первая ячейка - номер-ссылка на файл; остальное - свободный текст. `scripts/decision-records-check.mjs` сверяет таблицу с файлами. Нумерация без пропусков, номера не переиспользуются. Шаблон: [`_template.md`](_template.md). Решения прототипа не переносятся (ADR-006).
 
@@ -79,7 +80,7 @@ Architecture Decision Records - технические причины. Тест 
 | Язык, рантайм, фреймворки, инструменты | ADR-007, ADR-010, ADR-011, ADR-016; UI-библиотека - ADR-031 |
 | Логи и наблюдаемость | ADR-032; срок хранения, потолок цены, сборщик, доступ к Grafana, правила схемы - ADR-043; метрики и алерты не по логам - открыто: backlog MON-1 |
 | Топология репозитория и сборка | ADR-008, ADR-009; пакет shared kernel - ADR-048 |
-| Стиль API и контракта | ADR-012; тип роутера во frontend - ADR-035; фильтр query - ADR-024, пакет и его границы - ADR-050 |
+| Стиль API и контракта | ADR-012; тип роутера во frontend - ADR-035; фильтр query - ADR-024, пакет и его границы - ADR-050, entry `drizzle` - ADR-051 |
 | Хранилище данных | ADR-013; размещение - ADR-017; надёжность записи (`synchronous_commit`) - ADR-044 |
 | Модель ошибок | ERR-1..6 (ADR-002); тип результата - ADR-015; откуда `Result` в domain - ADR-048 |
 | Платформа и описание инфраструктуры | ADR-017 |
