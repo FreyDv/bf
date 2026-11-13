@@ -19,6 +19,11 @@ const TRIVY =
 // A change to any of these can break every image, so it rebuilds all of them on a pull request.
 const SHARED_INPUTS = /^(\.dockerignore|scripts\/image-check\.ts|\.github\/workflows\/ci\.yml)$/;
 
+// The frontend image type-checks the backend files that packages/contracts reaches by relative path (ADR-035),
+// but backend is not a dependency of frontend in the Turborepo graph, so `turbo ls --affected` does not see
+// them (CONTRACT-2). A change to one of them selects the frontend image too.
+const BACKEND_CONTRACT_FILES = /^apps\/backend\/src\/.*\.(request\.dto|response\.dto|enum)\.ts$/;
+
 const root = resolve(import.meta.dirname, '..');
 
 const apps = () =>
@@ -187,6 +192,9 @@ function affected(): number {
       };
       const paths = new Set(listing.packages.items.map((item) => item.path));
       selected = all.filter((app) => paths.has(`apps/${app}`));
+      if (changed.some((file) => BACKEND_CONTRACT_FILES.test(file)) && all.includes('frontend')) {
+        selected = [...new Set([...selected, 'frontend'])];
+      }
     }
   }
   const output = process.env['GITHUB_OUTPUT'];
