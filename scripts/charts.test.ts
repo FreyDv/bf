@@ -156,3 +156,41 @@ describe('sealed-secrets Application (ADR-020, ADR-045)', () => {
     assert.match(crd, /v1alpha1/);
   });
 });
+
+describe('nats Application (ADR-022, backlog NATS-1)', () => {
+  const [app] = readChartApplications(`${deploy}/argocd`).filter((item) => item.chart === 'nats');
+
+  it('pins an exact chart version and installs into the application namespace', () => {
+    assert.ok(app, 'deploy/argocd has a nats Application');
+    assert.match(app.version, /^\d+\.\d+\.\d+$/);
+    assert.equal(app.namespace, 'bf');
+  });
+
+  it('runs one server pod with the server image at the chart version, no cluster', () => {
+    const set = find(renderApplication(app), 'StatefulSet');
+    assert.match(set, /\n {2}replicas: 1\n/);
+    assert.ok(set.includes(`image: nats:${app.version}-alpine`));
+    assert.doesNotMatch(find(renderApplication(app), 'ConfigMap'), /"cluster"/);
+  });
+
+  it('keeps the stream on a 10Gi retained volume and enables JetStream with a file store', () => {
+    const output = renderApplication(app);
+    const set = find(output, 'StatefulSet');
+    assert.match(set, /storage: 10Gi\n\s+storageClassName: do-block-storage-retain/);
+    assert.match(find(output, 'ConfigMap'), /"store_dir": "\/data"/);
+  });
+
+  it('exposes the broker inside the cluster only', () => {
+    const service = find(renderApplication(app), 'Service');
+    assert.doesNotMatch(service, /type: (LoadBalancer|NodePort)/);
+    assert.match(service, /port: 4222/);
+  });
+
+  it('puts the pod hardening inside the pod spec, not beside it', () => {
+    const set = find(renderApplication(app), 'StatefulSet');
+    const spec = set.slice(set.indexOf('    spec:\n'));
+    assert.match(spec, /automountServiceAccountToken: false/);
+    assert.match(spec, /seccompProfile:\n\s+type: RuntimeDefault/);
+    assert.match(spec, /allowPrivilegeEscalation: false/);
+  });
+});

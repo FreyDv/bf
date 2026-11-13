@@ -1,0 +1,105 @@
+# NATS JetStream (ADR-022, backlog NATS-1). Applied by hand once:
+#   kubectl apply -n argocd -f deploy/argocd/nats.yaml
+# ArgoCD does not watch this repository yet (RUNBOOK-1), so this file is the whole source: the chart comes from the
+# public Helm repository and the values are inline. Steps for the owner: docs/runbooks/malinina-kubernetes.md.
+#
+# Chart 2.15.2 (appVersion 2.15.2) was published 2026-10-29. ADR-005 needs 7 full days, so it was usable from
+# 2026-11-05; on 2026-11-12 it is 14 days old. The server image below is the chart's own appVersion, and the other two
+# images (config reloader, nats-box) are the exact tags that chart version ships, so a chart bump moves all three
+# together. The ADR-034 exception does not cover this chart. `pnpm charts` renders exactly this chart with exactly
+# these values (scripts/charts-check.ts).
+#
+# Namespace `bf`, not a separate one: the log collector of ADR-043 watches `bf`, and ADR-038 has one environment.
+# ClusterIP only, no authentication and no NetworkPolicy: an accepted risk until NATS-3 (auth) and NATS-4
+# (NetworkPolicy), see the runbook.
+# The stream is not created here: the owner creates it with nats-box (runbook), GitOps creation is NATS-5.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: nats
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://nats-io.github.io/k8s/helm/charts
+    chart: nats
+    targetRevision: 2.15.2
+    helm:
+      valuesObject:
+        # The Service and the pod are named `nats`: nats://nats.bf.svc:4222 is what Debezium and the app will use.
+        fullnameOverride: nats
+        config:
+          # One pod, no cluster (ADR-022: 3 replicas and a replica without a disk are rejected options).
+          cluster:
+            enabled: false
+          jetstream:
+            enabled: true
+            fileStore:
+              pvc:
+                # The stream is a transit buffer (ADR-021, ADR-022): there is no backup, and losing the volume loses
+                # the events not yet read. Retain keeps the volume when the PVC or the Application is deleted; it
+                # then stays, and is billed, until the owner removes it by hand (runbook, Rollback).
+                size: 10Gi
+                storageClassName: do-block-storage-retain
+        container:
+          image:
+            repository: nats
+            tag: 2.15.2-alpine
+          # An assumption, not a measurement: the cluster has no metrics-server. No limits on purpose, so the broker
+          # is not throttled or OOM-killed at a guessed ceiling. Revisit after MON-1.
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+          # The chart has no securityContext value, so this goes through its merge hook. Not set: runAsNonRoot and
+          # a read-only root, because the image user and the volume ownership are not verified without a cluster.
+          merge:
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop: [ALL]
+        reloader:
+          merge:
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop: [ALL]
+        podTemplate:
+          # The merge target is the pod template (metadata and spec), so the pod fields sit under `spec`.
+          merge:
+            spec:
+              # The server and the reloader read the config from a ConfigMap volume and never call the Kubernetes API.
+              automountServiceAccountToken: false
+              securityContext:
+                seccompProfile:
+                  type: RuntimeDefault
+        # The `nats` CLI for the owner's steps (runbook): stream creation and the publish and read check.
+        natsBox:
+          enabled: true
+          container:
+            merge:
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: [ALL]
+          podTemplate:
+            merge:
+              spec:
+                automountServiceAccountToken: false
+                securityContext:
+                  seccompProfile:
+                    type: RuntimeDefault
+        # Metrics wait for MON-1 (ADR-043 item 6): there is no collector to scrape the exporter yet.
+        promExporter:
+          enabled: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: bf
+  syncPolicy:
+    automated:
+      # A chart change never deletes a broker object by itself; removing one is a person's decision.
+      prune: false
+    syncOptions:
+      # The namespace is shared with the apps (ADR-038), so the Application creates it only if it is missing.
+      - CreateNamespace=true
+      - ServerSideApply=true
