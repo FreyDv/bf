@@ -1,0 +1,34 @@
+# Root Application (ADR-019 item 1, ADR-046, backlog ARGOCD-1): ArgoCD reads this directory of the public repository
+# over plain HTTPS (no credentials, runbook docs/runbooks/argocd.md) and applies every Application in it, so adding a
+# file here deploys it. Applied by hand once (ARGOCD-2), together with argo-cd.yaml:
+#   kubectl apply -n argocd -f deploy/argocd/root.yaml -f deploy/argocd/argo-cd.yaml
+#
+# Excluded from the sync:
+# - argocd-values.yaml is a values file, not a Kubernetes object; argo-cd.yaml reads it as a value file.
+# - traefik.yaml still holds the placeholder CERTIFICATE_ID_OF_MALININA_CA: syncing it would create a DigitalOcean load
+#   balancer with a wrong certificate. TRAEFIK-2 removes it from this list in the same commit that sets the real id.
+#
+# No prune and no selfHeal, and no resources-finalizer: deleting this Application must never delete what it deployed,
+# and a mistake in a file here must not remove an object by itself (the same rule as the Applications below it).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: root
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/FreyDv/bf
+    targetRevision: main
+    path: deploy/argocd
+    directory:
+      recurse: false
+      exclude: "{argocd-values.yaml,traefik.yaml}"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: false
+    syncOptions:
+      - ServerSideApply=true

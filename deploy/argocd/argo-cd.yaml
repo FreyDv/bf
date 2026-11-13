@@ -1,0 +1,44 @@
+# ArgoCD managing itself (ADR-019 item 1, ADR-046, backlog ARGOCD-1). Applied by hand once with root.yaml (ARGOCD-2);
+# after that the root Application keeps it in line with this file.
+#
+# Two sources: the chart from the public Helm repository at the pinned version, and this repository as `$values`, so
+# the values live in deploy/argocd/argocd-values.yaml and the bootstrap install reads the same file. `pnpm charts`
+# renders exactly this chart with exactly that file (scripts/charts-check.ts).
+#
+# The release name is `argocd`, as the live Helm release is called, so the rendered objects are the existing ones
+# (argocd-server, argocd-repo-server, ...) and the first sync adopts them instead of creating a second ArgoCD.
+# CRDs are not in the chart's output (crds.install is false in the values file) and are not synced: they are applied by
+# hand, and before every chart bump (runbook docs/runbooks/argocd.md).
+#
+# Chart 10.11.6 (app v3.5.6) is the version the cluster runs; ADR-005's window is long passed. Upgrade = change
+# targetRevision here and apply the CRD step; rollback = git revert. Helm upgrade, rollback and uninstall of the
+# `argocd` release are forbidden from ARGOCD-2 on: the Helm record stays, but ArgoCD owns the objects.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: argo-cd
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://argoproj.github.io/argo-helm
+      chart: argo-cd
+      targetRevision: 10.11.6
+      helm:
+        releaseName: argocd
+        valueFiles:
+          - $values/deploy/argocd/argocd-values.yaml
+    - repoURL: https://github.com/FreyDv/bf
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      # No prune and no selfHeal until the first sync is checked (ARGOCD-2): removing an object of ArgoCD itself, or
+      # undoing a hand fix on it, is a person's decision. No resources-finalizer, so deleting this Application leaves
+      # ArgoCD running.
+      prune: false
+    syncOptions:
+      - ServerSideApply=true
