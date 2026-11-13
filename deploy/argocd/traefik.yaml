@@ -1,0 +1,107 @@
+# Traefik ingress controller (ADR-038, backlog TRAEFIK-1). Applied by hand once, after the certificate id below is filled:
+#   kubectl apply -n argocd -f deploy/argocd/traefik.yaml
+# ArgoCD does not watch this repository yet (ARGOCD-1), so this file is the whole source: the chart comes from the
+# public Helm repository and the values are inline. Steps for the owner (TRAEFIK-2): docs/runbooks/malinina-kubernetes.md,
+# section "Миграция ingress".
+#
+# Chart 42.3.0 (appVersion v3.7.17) was published 2026-11-03. ADR-005 needs 7 full days, so it was usable from
+# 2026-11-10; on 2026-11-12 it is 9 days old. 42.3.1 (2026-11-06) and later have not passed the window. The ADR-034
+# exception does not cover this chart. `pnpm charts` renders exactly this chart with exactly these values
+# (scripts/charts-check.ts).
+#
+# Namespace `traefik`, not `bf`: the controller holds rights over Ingress objects of every namespace and must not sit
+# beside the application pods; the NetworkPolicy of CHART-3 admits ingress from this namespace, and the log collector
+# of OBS-2 lists it next to `bf` and `argocd` (ADR-043).
+#
+# The Service creates a NEW DigitalOcean load balancer with a new IP; the old one stays with ingress-nginx until the
+# owner moves DNS (TRAEFIK-2). TLS ends on the balancer (ADR-037, ADR-038 item 4): it speaks http to the nodes, so
+# the `websecure` entrypoint (port 443 of the balancer) takes plain http and its own TLS is off. The balancer
+# redirects http to https, so `web` never serves a client directly.
+#
+# Not decided here and left at the chart defaults (see the backlog row TRAEFIK-3): Prometheus metrics, the version
+# check, the log format and level, the default IngressClass flag, a PodDisruptionBudget and spreading the two pods
+# over the nodes. The pod hardening needs no value: the chart already drops all capabilities, forbids privilege
+# escalation, mounts the root read-only, runs as non-root with seccomp RuntimeDefault (charts.test.ts pins it).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: traefik
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://traefik.github.io/charts
+    chart: traefik
+    targetRevision: 42.3.0
+    helm:
+      valuesObject:
+        deployment:
+          # The same count as ingress-nginx had: one pod can be drained or restarted without an outage. Rate limits
+          # are counted per replica (ADR-037), so two replicas double the effective limit (INGRESS-1).
+          replicas: 2
+        # An assumption, not a measurement: the cluster has no metrics-server. No limits on purpose, so the edge is
+        # not throttled or OOM-killed at a guessed ceiling. Revisit after MON-1.
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+        ports:
+          web:
+            # Only the load balancer's VPC (default-tor1) may set X-Forwarded-* (ADR-038 item 6). PROXY protocol
+            # stays off. What the rate limit counts out of X-Forwarded-For is INGRESS-1.
+            forwardedHeaders:
+              trustedIPs:
+                - 10.118.0.0/20
+            http:
+              # <namespace>-<name>@kubernetescrd: the Middleware under extraObjects below. On the entrypoint, so
+              # answers with no matching route (404) carry the headers too (ADR-038 item 5).
+              middlewares:
+                - traefik-security-headers@kubernetescrd
+          websecure:
+            forwardedHeaders:
+              trustedIPs:
+                - 10.118.0.0/20
+            http:
+              middlewares:
+                - traefik-security-headers@kubernetescrd
+              # The balancer terminates TLS and sends http to this port, but the chart expects TLS here by default.
+              tls:
+                enabled: false
+        service:
+          annotations:
+            # The id of the certificate `malinina-ca`, an identifier and not a secret. The owner replaces the
+            # placeholder before the apply (runbook, step 1 of the migration) and commits the real id.
+            service.beta.kubernetes.io/do-loadbalancer-certificate-id: CERTIFICATE_ID_OF_MALININA_CA
+            service.beta.kubernetes.io/do-loadbalancer-protocol: http
+            service.beta.kubernetes.io/do-loadbalancer-tls-ports: "443"
+            service.beta.kubernetes.io/do-loadbalancer-redirect-http-to-https: "true"
+        # The chart does not render a Middleware itself. If the first sync fails because this object reaches the
+        # cluster before the chart's CRDs, the fallback is `providers.file` with the same headers (owner decision
+        # 2026-11-12, no new ADR).
+        extraObjects:
+          - apiVersion: traefik.io/v1alpha1
+            kind: Middleware
+            metadata:
+              name: security-headers
+              namespace: traefik
+            spec:
+              headers:
+                # HSTS is right although Traefik sees http: the balancer redirects http to https, so a client never
+                # gets this header over http. The chart's default sends it on TLS requests only, hence the force.
+                # No preload and no includeSubDomains until the whole domain is known to be served over https.
+                stsSeconds: 31536000
+                forceSTSHeader: true
+                contentTypeNosniff: true
+                referrerPolicy: strict-origin-when-cross-origin
+                # X-Frame-Options: DENY; nobody frames the page (ADR-038 item 5).
+                frameDeny: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: traefik
+  syncPolicy:
+    automated:
+      # A chart change never deletes an edge object by itself; removing one is a person's decision.
+      prune: false
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

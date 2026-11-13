@@ -2,6 +2,7 @@
 // Runs `helm template`, so Helm is a local requirement (AGENTS.md).
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, it } from 'node:test';
 import { readChartApplications, renderApplication } from './lib/argocd-application.ts';
@@ -103,6 +104,14 @@ describe('app chart: secret hash in the Deployment', () => {
   });
 });
 
+describe('app chart: ingress', () => {
+  it('points an enabled ingress at the Traefik class unless told otherwise (ADR-038)', () => {
+    assert.match(find(render([full]), 'Ingress'), /ingressClassName: traefik\n/);
+    const other = find(render([full], ['ingress.className=other']), 'Ingress');
+    assert.match(other, /ingressClassName: other\n/);
+  });
+});
+
 describe('app chart: what it refuses', () => {
   it('refuses a missing image tag', () => {
     assert.match(renderFails([minimal], ['image.tag=']), /image\.tag is required/);
@@ -192,5 +201,81 @@ describe('nats Application (ADR-022, backlog NATS-1)', () => {
     assert.match(spec, /automountServiceAccountToken: false/);
     assert.match(spec, /seccompProfile:\n\s+type: RuntimeDefault/);
     assert.match(spec, /allowPrivilegeEscalation: false/);
+  });
+});
+
+describe('traefik Application (ADR-038, backlog TRAEFIK-1)', () => {
+  const [app] = readChartApplications(`${deploy}/argocd`).filter(
+    (item) => item.chart === 'traefik',
+  );
+  const source = readFileSync(`${deploy}/argocd/traefik.yaml`, 'utf8');
+  const middleware = 'traefik-security-headers@kubernetescrd';
+
+  it('pins an exact chart version and installs into its own namespace', () => {
+    assert.ok(app, 'deploy/argocd has a traefik Application');
+    assert.match(app.version, /^\d+\.\d+\.\d+$/);
+    assert.equal(app.namespace, 'traefik');
+    assert.match(source, /- CreateNamespace=true/);
+  });
+
+  it('runs two replicas with requests and no limits, under the chart default hardening', () => {
+    const set = find(renderApplication(app), 'Deployment');
+    assert.match(set, /\n {2}replicas: 2\n/);
+    assert.match(
+      set,
+      /resources:\n\s+requests:\n\s+cpu: 100m\n\s+memory: 128Mi\n\s+securityContext:/,
+    );
+    assert.match(set, /allowPrivilegeEscalation: false/);
+    assert.match(set, /readOnlyRootFilesystem: true/);
+    assert.match(set, /runAsNonRoot: true/);
+    assert.match(set, /seccompProfile:\n\s+type: RuntimeDefault/);
+    assert.doesNotMatch(set, /--accesslog/, 'access logs stay off (ADR-043 item 4)');
+  });
+
+  it('trusts X-Forwarded-* only from the VPC and sets no PROXY protocol, on both entrypoints', () => {
+    const args = find(renderApplication(app), 'Deployment');
+    for (const entrypoint of ['web', 'websecure']) {
+      assert.ok(
+        args.includes(`--entryPoints.${entrypoint}.forwardedHeaders.trustedIPs=10.118.0.0/20`),
+        `${entrypoint} trusts the VPC range`,
+      );
+    }
+    assert.doesNotMatch(args, /proxyProtocol/);
+    assert.doesNotMatch(args, /forwardedHeaders\.insecure/);
+  });
+
+  it('takes plain http from the balancer on websecure and attaches the headers to both entrypoints', () => {
+    const args = find(renderApplication(app), 'Deployment');
+    assert.doesNotMatch(args, /--entryPoints\.websecure\.http\.tls/);
+    for (const entrypoint of ['web', 'websecure']) {
+      assert.ok(args.includes(`--entryPoints.${entrypoint}.http.middlewares=${middleware}`));
+    }
+  });
+
+  it('renders the headers Middleware that the entrypoints name, with the values of ADR-038', () => {
+    const found =
+      docs(renderApplication(app)).find(
+        (doc) => kindOf(doc) === 'Middleware' && /name: security-headers/.test(doc),
+      ) ?? '';
+    assert.match(found, /namespace: traefik\n/);
+    assert.match(found, /stsSeconds: 31536000/);
+    assert.match(found, /forceSTSHeader: true/);
+    assert.match(found, /contentTypeNosniff: true/);
+    assert.match(found, /referrerPolicy: strict-origin-when-cross-origin/);
+    assert.match(found, /frameDeny: true/);
+    assert.doesNotMatch(found, /stsPreload|stsIncludeSubdomains/);
+  });
+
+  it('asks DigitalOcean for TLS on the balancer, http behind it and a redirect', () => {
+    const service = find(renderApplication(app), 'Service');
+    assert.match(service, /type: LoadBalancer/);
+    assert.match(service, /do-loadbalancer-certificate-id: \S+/);
+    assert.match(service, /do-loadbalancer-protocol: http\n/);
+    assert.match(service, /do-loadbalancer-tls-ports: "443"/);
+    assert.match(service, /do-loadbalancer-redirect-http-to-https: "true"/);
+  });
+
+  it('serves the IngressClass that the app chart names by default', () => {
+    assert.match(find(renderApplication(app), 'IngressClass'), /\n {2}name: traefik\n/);
   });
 });
