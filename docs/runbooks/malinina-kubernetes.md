@@ -1,7 +1,8 @@
 # Runbook: malinina (DO Kubernetes)
 
 Serves: владелец-оператор и агент, действующий за него. Снимок состояния на 2026-11-11 - чтобы кластер можно было
-сверить и восстановить (ADR-017, backlog RUNBOOK-1). База - отдельно: [bfdb-postgres.md](bfdb-postgres.md).
+сверить и восстановить (ADR-017, backlog RUNBOOK-1). База - отдельно: [bfdb-postgres.md](bfdb-postgres.md); хранилище -
+[spaces.md](spaces.md); ArgoCD - [argocd.md](argocd.md); потеря кластера - [recovery.md](recovery.md).
 
 Источники: `doctl kubernetes | compute | projects | registry` и `kubectl get` / `helm list` (контекст `do-tor1-malinina`),
 только чтение; содержимое Secret не читалось.
@@ -32,6 +33,27 @@ Serves: владелец-оператор и агент, действующий 
 | DNS | зона `malinina.ca` на DO (NS `ns1-3.digitalocean.com`): A `@` и A `*` на `209.38.12.89`, ещё один A `@` на тот же адрес (дубль), AAAA `@` на IPv6 балансировщика; AAAA для `*` нет |
 | Ingress | `ingress-nginx` 4.15.1 (контроллер v1.15.1, 2 реплики, `IngressClass nginx`), Helm-релиз ревизия 3, `deployed`, поставлен 2026-11-03; снят с поддержки, заменяется Traefik (ADR-038) |
 
+Эта таблица - снимок 2026-11-11 **до TRAEFIK-1**. Миграция создаёт новый балансировщик (новые id, IP и NodePort) и удаляет старый, после
+неё таблица устарела и заменяется состоянием ниже (в DoD TRAEFIK-1: «runbook обновлён»).
+
+#### Целевое состояние после TRAEFIK-1 (ADR-038)
+
+| Что | Значение |
+|---|---|
+| Балансировщик | создаёт Service Traefik; id и IP новые, записываются после миграции |
+| Аннотации Service | id сертификата `malinina-ca`, протокол `http`, TLS-порт 443, редирект http -> https (ADR-038 п. 4; точные имена аннотаций - в манифесте TRAEFIK-1) |
+| Доверенные адреса | `forwardedHeaders.trustedIPs` = `10.118.0.0/20` (VPC `default-tor1`), IP клиента из `X-Forwarded-For` (ADR-038 п. 6) |
+| TLS | завершается на балансировщике, внутри кластера http (ADR-037, Transport); срок и продление сертификата - CERT-1 |
+| DNS | A `@` и A `*` на новый IP, дубль A `@` удаляется на шаге 4 миграции (ниже), AAAA `@` - на новый IPv6 или удаляется |
+
+Проверки владельца (RUNBOOK-2), только чтение; результат - в строку RUNBOOK-2 и, после миграции, в таблицу выше:
+
+- Тип сертификата и полный id: `doctl compute certificate list --format ID,Name,Type,DNSNames,NotAfter,State` (колонка `Type` отличает `lets_encrypt` от `custom`). Верен ли вывод о продлении - CERT-1.
+- Балансировщик: `doctl compute load-balancer get c2cd5d8d-b9b0-4010-9e79-14e8714bd702 -o json` - правила, цели, проба, редирект совпадают с таблицей выше.
+- DNS: `doctl compute domain records list malinina.ca --format ID,Type,Name,Data,TTL` - дубль A `@` на месте.
+- Делегирование зоны у регистратора: `dig NS malinina.ca +short` - `ns1-3.digitalocean.com`.
+- Кластер: `doctl kubernetes cluster get 6269b383-1fee-4f12-b7b2-6b49f4264c26 -o json` - автообновление, окно обслуживания и его часовой пояс.
+
 ### Что работает в кластере
 
 | Namespace | Содержимое |
@@ -47,19 +69,19 @@ Serves: владелец-оператор и агент, действующий 
 
 | # | Находка | Почему важно | Куда |
 |---|---|---|---|
-| 1 | ArgoCD был в `pending-install`; исправлено 2026-11-11 (ниже) | ArgoCD работает, но ещё не управляет собой из `deploy/argocd/` (ADR-019 п. 1), нет приложений, репозитория и доступа к UI; начальный пароль `argocd-initial-admin-secret` не сменён | RUNBOOK-1 |
+| 1 | ArgoCD был в `pending-install`; исправлено 2026-11-11 (ниже) | ArgoCD работает, но ещё не управляет собой из `deploy/argocd/` (ADR-019 п. 1), нет приложений, репозитория и доступа к UI; начальный пароль `argocd-initial-admin-secret` не сменён | пароль - [argocd.md](argocd.md) (RUNBOOK-2); самоуправление - ARGOCD-1 |
 | 2 | У `bfdb` не было доверенных источников; с 2026-11-11 разрешены кластер и адрес владельца | узлы кластера имеют публичные IP, но база пускает их по правилу `k8s` | DBSEC-1 закрыт ([bfdb-postgres.md](bfdb-postgres.md)) |
 | 3 | Control plane без HA, 3 узла без автомасштабирования | сбой control plane останавливает управление кластером, работающие поды живут; при росте нагрузки узлы не добавятся | решение при росте (бюджет, BUDGET-1) |
-| 4 | Автообновление выключено | версия кластера устареет, обновление - ручное в окно обслуживания | RUNBOOK-1 |
+| 4 | Автообновление выключено | версия кластера устареет, обновление - ручное в окно обслуживания | решено: остаётся выключенным, процедура ниже («Обновление кластера вручную») |
 | 5 | Нет metrics-server | не работают `kubectl top` и автомасштабирование подов | при появлении нагрузки |
-| 6 | Дубль A-записи `@` в DNS | безвреден, но лишний; удалять - действие в консоли DO | RUNBOOK-1 |
+| 6 | Дубль A-записи `@` в DNS | безвреден, но лишний; удалять - действие в консоли DO | решено: удаляется на шаге 4 миграции TRAEFIK-1, не раньше |
 | 7 | TLS завершается на балансировщике, внутри кластера http | трафик LB -> узел внутри VPC без шифрования; риск принят в ADR-037; ingress-контроллер, заголовки и IP клиента решены в ADR-038: `ingress-nginx` снят с поддержки и заменяется Traefik (миграция ниже), срок сертификата - CERT-1 | ADR-037, ADR-038, TRAEFIK-1, CERT-1 |
-| 8 | Spaces не видны через `doctl` | нужны отдельные ключи Spaces; состояние бакетов не проверено | ADR-042 (решение), RUNBOOK-1 |
+| 8 | Spaces не видны через `doctl` | нужны отдельные ключи Spaces; состояние бакетов не проверено | ADR-042 (решение), [spaces.md](spaces.md), проверки - RUNBOOK-2 |
 
 ## Не проверено
 
-- Spaces: имена бакетов, регион, права, ключи.
-- Автопродление сертификата и делегирование зоны у регистратора домена.
+- Spaces: имена бакетов, регион, права, ключи ([spaces.md](spaces.md), проверки владельца, RUNBOOK-2).
+- Автопродление сертификата (CERT-1) и делегирование зоны у регистратора домена (проверки владельца в разделе «Вход в кластер»).
 - Часовой пояс окна обслуживания, расход ресурсов узлов (нет metrics-server).
 - Sealed Secrets: чарт отрисован `helm template` (`pnpm charts`), на кластере не ставился; команды раздела ниже не выполнялись; поведение контроллера при `--key-renew-period 0` (число ключей после перезапуска) взято из README апстрима.
 - NATS: чарт отрисован `helm template` (`pnpm charts`), на кластере не ставился; команды раздела ниже не выполнялись, включая флаги `nats stream add`; запуск образа с `drop: [ALL]` и без `runAsNonRoot` на томе DO не проверен; размеры стрима и requests - допущения без замеров.
@@ -98,7 +120,7 @@ Chart берётся командами `helm repo add argo https://argoproj.git
 1. Полный id сертификата: `doctl compute certificate list --format ID,Name,DNSNames,NotAfter,State` - строка `malinina-ca`. Он нужен для аннотации `service.beta.kubernetes.io/do-loadbalancer-certificate-id` на Service Traefik (вместе с протоколом `http`, TLS-портом 443 и редиректом http -> https, как на старом балансировщике: `doctl compute load-balancer get c2cd5d8d-b9b0-4010-9e79-14e8714bd702`).
 2. Новый адрес: `kubectl -n <namespace Traefik> get svc` (поле `EXTERNAL-IP`), `doctl compute load-balancer list --format ID,Name,IP,Status`; дождаться `active`.
 3. Проверка до DNS, мимо него: `curl -sI --resolve malinina.ca:443:<новый IP> https://malinina.ca/` (404 от Traefik, пока приложений нет; в ответе `Strict-Transport-Security`, `X-Content-Type-Options`, `Referrer-Policy`, `X-Frame-Options`) и `curl -sI --resolve malinina.ca:80:<новый IP> http://malinina.ca/` (редирект на https).
-4. DNS: `doctl compute domain records list malinina.ca --format ID,Type,Name,Data,TTL`; для каждой записи A `@` и A `*` - `doctl compute domain records update malinina.ca --record-id <id> --record-data <новый IP>`; AAAA `@` - на IPv6 нового балансировщика (`doctl compute load-balancer get <id> -o json`) или удалить. Дубль A `@` убирается здесь же (RUNBOOK-1).
+4. DNS: `doctl compute domain records list malinina.ca --format ID,Type,Name,Data,TTL`; для каждой записи A `@` и A `*` - `doctl compute domain records update malinina.ca --record-id <id> --record-data <новый IP>`; AAAA `@` - на IPv6 нового балансировщика (`doctl compute load-balancer get <id> -o json`) или удалить. Дубль A `@` убирается здесь же (находка 6).
 5. Дождаться TTL и сверить: `dig +short malinina.ca`, `dig +short anything.malinina.ca` отдают новый IP.
 6. Убрать старый контроллер: `helm -n ingress-nginx uninstall ingress-nginx`; DO удалит старый балансировщик (проверка: `doctl compute load-balancer list`). Namespace `ingress-nginx` удалить вручную, когда пуст.
 
@@ -117,7 +139,7 @@ Chart берётся командами `helm repo add argo https://argoproj.git
 ### Установка (SEALED-2)
 
 1. Предусловия, всё только чтение: `kubectl -n kube-system get secret -l sealedsecrets.bitnami.com/sealed-secrets-key` - пусто (если ключи есть, контроллер подхватит их; не ставить и сообщить агенту: ADR-020 говорит о «существующей паре»); `kubectl -n kube-system get deploy,svc,sa sealed-secrets-controller` - `NotFound` (имя не занято компонентом DO).
-2. Первый и единственный ручной шаг: `kubectl apply -n argocd -f deploy/argocd/sealed-secrets.yaml` (ArgoCD репозиторий не смотрит, RUNBOOK-1).
+2. Первый и единственный ручной шаг: `kubectl apply -n argocd -f deploy/argocd/sealed-secrets.yaml` (ArgoCD репозиторий не смотрит, ARGOCD-1).
 3. Дождаться: `kubectl -n argocd get application sealed-secrets` - `Synced` и `Healthy`; `kubectl -n kube-system rollout status deploy/sealed-secrets-controller`; `kubectl get crd sealedsecrets.bitnami.com`.
 4. Автообновление выключено: `kubectl -n kube-system get deploy sealed-secrets-controller -o jsonpath='{.spec.template.spec.containers[0].args}'` содержит `--key-renew-period` и `0`.
 5. Ключ создан: `kubectl -n kube-system get secret -l sealedsecrets.bitnami.com/sealed-secrets-key --no-headers` - одна строка. Перезапустить `kubectl -n kube-system rollout restart deploy/sealed-secrets-controller`, дождаться `rollout status` и посчитать снова: должна остаться одна. Если стало две - апстрим создаёт ключ при каждом старте, сообщить агенту (меняется ADR-045 и порядок копии).
@@ -176,7 +198,7 @@ Chart берётся командами `helm repo add argo https://argoproj.git
 ### Установка (NATS-2)
 
 1. Предусловия, только чтение: `kubectl -n bf get sts,svc,pvc -l app.kubernetes.io/name=nats` - пусто; `kubectl get sc do-block-storage-retain` существует. Контроллер Sealed Secrets для NATS не нужен.
-2. Единственный ручной шаг: `kubectl apply -n argocd -f deploy/argocd/nats.yaml` (ArgoCD репозиторий не смотрит, RUNBOOK-1). Namespace `bf` создаётся, если его нет.
+2. Единственный ручной шаг: `kubectl apply -n argocd -f deploy/argocd/nats.yaml` (ArgoCD репозиторий не смотрит, ARGOCD-1). Namespace `bf` создаётся, если его нет.
 3. Дождаться: `kubectl -n argocd get application nats` - `Synced` и `Healthy`; `kubectl -n bf rollout status sts/nats`; `kubectl -n bf get pods,pvc -l app.kubernetes.io/name=nats` - под `nats-0` в `2/2 Running`, PVC `Bound` (10Gi, `do-block-storage-retain`), под `nats-box` в `Running`. Если под в `CrashLoopBackOff`: `kubectl -n bf logs nats-0 -c nats`; вероятная причина - права на том (см. «Что принято», жёсткость пода): сообщить агенту, не править руками.
 4. JetStream включён: `kubectl -n bf exec deploy/nats-box -- nats server check jetstream` или `nats account info` - JetStream включён, лимит хранилища 10 GiB (контекст `default` смотрит на сервис `nats`; если нет - `nats -s nats://nats:4222 ...`).
 5. Создать стрим (флаги по документации `nats` CLI, не запускались; при отказе сверить с `nats stream add --help` и сообщить агенту):
@@ -193,6 +215,20 @@ Chart берётся командами `helm repo add argo https://argoproj.git
 - Смена лимитов стрима: `nats stream edit BF ...`; смена размера тома или requests - значения в `deploy/argocd/nats.yaml` и повторное применение. Сужение subjects - CDC-2.
 - Обновление: чарт и образ - новая версия в `targetRevision` и `container.image.tag` одним коммитом, не раньше чем через 7 дней после выхода (ADR-005); данные на томе остаются, пока под перезапускается (простой, пока он не поднялся: Debezium стоит, слот копит WAL, ADR-021).
 
+## Обновление кластера вручную
+
+Автообновление остаётся выключенным (решение владельца 2026-11-12): control plane без HA и нет проверенного восстановления
+([recovery.md](recovery.md)), поэтому версию меняет человек в окно обслуживания. Команды ниже не выполнялись.
+
+1. Раз в месяц: `doctl kubernetes cluster get malinina --format Name,Version` и `doctl kubernetes options versions` - есть ли более новая
+   патч-версия или конец поддержки текущей; смотреть заметки к выпуску DO.
+2. Перед обновлением: `kubectl get pods -A` без ошибок; если на кластере появились тома или состояние (NATS), решить, что случится
+   с ними при замене узлов (surge-обновление включено, узлы заменяются по одному).
+3. `doctl kubernetes cluster upgrade malinina --version <версия>`; на время обновления control plane API кластера может быть недоступен
+   (HA нет, длительность не проверена), работающие поды живут.
+4. После: `kubectl get nodes -o wide` (все узлы `Ready` на новой версии), `kubectl -n argocd get applications`, `helm list -A`.
+5. Решение о включении автообновления - отдельная запись, после BACKUP-1.
+
 ## Diagnose
 
 - Кластер: `doctl kubernetes cluster get malinina`; узлы: `kubectl get nodes -o wide`.
@@ -203,4 +239,4 @@ Chart берётся командами `helm repo add argo https://argoproj.git
 
 ## Rollback
 
-Для кластера отката нет: изменения идут через Helm и ArgoCD (ADR-019), откат - предыдущая ревизия в git. Что делать при потере кластера - порядок восстановления в RUNBOOK-1 (ещё не записан).
+Для кластера отката нет: изменения идут через Helm и ArgoCD (ADR-019), откат - предыдущая ревизия в git. Что делать при потере кластера - порядок восстановления в [recovery.md](recovery.md).
