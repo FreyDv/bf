@@ -60,10 +60,11 @@ Serves: владелец-оператор и агент, действующий 
 |---|---|
 | `ingress-nginx` | контроллер (2 пода) - работает |
 | `kube-system` | компоненты DO: Cilium, CoreDNS, Hubble, CSI, konnectivity, агенты - работают |
-| `argocd` | ArgoCD работает с 2026-11-11: Helm-релиз `argocd` (chart argo-cd 10.11.6, app v3.5.6) `deployed`; Deployment: server 2, repo-server 2, applicationset-controller, dex-server, notifications-controller, redis; StatefulSet application-controller; есть только `AppProject default`, приложений нет, репозиторий и доступ к UI не настроены |
+| `argocd` | ArgoCD работает с 2026-11-11: Helm-релиз `argocd` (chart argo-cd 10.11.6, app v3.5.6) `deployed`; Deployment: server 2, repo-server 2, applicationset-controller, dex-server, notifications-controller, redis; StatefulSet application-controller; есть только `AppProject default`; с 2026-11-13 управляет собой и Application из `deploy/argocd/` (`root`, `argo-cd`, `sealed-secrets`, `nats`; ARGOCD-2), UI - через port-forward |
+| `bf` | NATS JetStream с 2026-11-13: `nats-0` (2/2), `nats-box`, PVC `nats-js-nats-0` 10Gi, стрим `BF` (NATS-2) |
 | `default` | пусто |
 
-Не установлено: Sealed Secrets (файлы готовы, установка - SEALED-2), NATS (файлы готовы, установка - NATS-2), Debezium (CDC-2), Loki и Grafana (OBS-2), чарт `app` (CHART-1), приложения.
+Контроллер Sealed Secrets работает в `kube-system` с 2026-11-13, сертификата и копии ключа ещё нет (SEALED-2). Не установлено: Debezium (CDC-2), Loki и Grafana (OBS-2), чарт `app` (CHART-1), приложения.
 
 ## Что видно и требует решения
 
@@ -84,7 +85,7 @@ Serves: владелец-оператор и агент, действующий 
 - Автопродление сертификата (CERT-1) и делегирование зоны у регистратора домена (проверки владельца в разделе «Вход в кластер»).
 - Часовой пояс окна обслуживания, расход ресурсов узлов (нет metrics-server).
 - Sealed Secrets: чарт отрисован `helm template` (`pnpm charts`), на кластере не ставился; команды раздела ниже не выполнялись; поведение контроллера при `--key-renew-period 0` (число ключей после перезапуска) взято из README апстрима.
-- NATS: чарт отрисован `helm template` (`pnpm charts`), на кластере не ставился; команды раздела ниже не выполнялись, включая флаги `nats stream add`; запуск образа с `drop: [ALL]` и без `runAsNonRoot` на томе DO не проверен; размеры стрима и requests - допущения без замеров.
+- NATS: установлен и проверен 2026-11-13 (NATS-2), под с `drop: [ALL]` и без `runAsNonRoot` на томе DO работает; размеры стрима и requests - допущения без замеров.
 - Traefik: чарт отрисован `helm template` (`pnpm charts`), на кластере не ставился; команды раздела «Миграция ingress» не выполнялись. Не видно без кластера: порядок синка Middleware и CRD, доходит ли http с балансировщика на `websecure` при `tls.enabled=false`, значения DO-аннотаций на новом Service, видит ли Traefik IP клиента (INGRESS-1); requests подов - допущение без замеров.
 - Откуда взялась ревизия 3 у `ingress-nginx` и какие значения чарта заданы (`helm get values`).
 
@@ -166,15 +167,15 @@ Chart берётся командами `helm repo add argo https://argoproj.git
 
 ## NATS JetStream: установка, стрим, проверка (ADR-022)
 
-Команды ниже не выполнялись: живой кластер агент не трогает, их запускает владелец. Файл: `deploy/argocd/nats.yaml` (чарт `nats` 2.15.2 из `https://nats-io.github.io/k8s/helm/charts`, appVersion 2.15.2, образ `nats:2.15.2-alpine`, namespace `bf`). Адрес для Debezium и приложения: `nats://nats.bf.svc:4222`.
+Команды ниже выполнены владельцем на `malinina` 2026-11-13 (NATS-2); для нового кластера - тот же порядок. Файл: `deploy/argocd/nats.yaml` (чарт `nats` 2.15.2 из `https://nats-io.github.io/k8s/helm/charts`, appVersion 2.15.2, образ `nats:2.15.2-alpine`, namespace `bf`). Адрес для Debezium и приложения: `nats://nats.bf.svc:4222`.
 
 | Что | Значение |
 |---|---|
-| Сервер | не установлен (NATS-2) |
+| Сервер | работает с 2026-11-13, NATS 2.15.2, `nats-0` (NATS-2) |
 | Состав | StatefulSet `nats` (1 под: сервер и reloader), Service `nats` (ClusterIP, 4222), Deployment `nats-box` (клиент `nats`), PodDisruptionBudget; кластера NATS нет, метрик нет (`promExporter` выключен до MON-1) |
 | Образы | `nats:2.15.2-alpine`; `natsio/nats-server-config-reloader` и `natsio/nats-box` - теги, которые несёт чарт 2.15.2; при смене чарта меняются вместе |
 | Том | PVC `nats-js-nats-0`, 10Gi, StorageClass `do-block-storage-retain`, без снимков и бэкапа |
-| Стрим | не создан; создаёт владелец (шаг 5), создание из git - NATS-5 |
+| Стрим | `BF` создан владельцем 2026-11-13 (шаг 5); создание из git - NATS-5 |
 
 ### Что принято
 
@@ -201,14 +202,14 @@ Chart берётся командами `helm repo add argo https://argoproj.git
 1. Предусловия, только чтение: `kubectl -n bf get sts,svc,pvc -l app.kubernetes.io/name=nats` - пусто; `kubectl get sc do-block-storage-retain` существует. Контроллер Sealed Secrets для NATS не нужен.
 2. Ручного шага нет: Application применяет корневое (ADR-046); на `malinina` его развернул первый синк корня 2026-11-13 (ARGOCD-2). На кластере без корня - `kubectl apply -n argocd -f deploy/argocd/nats.yaml`. Namespace `bf` создаётся, если его нет.
 3. Дождаться: `kubectl -n argocd get application nats` - `Synced` и `Healthy`; `kubectl -n bf rollout status sts/nats`; `kubectl -n bf get pods,pvc -l app.kubernetes.io/name=nats` - под `nats-0` в `2/2 Running`, PVC `Bound` (10Gi, `do-block-storage-retain`), под `nats-box` в `Running`. Если под в `CrashLoopBackOff`: `kubectl -n bf logs nats-0 -c nats`; вероятная причина - права на том (см. «Что принято», жёсткость пода): сообщить агенту, не править руками.
-4. JetStream включён: `kubectl -n bf exec deploy/nats-box -- nats server check jetstream` или `nats account info` - JetStream включён, лимит хранилища 10 GiB (контекст `default` смотрит на сервис `nats`; если нет - `nats -s nats://nats:4222 ...`).
-5. Создать стрим (флаги по документации `nats` CLI, не запускались; при отказе сверить с `nats stream add --help` и сообщить агенту):
-   `kubectl -n bf exec deploy/nats-box -- nats stream add BF --subjects 'BF.>,bf.>' --storage file --retention limits --replicas 1 --max-age 7d --max-bytes 6GiB --max-msgs -1 --max-msg-size -1 --max-msgs-per-subject -1 --max-consumers -1 --discard old --defaults`
-   Проверка: `kubectl -n bf exec deploy/nats-box -- nats stream info BF` - те же subjects, лимиты, `Replicas: 1`, хранение `File`.
+4. JetStream включён: `kubectl -n bf exec deploy/nats-box -- nats account info` - есть раздел `JetStream Account Information`. Лимит 10 GiB задан на сервере (`max_file_store` в ConfigMap `nats-config`), а у аккаунта `$G` `Storage` показан как `Unlimited` - это ожидаемо (контекст `default` смотрит на сервис `nats`; если нет - `nats -s nats://nats:4222 ...`).
+5. Создать стрим (значения через `=`: с пробелом CLI принимает `-1` за флаг и падает с `expected argument for flag '--max-msgs'`):
+   `kubectl -n bf exec deploy/nats-box -- nats stream add BF --subjects='BF.>,bf.>' --storage=file --retention=limits --replicas=1 --max-age=7d --max-bytes=6GiB --max-msgs=-1 --max-msg-size=-1 --max-msgs-per-subject=-1 --max-consumers=-1 --discard=old --defaults`
+   Команда сама печатает конфигурацию стрима (или `nats stream info BF`): subjects `BF.>`, `bf.>`, `Replicas: 1`, `File`, `Limits`, `Old`, 7 дней, 6.0 GiB, остальное без ограничений.
 6. Публикация и чтение: `kubectl -n bf exec deploy/nats-box -- nats pub BF.TEST.SMOKE.OK hello`, затем `kubectl -n bf exec deploy/nats-box -- nats stream get BF --last-for BF.TEST.SMOKE.OK` - то же сообщение.
 7. Перезапуск не теряет данные: `kubectl -n bf delete pod nats-0`, дождаться `kubectl -n bf rollout status sts/nats`, повторить `nats stream get` из шага 6 - сообщение на месте.
 8. Убрать пробу: `kubectl -n bf exec deploy/nats-box -- nats stream purge BF --subject BF.TEST.SMOKE.OK -f`.
-9. Сообщить результат (шаги 1-8, версия, размер тома) в строке NATS-2: по нему строка закрывается, CDC-2 разблокируется.
+9. Сообщить результат (шаги 1-8, версия, размер тома) агенту: на `malinina` выполнено 2026-11-13, NATS-2 закрыта.
 
 ### Откат и сопровождение
 
