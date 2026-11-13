@@ -10,6 +10,9 @@ metadata:
   name: {{ $name }}
   labels:
     {{- include "app.labels" $ | nindent 4 }}
+  annotations:
+    # After the migration Job, like the Deployment (ADR-047).
+    argocd.argoproj.io/sync-wave: "1"
 spec:
   schedule: {{ required "cronJobs[].schedule is required" .schedule | quote }}
   concurrencyPolicy: {{ .concurrencyPolicy | default "Forbid" }}

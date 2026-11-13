@@ -6,8 +6,11 @@ metadata:
   labels:
     {{- include "app.labels" . | nindent 4 }}
   annotations:
-    # Runs before the new version is synced; a failure stops the sync and the running version stays (ADR-019).
-    argocd.argoproj.io/hook: PreSync
+    # A Sync hook on wave 0, between the secret and ServiceAccount (wave -1) and the workloads (wave 1).
+    # Not PreSync: that phase runs before the Sync phase, so nothing of wave -1 would exist yet (ADR-047).
+    # A failure stops the sync before wave 1, so the running version stays (ADR-019).
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/sync-wave: "0"
     argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
 spec:
   backoffLimit: {{ .Values.migration.backoffLimit }}

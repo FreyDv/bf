@@ -1,5 +1,5 @@
 apiVersion: v2
 name: app
-description: 'Shared chart for every application of the monorepo (ADR-019): a Deployment, optional CronJobs, a Pre-sync migration Job and a SealedSecret.'
+description: 'Shared chart for every application of the monorepo (ADR-019): a Deployment, optional CronJobs, a migration Job (a Sync hook, ADR-047) and a SealedSecret.'
 type: application
 version: 0.1.0

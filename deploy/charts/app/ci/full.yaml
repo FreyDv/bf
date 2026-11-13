@@ -1,4 +1,4 @@
-# Every feature on: sealed secret, ingress, cron jobs and the Pre-sync migration Job.
+# Every feature on: sealed secret, ingress, cron jobs and the migration Job.
 image:
   repository: ghcr.io/example/app
   tag: 0123456789abcdef0123456789abcdef01234567
