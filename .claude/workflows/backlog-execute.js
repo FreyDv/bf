@@ -39,7 +39,8 @@ const RULES = `Hard rules for this run:
 - You cannot ask the owner. A choice the decisions do not cover is not yours: stop that part and list it in "needsOwner".
 - Work only on branch ${branch}. Never push, never open or merge a PR, never switch branches, never rewrite history.
 - Commits: Conventional Commits, one logical change each, ASCII hyphen only, NO AI or tool attribution, never --no-verify.
-- Never write to a remote database or a live cluster/cloud account; deliver a file instead. No new dependency unless
+- Never write to a remote database or the DO account beyond the cluster; deliver a file instead. The cluster itself
+  is not production (ADR-059): kubectl, helm, argocd, kubeseal are allowed, desired state still goes through deploy/. No new dependency unless
   a decision above names it and its ADR is part of this change.
 - Do not write specs/**/spec.md or docs/discovery/** - the orchestrator owns those (elicitation guard).
 - Never edit docs/standards/vendor/** or a vendored file; never loosen .dependency-cruiser.mjs.
