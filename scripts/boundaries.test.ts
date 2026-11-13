@@ -136,13 +136,17 @@ const files: Record<string, string> = {
     exports: {
       './core': './dist/core/index.js',
       './zod': './dist/zod/index.js',
+      './drizzle': './dist/drizzle/index.js',
     },
   }),
   'packages/query-filter/dist/core/index.js': 'export const Op = 1;',
   'packages/query-filter/dist/zod/index.js': 'export const toZod = 1;',
+  'packages/query-filter/dist/drizzle/index.js': 'export const compile = 1;',
   'packages/query-filter/src/core/index.ts': 'export const Op = 1;',
   'packages/query-filter/src/core/limits.test.ts':
     "import { it } from 'vitest';\nimport { Op } from './index.js';\nexport const t = [it, Op];",
+  'packages/query-filter/src/drizzle/binding.test.ts':
+    "import { it } from 'vitest';\nimport pg from 'pg';\nimport { sql } from 'drizzle-orm';\nimport { Op } from '../core/index.js';\nexport const t = [it, pg, sql, Op];",
   'packages/query-filter/src/zod/to-zod.ts':
     "import { z } from 'zod';\nimport { Op } from '../core/index.js';\nexport const a = [z, Op];",
   'packages/query-filter/src/zod/to-zod.test.ts':
@@ -189,7 +193,44 @@ const files: Record<string, string> = {
   'packages/query-filter/src/zod/bad-drizzle-entry.ts':
     "import { a } from '../drizzle/compile.js';\nexport const b = a;",
   'packages/query-filter/src/drizzle/compile.ts':
-    "import { Op } from '../core/index.js';\nexport const a = Op;",
+    "import { sql } from 'drizzle-orm';\nimport { Op } from '../core/index.js';\nexport const a = [sql, Op];",
+  'packages/query-filter/src/drizzle/bad-library.ts':
+    "import { z } from 'zod';\nexport const a = z;",
+  'packages/query-filter/src/drizzle/bad-pg.ts': "import pg from 'pg';\nexport const a = pg;",
+  'packages/query-filter/src/drizzle/bad-vitest.ts':
+    "import { it } from 'vitest';\nexport const a = it;",
+  'packages/query-filter/src/drizzle/bad-library.test.ts':
+    "import { z } from 'zod';\nexport const a = z;",
+  // legal: the drizzle entry from infrastructure, a compiler from the public/ of another module imported by
+  // infrastructure, a spec from any layer but the domain
+  [`${S}/orders/infrastructure/find-orders.filter-binding.ts`]:
+    "import { compile } from '@bf/query-filter/drizzle';\nexport const a = compile;",
+  [`${S}/billing/public/invoice.filter-compiler.ts`]: 'export const a = 1;',
+  [`${S}/billing/public/invoice.filter-spec.ts`]:
+    "import { Op } from '@bf/query-filter/core';\nexport const spec = Op;",
+  [`${S}/orders/infrastructure/uses-billing-compiler.adapter.ts`]:
+    "import { a } from '../../billing/public/invoice.filter-compiler.js';\nexport const b = a;",
+  [`${S}/orders/application/uses-billing-spec.service.ts`]:
+    "import { spec } from '../../billing/public/invoice.filter-spec.js';\nexport const a = spec;",
+  [`${S}/orders/queries/find/find.e2e.test.ts`]:
+    "import { compile } from '@bf/query-filter/drizzle';\nexport const t = compile;",
+  // violations
+  [`${S}/orders/domain/bad-toolkit-drizzle.ts`]:
+    "import { compile } from '@bf/query-filter/drizzle';\nexport const a = compile;",
+  [`${S}/orders/application/bad-toolkit-drizzle.service.ts`]:
+    "import { compile } from '@bf/query-filter/drizzle';\nexport const a = compile;",
+  [`${S}/orders/queries/find/bad-toolkit-drizzle.router.ts`]:
+    "import { compile } from '@bf/query-filter/drizzle';\nexport const a = compile;",
+  [`${S}/orders/queries/find/bad-toolkit-drizzle.query-handler.ts`]:
+    "import { compile } from '@bf/query-filter/drizzle';\nexport const a = compile;",
+  [`${S}/orders/queries/find/bad-toolkit-drizzle.filter-spec.ts`]:
+    "import { compile } from '@bf/query-filter/drizzle';\nexport const a = compile;",
+  [`${S}/billing/public/bad-drizzle.filter-compiler.ts`]:
+    "import { compile } from '@bf/query-filter/drizzle';\nexport const a = compile;",
+  [`${S}/orders/application/bad-billing-compiler.service.ts`]:
+    "import { a } from '../../billing/public/invoice.filter-compiler.js';\nexport const b = a;",
+  [`${S}/orders/queries/find/bad-billing-compiler.router.ts`]:
+    "import { a } from '../../../billing/public/invoice.filter-compiler.js';\nexport const b = a;",
   'packages/query-filter/src/drizzle/bad-zod-entry.ts':
     "import { a } from '../zod/to-zod.js';\nexport const b = a;",
   'packages/query-filter/src/zod/bad-app.ts': `import { order } from '../../../../apps/backend/src/orders/domain/order.aggregate.js';\nexport const a = order;`,
@@ -244,6 +285,42 @@ const expected: Array<[rule: string, from: string]> = [
   ['qry-7-zod-entry-only-in-adapters', `${S}/orders/infrastructure/bad-toolkit-zod.adapter.ts`],
   ['qry-7-zod-entry-only-in-adapters', `${S}/orders/queries/find/bad-toolkit-zod.filter-spec.ts`],
   ['qry-7-zod-entry-only-in-adapters', `${S}/orders/queries/find/bad-toolkit-zod.query-handler.ts`],
+  ['qry-7-domain-no-toolkit', `${S}/orders/domain/bad-toolkit-drizzle.ts`],
+  [
+    'qry-7-drizzle-entry-only-in-infrastructure',
+    `${S}/orders/application/bad-toolkit-drizzle.service.ts`,
+  ],
+  [
+    'qry-7-drizzle-entry-only-in-infrastructure',
+    `${S}/orders/queries/find/bad-toolkit-drizzle.router.ts`,
+  ],
+  [
+    'qry-7-drizzle-entry-only-in-infrastructure',
+    `${S}/orders/queries/find/bad-toolkit-drizzle.query-handler.ts`,
+  ],
+  [
+    'qry-7-drizzle-entry-only-in-infrastructure',
+    `${S}/orders/queries/find/bad-toolkit-drizzle.filter-spec.ts`,
+  ],
+  [
+    'qry-12-filter-compiler-only-from-infrastructure',
+    `${S}/orders/application/bad-billing-compiler.service.ts`,
+  ],
+  [
+    'qry-12-filter-compiler-only-from-infrastructure',
+    `${S}/orders/queries/find/bad-billing-compiler.router.ts`,
+  ],
+  [
+    'qry-7-drizzle-entry-only-in-infrastructure',
+    `${S}/billing/public/bad-drizzle.filter-compiler.ts`,
+  ],
+  ['qry-6-drizzle-entry-only-drizzle-orm', 'packages/query-filter/src/drizzle/bad-library.ts'],
+  ['qry-6-drizzle-entry-only-drizzle-orm', 'packages/query-filter/src/drizzle/bad-pg.ts'],
+  ['qry-6-drizzle-entry-only-drizzle-orm', 'packages/query-filter/src/drizzle/bad-vitest.ts'],
+  [
+    'qry-6-drizzle-tests-only-drizzle-orm-pg-and-vitest',
+    'packages/query-filter/src/drizzle/bad-library.test.ts',
+  ],
   ['qry-6-core-no-libraries', 'packages/query-filter/src/core/bad-library.ts'],
   ['qry-6-core-tests-only-vitest', 'packages/query-filter/src/core/bad-library.test.ts'],
   ['qry-6-entries-are-independent', 'packages/query-filter/src/core/bad-entry.ts'],
@@ -348,9 +425,13 @@ function cruiseTree(
   linkNodeModules(join(root, 'node_modules'), join(tmp, 'node_modules'), extra);
   const appNodeModules = join(root, 'apps/backend/node_modules');
   linkNodeModules(appNodeModules, join(tmp, 'apps/backend/node_modules'), {});
-  // a pnpm package carries its own node_modules; the kernel and the toolkit need vitest and zod to resolve
+  // a pnpm package carries its own node_modules; the kernel needs vitest and zod to resolve, the toolkit its own libraries
   linkNodeModules(appNodeModules, join(tmp, 'packages/kernel/node_modules'), {});
-  linkNodeModules(appNodeModules, join(tmp, 'packages/query-filter/node_modules'), {});
+  linkNodeModules(
+    join(root, 'packages/query-filter/node_modules'),
+    join(tmp, 'packages/query-filter/node_modules'),
+    {},
+  );
 
   let stdout = '';
   try {
@@ -430,6 +511,28 @@ describe('dependency-cruiser boundaries', () => {
     );
   });
 
+  it('sees the infrastructure import of the toolkit drizzle entry in dist/ and finds it legal', () => {
+    const binding = modules.find(
+      (m) => m.source === `${S}/orders/infrastructure/find-orders.filter-binding.ts`,
+    );
+    assert.ok(
+      binding?.dependencies.some(
+        (d) => d.resolved === 'packages/query-filter/dist/drizzle/index.js',
+      ),
+    );
+  });
+
+  it('sees the import of another module compiler from infrastructure and finds it legal', () => {
+    const adapter = modules.find(
+      (m) => m.source === `${S}/orders/infrastructure/uses-billing-compiler.adapter.ts`,
+    );
+    assert.ok(
+      adapter?.dependencies.some(
+        (d) => d.resolved === `${S}/billing/public/invoice.filter-compiler.ts`,
+      ),
+    );
+  });
+
   it('reports nothing on the legal imports', () => {
     const legal = new Set(Object.keys(files).filter((p) => !expected.some(([, f]) => f === p)));
     const falsePositives = violations.filter(
@@ -506,6 +609,12 @@ describe('dependency-cruiser boundaries with the toolkit not installed', () => {
       "import { toZod } from '@bf/query-filter/zod';\nexport const a = toZod;",
     [`${S}/orders/queries/find/find.request.dto.ts`]:
       "import { toZod } from '@bf/query-filter/zod';\nexport const dto = toZod;",
+    [`${S}/orders/domain/bad-toolkit-drizzle.ts`]:
+      "import { compile } from '@bf/query-filter/drizzle';\nexport const a = compile;",
+    [`${S}/orders/application/bad-toolkit-drizzle.service.ts`]:
+      "import { compile } from '@bf/query-filter/drizzle';\nexport const a = compile;",
+    [`${S}/orders/infrastructure/find-orders.filter-binding.ts`]:
+      "import { compile } from '@bf/query-filter/drizzle';\nexport const a = compile;",
   };
   let tmp = '';
   let cruise: Cruise = { violations: [], modules: [] };
@@ -528,6 +637,26 @@ describe('dependency-cruiser boundaries with the toolkit not installed', () => {
       fires(
         'qry-7-zod-entry-only-in-adapters',
         `${S}/orders/application/bad-toolkit-zod.service.ts`,
+      ),
+    );
+  });
+
+  it('rejects the drizzle entry outside infrastructure by name', () => {
+    assert.ok(fires('qry-7-domain-no-toolkit', `${S}/orders/domain/bad-toolkit-drizzle.ts`));
+    assert.ok(
+      fires(
+        'qry-7-drizzle-entry-only-in-infrastructure',
+        `${S}/orders/application/bad-toolkit-drizzle.service.ts`,
+      ),
+    );
+  });
+
+  it('lets infrastructure import the drizzle entry by name', () => {
+    assert.ok(
+      !cruise.violations.some(
+        (v) =>
+          v.from === `${S}/orders/infrastructure/find-orders.filter-binding.ts` &&
+          v.rule.name.startsWith('qry-'),
       ),
     );
   });

@@ -26,7 +26,10 @@ const SLICE = `${MODULE}/(commands|queries)/`;
 // installed or built (the way the openai rule below does).
 const TOOLKIT = '^@bf/query-filter(/|$)|^packages/query-filter/';
 const TOOLKIT_ZOD = '^@bf/query-filter/zod(/|$)|^packages/query-filter/dist/zod/';
+const TOOLKIT_DRIZZLE = '^@bf/query-filter/drizzle(/|$)|^packages/query-filter/dist/drizzle/';
 const TOOLKIT_SRC = '^packages/query-filter/src/';
+// ADR-024 item 7, QRY-12: the compiler of a module's filter, which another module's infrastructure imports.
+const FILTER_COMPILER = `${SRC}/[^/]+/public/.*\\.filter-compiler\\.ts$`;
 
 const NPM = [
   'npm',
@@ -237,6 +240,42 @@ export default {
       severity: 'error',
       from: { path: `${TOOLKIT_SRC}zod/.*${TEST}` },
       to: { dependencyTypes: NPM, pathNot: '(^|/)node_modules/(zod|vitest)/' },
+    },
+    {
+      name: 'qry-7-drizzle-entry-only-in-infrastructure',
+      comment:
+        'QRY-7, ADR-051: the drizzle entry (compile) is imported by infrastructure only, where the read adapter holds the Drizzle query. A filter compiler a module publishes in public/ for other modules (ADR-024 item 7) is not exempt here: that is left to QUERY-4.',
+      severity: 'error',
+      from: {
+        pathNot: [INFRASTRUCTURE, TEST, TOOLKIT_SRC, '^packages/query-filter/test/'],
+      },
+      to: { path: TOOLKIT_DRIZZLE },
+    },
+    {
+      name: 'qry-12-filter-compiler-only-from-infrastructure',
+      comment:
+        'QRY-12, ADR-051: another module reaches a filter compiler, which public/ holds, from its infrastructure only. The spec of a module (.filter-spec) is the part every layer but the domain may read; the compiler is not.',
+      severity: 'error',
+      from: { pathNot: [INFRASTRUCTURE, TEST] },
+      to: { path: FILTER_COMPILER },
+    },
+    {
+      name: 'qry-6-drizzle-entry-only-drizzle-orm',
+      comment: 'QRY-6, ADR-051: the drizzle entry imports from npm only drizzle-orm.',
+      severity: 'error',
+      from: { path: `${TOOLKIT_SRC}drizzle/`, pathNot: TEST },
+      to: { dependencyTypes: NPM, pathNot: '(^|/)node_modules/drizzle-orm/' },
+    },
+    {
+      name: 'qry-6-drizzle-tests-only-drizzle-orm-pg-and-vitest',
+      comment:
+        'QRY-6, ADR-051: a test file of the drizzle entry may import vitest and the pg driver on top of drizzle-orm.',
+      severity: 'error',
+      from: { path: `${TOOLKIT_SRC}drizzle/.*${TEST}` },
+      to: {
+        dependencyTypes: NPM,
+        pathNot: '(^|/)node_modules/(drizzle-orm|vitest|pg|@types/pg)/',
+      },
     },
     {
       name: 'qry-6-entries-are-independent',
