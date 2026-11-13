@@ -35,6 +35,14 @@ spec:
     targetRevision: 42.3.0
     helm:
       valuesObject:
+        global:
+          # No calls home from the edge: versions move only through this file (ADR-005).
+          checkNewVersion: false
+          sendAnonymousUsage: false
+        ingressClass:
+          enabled: true
+          # ingress-nginx is still the default class until TRAEFIK-2 removes it; chart app names traefik explicitly.
+          isDefaultClass: false
         deployment:
           # The same count as ingress-nginx had: one pod can be drained or restarted without an outage. Rate limits
           # are counted per replica (ADR-037), so two replicas double the effective limit (INGRESS-1).
