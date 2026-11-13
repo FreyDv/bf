@@ -139,7 +139,7 @@ https://docs.digitalocean.com/products/spaces/how-to/configure-lifecycle-rules/ 
   включается через API, Object Lock не заявлен. Runbook ничего из этого не утверждает; проверка и решение - BACKUP-1 (ADR-042, ось
   Data at rest).
 - Сроки хранения медиа курсов: решает спека курсов.
-- `media-src` в CSP для показа медиа: правка `apps/frontend/next.config.ts` вместе с функцией (ADR-055 п. 2, ADR-042 п. 2.2).
+- `media-src` в CSP для показа медиа: правка `apps/frontend/proxy.ts` вместе с функцией (ADR-059 п. 3, ADR-042 п. 2.2).
 - Цена и потолок расхода: ADR-043 п. 2.
 
 ## Diagnose
