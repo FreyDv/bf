@@ -1,5 +1,5 @@
 {
   "extends": "@bf/config/tsconfig/node-lib.json",
   "compilerOptions": { "outDir": "dist", "rootDir": ".", "types": [] },
-  "include": ["src", "*.ts", "*.js"]
+  "include": ["src", "test", "*.ts", "*.js"]
 }
