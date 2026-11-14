@@ -108,7 +108,7 @@ const BRIEF = {
     },
     plan: { type: 'array', items: { type: 'object', properties: { step: { type: 'string' }, files: { type: 'array', items: { type: 'string' } } }, required: ['step'] } },
     gatedWrites: { type: 'array', items: { type: 'string' }, description: 'paths under specs/**/spec.md or docs/discovery/** this item writes' },
-    liveActions: { type: 'array', items: { type: 'string' }, description: 'anything touching a live cluster, cloud account or remote DB' },
+    liveActions: { type: 'array', items: { type: 'string' }, description: 'anything touching the cluster (allowed, ADR-059), the DO account or a remote DB (owner only)' },
     newDependencies: { type: 'array', items: { type: 'string' } },
     backend: { type: 'boolean', description: 'true if apps/backend or packages used by it change' },
     verification: { type: 'array', items: { type: 'string' }, description: 'commands that prove the DoD' },

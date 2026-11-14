@@ -1,6 +1,18 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "permissions": {
+    "allow": [
+      "Bash(kubectl *)",
+      "Bash(kubectl)",
+      "Bash(helm *)",
+      "Bash(argocd *)",
+      "Bash(argocd)",
+      "Bash(kubeseal *)",
+      "Bash(kubeseal)",
+      "Bash(doctl kubernetes *)",
+      "Bash(doctl k8s *)",
+      "Bash(doctl registry *)"
+    ],
     "deny": [
       "Bash(sudo *)",
       "Bash(su *)",
@@ -120,24 +132,6 @@
       "Bash(flyctl proxy *)",
       "Bash(gh pr merge *)",
       "Bash(gh pr close *)",
-      "Bash(kubectl *)",
-      "Bash(kubectl)",
-      "Bash(doctl *)",
-      "Bash(doctl)",
-      "Bash(kubeseal *)",
-      "Bash(kubeseal)",
-      "Bash(argocd *)",
-      "Bash(argocd)",
-      "Bash(helm install *)",
-      "Bash(helm upgrade *)",
-      "Bash(helm uninstall *)",
-      "Bash(helm delete *)",
-      "Bash(helm del *)",
-      "Bash(helm un *)",
-      "Bash(helm rollback *)",
-      "Bash(helm push *)",
-      "Bash(helm repo add *)",
-      "Bash(helm registry login *)",
       "Bash(gh api *-X PUT*)",
       "Bash(gh api *-XPUT*)",
       "Bash(gh api *--method PUT*)",
@@ -188,6 +182,7 @@
   },
   "$about": [
     "Shipped settings baseline of repository-standards (R19), unmodified except onFailure: block on both PreToolUse hooks - Claude Code lets a crashing or timed-out hook fail OPEN by default (docs: hooks, onFailure).",
-    "Repository additions (ADR-056, the agent-boundaries axis of ADR-037): ask for kubectl, doctl, kubeseal, argocd, mutating helm subcommands and gh api writes (PUT, PATCH, POST, and -f/-F/--field/--raw-field/--input, which imply POST); deny for gh api DELETE in any flag position. Only entries were added; no deny or hook was removed or loosened."
+    "Repository additions (ADR-056, the agent-boundaries axis of ADR-037): ask for kubectl, doctl, kubeseal, argocd, mutating helm subcommands and gh api writes (PUT, PATCH, POST, and -f/-F/--field/--raw-field/--input, which imply POST); deny for gh api DELETE in any flag position. Only entries were added; no deny or hook was removed or loosened.",
+    "ADR-059 (owner, 2026-11-13: the cluster is not production yet): kubectl, helm, argocd, kubeseal and doctl kubernetes|k8s|registry moved from ask to allow; the rest of doctl is unlisted and prompts by default (an ask entry would override the allow ones). No deny or hook was touched."
   ]
 }

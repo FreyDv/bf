@@ -64,6 +64,7 @@ Architecture Decision Records - технические причины. Тест 
 | [056](ADR-056-agent-ask-list-live-infra-and-gh-api-writes.md) | Ask-список агента: `kubectl`, `doctl`, `kubeseal`, `argocd`, изменяющие подкоманды `helm`, запись через `gh api` в `ask`, `DELETE` в `deny` в любой позиции; хуки не правятся; остаточные пробелы (AGENT-2); дополняет ось Agent boundaries ADR-037 | Accepted |
 | [057](ADR-057-backend-contract-files-frontend-checks.md) | Файлы контракта backend и проверки frontend: итог спайка (рёбра, образ, `verbatimModuleSyntax`, слепой кеш), шаг CI `typecheck` и `lint` contracts и frontend при правке одного DTO, один дом шаблона файлов (исполняет ADR-050 п. 11) | Accepted |
 | [058](ADR-058-turbo-inputs-for-backend-contract-files.md) | Входы `typecheck` и `lint` у contracts и frontend с файлами DTO backend вместо `--force`: `turbo.json` пакетов, шаг CI остаётся селектором (заменяет пункт 2 ADR-057 в части кеша, уточняет ADR-009) | Accepted |
+| [059](ADR-059-agent-acts-on-the-non-production-cluster.md) | Агент сам работает с непродакшен-кластером: `kubectl`, `helm`, `argocd`, `kubeseal`, `doctl kubernetes`, `k8s`, `registry` в `allow`; БД, платные ресурсы DO и `gh api` не открыты; вернуть `ask`, когда появятся реальные пользователи (заменяет пункты 1, 2, 7 ADR-056 и запрет в ADR-047) | Accepted |
 
 Первая ячейка - номер-ссылка на файл; остальное - свободный текст. `scripts/decision-records-check.mjs` сверяет таблицу с файлами. Нумерация без пропусков, номера не переиспользуются. Шаблон: [`_template.md`](_template.md). Решения прототипа не переносятся (ADR-006).
 
@@ -99,5 +100,5 @@ Architecture Decision Records - технические причины. Тест 
 | AI-провайдер | ADR-041 |
 | Аутентификация и авторизация | ADR-040; счётчик неудачных входов против отката, токен сессии из адаптера - ADR-054 |
 | Стратегия тестирования | ADR-039; Vitest - ADR-016; где тесты идут в CI - ADR-018, ADR-036 |
-| Базовая безопасность | ADR-037; аутентификация и авторизация - ADR-040; роли БД и SSL клиента - ADR-053; CSP во frontend - ADR-055; границы агента (ask-список) - ADR-056 |
+| Базовая безопасность | ADR-037; аутентификация и авторизация - ADR-040; роли БД и SSL клиента - ADR-053; CSP во frontend - ADR-055; границы агента (ask-список) - ADR-056, кластер без подтверждений - ADR-059 вместо пунктов 1, 2, 7 ADR-056 |
 | Бюджет производительности и масштабирования | ADR-052; замер fsync - при первой критичной команде (DBSEC-4), см. ADR-044 |

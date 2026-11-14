@@ -82,9 +82,11 @@ For interview-driven items (PERSONAS-1, PRODUCT-1, SPEC-1) run the owning skill
 (`personas-write`, `product-write`, `bdr-write`, `spec-specify`) here in the main session -
 the owner's words go in, not a draft - and use `mode: "review-only"` in step 6.
 
-Live infrastructure (kubectl, doctl, the DO console, a remote DB) is never touched by an agent.
-The change goes in as files through GitOps; anything the owner must run by hand is listed for
-them with the exact command.
+The cluster is not production yet (ADR-059): the agent runs `kubectl`, `helm`, `argocd`,
+`kubeseal` and `doctl kubernetes|registry` itself, without asking. Desired state still goes in as
+files through GitOps; direct commands are for diagnosis, bootstrap and verification. A remote DB,
+new paid DO resources and the rest of the DO account stay off limits; anything the owner must run
+by hand is listed for them with the exact command.
 
 ## Step 6 - Execute (workflow)
 
@@ -127,7 +129,7 @@ CI green -> ask the owner to merge. On yes: `gh pr merge <n> --squash` (ADR-003)
 `git switch main && git pull --ff-only`.
 
 For items whose DoD is a state in the cluster (synced ArgoCD app, running pod), verify it after
-the merge with read-only commands the owner approves; a miss reopens the row or files a new one.
+the merge yourself on the cluster (ADR-059); a miss reopens the row or files a new one.
 
 ## Step 10 - Next
 
