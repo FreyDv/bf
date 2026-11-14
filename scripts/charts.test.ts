@@ -358,7 +358,8 @@ describe('traefik Application (ADR-038, backlog TRAEFIK-1)', () => {
   it('asks DigitalOcean for TLS on the balancer, http behind it and a redirect', () => {
     const service = find(renderApplication(app), 'Service');
     assert.match(service, /type: LoadBalancer/);
-    assert.match(service, /do-loadbalancer-certificate-id: \S+/);
+    assert.match(service, /do-loadbalancer-certificate-name: malinina-ca\n/);
+    assert.doesNotMatch(service, /do-loadbalancer-certificate-id/);
     assert.match(service, /do-loadbalancer-protocol: http\n/);
     assert.match(service, /do-loadbalancer-tls-ports: "443"/);
     assert.match(service, /do-loadbalancer-redirect-http-to-https: "true"/);
@@ -433,7 +434,7 @@ describe('ArgoCD self-management (ADR-019, ADR-046, backlog ARGOCD-1)', () => {
   });
 
   it('applies every file of deploy/argocd as an Application, except the ones the root excludes', () => {
-    assert.deepEqual([...exclude].sort(), ['argocd-values.yaml', 'traefik.yaml']);
+    assert.deepEqual([...exclude].sort(), ['argocd-values.yaml']);
     const synced = readdirSync(dir).filter(
       (name) => name.endsWith('.yaml') && !exclude.includes(name),
     );
@@ -442,6 +443,7 @@ describe('ArgoCD self-management (ADR-019, ADR-046, backlog ARGOCD-1)', () => {
       'nats.yaml',
       'root.yaml',
       'sealed-secrets.yaml',
+      'traefik.yaml',
     ]);
     for (const name of synced) {
       assert.match(
@@ -452,13 +454,16 @@ describe('ArgoCD self-management (ADR-019, ADR-046, backlog ARGOCD-1)', () => {
     }
   });
 
-  it('keeps traefik.yaml out of the sync for as long as it holds the certificate placeholder (TRAEFIK-2)', () => {
-    const traefik = readFileSync(`${dir}/traefik.yaml`, 'utf8').replace(/^#.*$/gm, '');
-    if (/CERTIFICATE_ID_OF_MALININA_CA/.test(traefik)) {
-      assert.ok(
-        exclude.includes('traefik.yaml'),
-        'a sync would create a balancer with a wrong certificate',
-      );
-    }
+  it('names the balancer certificate malinina-ca by name, never by id (TRAEFIK-2)', () => {
+    const traefik = readFileSync(`${dir}/traefik.yaml`, 'utf8').replace(/^\s*#.*$/gm, '');
+    assert.match(
+      traefik,
+      /^\s+service\.beta\.kubernetes\.io\/do-loadbalancer-certificate-name: malinina-ca$/m,
+    );
+    assert.doesNotMatch(
+      traefik,
+      /do-loadbalancer-certificate-id/,
+      'the id annotation wins over the name and changes on every renewal',
+    );
   });
 });

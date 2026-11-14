@@ -1,24 +1,23 @@
-# Traefik ingress controller (ADR-038, backlog TRAEFIK-1). Applied by hand once, after the certificate id below is filled:
-#   kubectl apply -n argocd -f deploy/argocd/traefik.yaml
-# ArgoCD does not watch this repository until the owner applies root.yaml (ARGOCD-2); even then root.yaml excludes
-# this file until TRAEFIK-2 sets the certificate id and removes the exclusion in the same commit, because a sync
-# with the placeholder would create a load balancer with a wrong certificate (ADR-046). Until then this file is the
-# whole source: the chart comes from the public Helm repository and the values are inline. Steps for the owner (TRAEFIK-2): docs/runbooks/malinina-kubernetes.md,
-# section "Миграция ingress".
+# Traefik ingress controller (ADR-038, backlog TRAEFIK-1, TRAEFIK-2). ArgoCD deploys it: the root Application
+# (root.yaml, ARGOCD-2) reads this directory of `main`, so merging this file creates the Application and its load
+# balancer. No `kubectl apply`. The certificate is referenced by name below, so no id is substituted here.
+# Only one load balancer exists at a time (owner decision, downtime accepted): `ingress-nginx` is uninstalled and
+# its balancer deleted BEFORE this file is merged, and the merge creates the new balancer. Steps and order:
+# docs/runbooks/malinina-kubernetes.md, section "Миграция ingress".
 #
 # Chart 42.3.0 (appVersion v3.7.17) was published 2026-11-03. ADR-005 needs 7 full days, so it was usable from
-# 2026-11-10; on 2026-11-12 it is 9 days old. 42.3.1 (2026-11-06) and later have not passed the window. The ADR-034
-# exception does not cover this chart. `pnpm charts` renders exactly this chart with exactly these values
-# (scripts/charts-check.ts).
+# 2026-11-10. 42.3.1 (2026-11-06) has passed the window too (as of 2026-11-13); the move to it belongs to
+# TRAEFIK-3, this file stays on 42.3.0. The ADR-034 exception does not cover this chart. `pnpm charts` renders
+# exactly this chart with exactly these values (scripts/charts-check.ts).
 #
 # Namespace `traefik`, not `bf`: the controller holds rights over Ingress objects of every namespace and must not sit
 # beside the application pods; the NetworkPolicy of CHART-3 admits ingress from this namespace, and the log collector
 # of OBS-2 lists it next to `bf` and `argocd` (ADR-043).
 #
-# The Service creates a NEW DigitalOcean load balancer with a new IP; the old one stays with ingress-nginx until the
-# owner moves DNS (TRAEFIK-2). TLS ends on the balancer (ADR-037, ADR-038 item 4): it speaks http to the nodes, so
-# the `websecure` entrypoint (port 443 of the balancer) takes plain http and its own TLS is off. The balancer
-# redirects http to https, so `web` never serves a client directly.
+# The Service creates a NEW DigitalOcean load balancer with a new IP (the old one is already gone with ingress-nginx,
+# see above); DNS is moved to it after the sync (TRAEFIK-2). TLS ends on the balancer (ADR-037, ADR-038 item 4):
+# it speaks http to the nodes, so the `websecure` entrypoint (port 443 of the balancer) takes plain http and its own
+# TLS is off. The balancer redirects http to https, so `web` never serves a client directly.
 #
 # Not decided here and left at the chart defaults (see the backlog row TRAEFIK-3): Prometheus metrics, the version
 # check, the log format and level, the default IngressClass flag, a PodDisruptionBudget and spreading the two pods
@@ -43,7 +42,8 @@ spec:
           sendAnonymousUsage: false
         ingressClass:
           enabled: true
-          # ingress-nginx is still the default class until TRAEFIK-2 removes it; chart app names traefik explicitly.
+          # Not the default class: the app chart names `traefik` explicitly (ingress.className), so nothing depends on
+          # a default.
           isDefaultClass: false
         deployment:
           # The same count as ingress-nginx had: one pod can be drained or restarted without an outage. Rate limits
@@ -79,9 +79,10 @@ spec:
                 enabled: false
         service:
           annotations:
-            # The id of the certificate `malinina-ca`, an identifier and not a secret. The owner replaces the
-            # placeholder before the apply (runbook, step 1 of the migration) and commits the real id.
-            service.beta.kubernetes.io/do-loadbalancer-certificate-id: CERTIFICATE_ID_OF_MALININA_CA
+            # The certificate is referenced by name: the name is unique in the DigitalOcean account, while the id of a
+            # Let's Encrypt certificate changes on every renewal. The `certificate-id` annotation wins over this one
+            # when both are set, so it must never be added here.
+            service.beta.kubernetes.io/do-loadbalancer-certificate-name: malinina-ca
             service.beta.kubernetes.io/do-loadbalancer-protocol: http
             service.beta.kubernetes.io/do-loadbalancer-tls-ports: "443"
             service.beta.kubernetes.io/do-loadbalancer-redirect-http-to-https: "true"
