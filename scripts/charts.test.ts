@@ -360,6 +360,7 @@ describe('traefik Application (ADR-038, backlog TRAEFIK-1)', () => {
     assert.match(service, /type: LoadBalancer/);
     assert.match(service, /do-loadbalancer-certificate-name: malinina-ca\n/);
     assert.doesNotMatch(service, /do-loadbalancer-certificate-id/);
+    assert.match(service, /do-loadbalancer-type: REGIONAL\n/);
     assert.match(service, /do-loadbalancer-protocol: http\n/);
     assert.match(service, /do-loadbalancer-tls-ports: "443"/);
     assert.match(service, /do-loadbalancer-redirect-http-to-https: "true"/);
