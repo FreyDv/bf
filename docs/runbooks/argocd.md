@@ -77,7 +77,7 @@ GitHub - `FreyDv/bf` (ADR-038 п. 7), то есть `https://github.com/FreyDv/b
 
 Применено владельцем 2026-11-13 (ARGOCD-2, результат - ниже). Устройство:
 
-- `deploy/argocd/root.yaml` - корневое Application: смотрит `deploy/argocd/` в `https://github.com/FreyDv/bf`, ветка `main`, без учётных данных, и применяет каждое Application из каталога. Исключены `argocd-values.yaml` (файл значений, не объект Kubernetes) и `traefik.yaml` (плейсхолдер сертификата, до TRAEFIK-2).
+- `deploy/argocd/root.yaml` - корневое Application: смотрит `deploy/argocd/` в `https://github.com/FreyDv/bf`, ветка `main`, без учётных данных, и применяет каждое Application из каталога. Исключён только `argocd-values.yaml` (файл значений, не объект Kubernetes); `traefik.yaml` до TRAEFIK-2 тоже был исключён (плейсхолдер сертификата), теперь синкается как остальные.
 - `deploy/argocd/argo-cd.yaml` - Application самого ArgoCD: chart `argo-cd` 10.11.6, значения - файл `argocd-values.yaml` из этого же репозитория (второй источник `ref: values`), имя релиза `argocd`, namespace `argocd`, поэтому рендер даёт живые имена (`argocd-server`, ...) и первый синк принимает существующие объекты, а не создаёт второй ArgoCD.
 - Синк корня и `argo-cd`: автоматический, без `prune`, без `selfHeal`, `ServerSideApply=true`, без finalizer: удаление Application ничего не удаляет, а удалённый из git объект остаётся, пока его не удалит человек.
 - CRD вне Helm и вне синка (`crds.install=false`), `argocd-secret` не рендерится (`configs.secret.createSecret=false`): самосинк не затирает CRD и хэш пароля `admin`. Порядок со сменой пароля (RUNBOOK-2) любой: до ARGOCD-2 или после, хэш остаётся.
@@ -91,7 +91,7 @@ GitHub - `FreyDv/bf` (ADR-038 п. 7), то есть `https://github.com/FreyDv/b
 
 1. Перед применением, только чтение: `kubectl -n argocd get applications` (допустимы `sealed-secrets`, `nats`, если применялись руками), `kubectl -n argocd get deploy,sts` (список объектов ArgoCD запомнить).
 2. `kubectl apply -n argocd -f deploy/argocd/root.yaml -f deploy/argocd/argo-cd.yaml`.
-3. Ждать минуты три: `kubectl -n argocd get applications` - `root`, `argo-cd`, `sealed-secrets`, `nats` (корень разворачивает их, даже если руками они не применялись) в `Synced` и `Healthy`; `traefik` в списке нет (исключён).
+3. Ждать минуты три: `kubectl -n argocd get applications` - `root`, `argo-cd`, `sealed-secrets`, `nats` (корень разворачивает их, даже если руками они не применялись) в `Synced` и `Healthy`; `traefik` в списке тоже: его синк создаёт балансировщик DO, поэтому на новом кластере сертификат `malinina-ca` должен быть в аккаунте DO заранее (раздел «Миграция ingress» в `malinina-kubernetes.md`).
 4. Второго ArgoCD нет: `kubectl -n argocd get deploy,sts` показывает те же объекты, что в шаге 1, с теми же именами (`argocd-server`, `argocd-repo-server`, `argocd-application-controller`, ...) и без новых с префиксом `argo-cd-`; `kubectl -n argocd get pods` - все `Running`; `helm -n argocd status argocd` по-прежнему `deployed`.
 5. Что проверить глазами: `argocd-secret` на месте и вход `admin` работает прежним паролем; у `argo-cd` нет расхождений (`kubectl -n argocd describe application argo-cd`), особенно по Job `argocd-redis-secret-init` и по `argocd-notifications-secret`, которые chart рендерит и без `argocd-secret`.
 6. Если `argo-cd` в `OutOfSync` или `Degraded`: ничего не удалять и не править руками; откат - `kubectl -n argocd delete application argo-cd root` (без finalizer объекты остаются) и сообщить агенту.
