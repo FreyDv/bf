@@ -41,7 +41,7 @@ Serves: владелец-оператор и агент, действующий 
 | Что | Значение |
 |---|---|
 | Балансировщик | создаёт Service Traefik; id и IP новые, записываются после миграции |
-| Аннотации Service | сертификат `malinina-ca` по имени (`do-loadbalancer-certificate-name`, не по id: id Let's Encrypt меняется при продлении), протокол `http`, TLS-порт 443, редирект http -> https (ADR-038 п. 4; точные имена аннотаций - в `deploy/argocd/traefik.yaml`) |
+| Аннотации Service | сертификат `malinina-ca` по имени (`do-loadbalancer-certificate-name`, не по id: id Let's Encrypt меняется при продлении), тип `REGIONAL` (HTTP-балансировщик; DOKS с 1.33.1-do.0 по умолчанию ставит `REGIONAL_NETWORK`, TCP без сертификата), протокол `http`, TLS-порт 443, редирект http -> https (ADR-038 п. 4; точные имена аннотаций - в `deploy/argocd/traefik.yaml`) |
 | Доверенные адреса | `forwardedHeaders.trustedIPs` = `10.118.0.0/20` (VPC `default-tor1`), IP клиента из `X-Forwarded-For` (ADR-038 п. 6) |
 | TLS | завершается на балансировщике, внутри кластера http (ADR-037, Transport); срок и продление сертификата - CERT-1 |
 | DNS | A `@` и A `*` на новый IP, дубль A `@` удаляется на шаге 7 миграции (ниже), AAAA `@` - на новый IPv6 или удаляется |

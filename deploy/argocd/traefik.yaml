@@ -83,6 +83,10 @@ spec:
             # Let's Encrypt certificate changes on every renewal. The `certificate-id` annotation wins over this one
             # when both are set, so it must never be added here.
             service.beta.kubernetes.io/do-loadbalancer-certificate-name: malinina-ca
+            # DOKS 1.33.1-do.0 and later default a new Service to REGIONAL_NETWORK, a TCP pass-through balancer that
+            # takes no certificate, no http rules and no redirect; the first sync got exactly that (TRAEFIK-2).
+            # TLS on the balancer (ADR-038 item 4) needs the http balancer, so the type is set, not left to the default.
+            service.beta.kubernetes.io/do-loadbalancer-type: REGIONAL
             service.beta.kubernetes.io/do-loadbalancer-protocol: http
             service.beta.kubernetes.io/do-loadbalancer-tls-ports: "443"
             service.beta.kubernetes.io/do-loadbalancer-redirect-http-to-https: "true"
