@@ -16,6 +16,7 @@
       "cache": false,
       "passThroughEnv": ["DATABASE_URL", "NATS_URL"]
     },
+    "secrets:seal": { "cache": false },
     "dev": { "cache": false, "persistent": true }
   }
 }

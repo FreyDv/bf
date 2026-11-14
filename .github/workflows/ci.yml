@@ -54,7 +54,7 @@ jobs:
       - name: Did the deploy files change
         id: deploy
         run: |
-          if git diff --name-only "origin/${{ github.base_ref || 'main' }}...HEAD" | grep -qE '^(deploy/(charts|apps|argocd)/|scripts/charts|scripts/lib/argocd-application)'; then
+          if git diff --name-only "origin/${{ github.base_ref || 'main' }}...HEAD" | grep -qE '^(deploy/(charts|apps|argocd)/|scripts/charts|scripts/seal-secret|scripts/lib/argocd-application)'; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
           else
             echo "changed=false" >> "$GITHUB_OUTPUT"
@@ -85,6 +85,9 @@ jobs:
       - name: Migration check works
         # The check itself on fixtures, against a real Postgres container; Docker is on the runner.
         run: pnpm migrations:test
+      - name: Secret sealing script
+        # Fake kubeseal; the case with the real kubeseal skips here, it is not installed on the runner (ADR-060).
+        run: pnpm secrets:seal:test
       - name: Unit tests
         run: pnpm turbo run test ${{ github.event_name == 'pull_request' && '--affected' || '' }}
       - name: Is there an e2e task

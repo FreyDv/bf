@@ -176,7 +176,7 @@ Chart берётся командами `helm repo add argo https://argoproj.git
 2. Новый ключ (по README апстрима, «Early key renewal»): `kubectl -n kube-system set env deploy/sealed-secrets-controller SEALED_SECRETS_KEY_CUTOFF_TIME="$(date -R)"`, дождаться `rollout status`; ключей стало на один больше. Не проверено на кластере.
 3. Убрать переменную: `kubectl -n kube-system set env deploy/sealed-secrets-controller SEALED_SECRETS_KEY_CUTOFF_TIME-`, дождаться `rollout status`; число ключей не изменилось (старые остаются и продолжают расшифровывать).
 4. Сертификат: владелец - той же командой, что шаг 6 установки; закоммитить.
-5. Перешифровать секреты каждого приложения новым сертификатом: `pnpm secrets:seal` (SECRETS-1; пока скрипта нет - `kubeseal --raw --cert deploy/sealed-secrets/pub-cert.pem --scope strict --name <секрет> --namespace <namespace>` по одному значению), закоммитить `secrets.yaml`.
+5. Перешифровать секреты каждого приложения новым сертификатом: `pnpm secrets:seal` из корня (скрипт каждого приложения читает его `.env.production` и `.env.<имя>.production` и переписывает `deploy/apps/<app>/secrets.yaml`, ADR-060), закоммитить `secrets.yaml`. Секреты сторонних чартов (NATS и другие) - `node scripts/seal-secret.ts --env <файл> --name <секрет> --namespace <ns> --out <путь>`; файл `.env` должен быть в `.gitignore`.
 6. Обновить копию в менеджере паролей, как шаг 7 установки: все ключи, заменить старую запись целиком.
 7. Вписать дату в таблицу выше и завести строку на следующую ротацию.
 
