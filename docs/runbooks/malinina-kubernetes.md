@@ -68,7 +68,7 @@ Serves: владелец-оператор и агент, действующий 
 | `bf` | NATS JetStream с 2026-11-13: `nats-0` (2/2), `nats-box`, PVC `nats-js-nats-0` 10Gi, стрим `BF` (NATS-2) |
 | `default` | пусто |
 
-Контроллер Sealed Secrets работает в `kube-system` с 2026-11-13, сертификата и копии ключа ещё нет (SEALED-2). Приложений за Traefik ещё нет (DEPLOY-1). Не установлено: Debezium (CDC-2), Loki и Grafana (OBS-2), чарт `app` (CHART-1), приложения.
+Контроллер Sealed Secrets работает в `kube-system` с 2026-11-13, ключ один, сертификат в `deploy/sealed-secrets/pub-cert.pem` и копия ключа в менеджере паролей с 2026-11-14 (SEALED-2). Приложений за Traefik ещё нет (DEPLOY-1). Не установлено: Debezium (CDC-2), Loki и Grafana (OBS-2), чарт `app` (CHART-1), приложения.
 
 ## Что видно и требует решения
 
@@ -88,7 +88,7 @@ Serves: владелец-оператор и агент, действующий 
 - Spaces: имена бакетов, регион, права, ключи ([spaces.md](spaces.md), проверки владельца, RUNBOOK-2).
 - Автопродление сертификата (CERT-1) и делегирование зоны у регистратора домена (проверки владельца в разделе «Вход в кластер»).
 - Часовой пояс окна обслуживания, расход ресурсов узлов (нет metrics-server).
-- Sealed Secrets: чарт отрисован `helm template` (`pnpm charts`), на кластере не ставился; команды раздела ниже не выполнялись; поведение контроллера при `--key-renew-period 0` (число ключей после перезапуска) взято из README апстрима.
+- Sealed Secrets: установлен и проверен 2026-11-13..14 (SEALED-2); после перезапуска ключ один. Не проверено: восстановление из копии ключа и ротация (шаги разделов ниже взяты из README апстрима, на кластере не выполнялись).
 - NATS: установлен и проверен 2026-11-13 (NATS-2), под с `drop: [ALL]` и без `runAsNonRoot` на томе DO работает; размеры стрима и requests - допущения без замеров.
 - Traefik: поставлен и проверен 2026-11-14 (TRAEFIK-2): синк без повтора, http с балансировщика доходит до `websecure` при `tls.enabled=false`. Не проверено: видит ли Traefik IP клиента (INGRESS-1) и заголовки на ответе настоящего приложения (DEPLOY-1; на временном маршруте все четыре пришли, находка 2); requests подов - допущение без замеров.
 
@@ -139,13 +139,19 @@ Chart берётся командами `helm repo add argo https://argoproj.git
 
 ## Sealed Secrets: установка, копия ключа, ротация (ADR-020, ADR-045)
 
-Команды ниже не выполнялись: живой кластер агент не трогает, их запускает владелец. Файлы: `deploy/argocd/sealed-secrets.yaml` (чарт `sealed-secrets` 2.22.0, appVersion 0.41.2, `kube-system`, имя `sealed-secrets-controller`, автообновление ключа выключено), открытый сертификат - `deploy/sealed-secrets/pub-cert.pem` (появится после шага 6). Ключи контроллера - Secret в `kube-system` с меткой `sealedsecrets.bitnami.com/sealed-secrets-key` (значения метки у апстрима `active` и `compromised`).
+Установка выполнена 2026-11-13..14 (SEALED-2): шаги 1-5 - агент (ADR-059), шаги 6 и 7 - владелец. Файлы: `deploy/argocd/sealed-secrets.yaml` (чарт `sealed-secrets` 2.22.0, appVersion 0.41.2, `kube-system`, имя `sealed-secrets-controller`, автообновление ключа выключено), открытый сертификат - `deploy/sealed-secrets/pub-cert.pem`. Ключи контроллера - Secret в `kube-system` с меткой `sealedsecrets.bitnami.com/sealed-secrets-key` (значения метки у апстрима `active` и `compromised`).
 
 | Что | Значение |
 |---|---|
-| Контроллер | не установлен (SEALED-2) |
+| Контроллер | работает с 2026-11-13, образ `bitnami/sealed-secrets-controller:0.41.2`, `1/1`; аргументы содержат `--key-renew-period 0` |
+| Ключ | один: `sealed-secrets-key296td`, метка `active`, создан 2026-11-13 21:20:44 UTC (через 6 с после CRD, то есть самим контроллером: чужих ключей не было); после `rollout restart` 2026-11-14 контроллер подхватил его же («registered private key»), новый не создал |
+| Сертификат | `deploy/sealed-secrets/pub-cert.pem`, действует 2026-11-13 21:20:44 - 2036-11-10 21:20:44 UTC, subject пустой (самоподписанный), SHA-256 `51:BE:86:BC:A6:4E:B6:9E:FA:AB:E8:94:7A:D6:37:5B:D1:C0:03:53:E2:31:15:55:7D:FA:74:96:4D:B5:8F:E0`; срок сертификата не срок ротации |
+| Копия ключа | в менеджере паролей владельца с 2026-11-14 (1 ключ) |
+| `kubeseal` | 0.41.2 (Homebrew) |
 | Последняя ротация ключа | не было; ключ создан при установке |
-| Следующая ротация | не позднее чем через год после установки (SEALED-3); дату вписывает владелец сюда |
+| Следующая ротация | не позднее 2027-11-13 (SEALED-3) |
+
+Агент не может создать, прочитать или проверить `deploy/sealed-secrets/pub-cert.pem`: запрет `Read(**/*.pem)` в `.claude/settings.json` закрывает и открытый сертификат, а разрешение запрет не снимает. Поэтому шаг 6 установки и шаг 4 ротации выполняет владелец (команда целиком - в шаге 6); остальные команды раздела агент выполняет сам (ADR-059).
 
 ### Установка (SEALED-2)
 
@@ -154,7 +160,7 @@ Chart берётся командами `helm repo add argo https://argoproj.git
 3. Дождаться: `kubectl -n argocd get application sealed-secrets` - `Synced` и `Healthy`; `kubectl -n kube-system rollout status deploy/sealed-secrets-controller`; `kubectl get crd sealedsecrets.bitnami.com`.
 4. Автообновление выключено: `kubectl -n kube-system get deploy sealed-secrets-controller -o jsonpath='{.spec.template.spec.containers[0].args}'` содержит `--key-renew-period` и `0`.
 5. Ключ создан: `kubectl -n kube-system get secret -l sealedsecrets.bitnami.com/sealed-secrets-key --no-headers` - одна строка. Перезапустить `kubectl -n kube-system rollout restart deploy/sealed-secrets-controller`, дождаться `rollout status` и посчитать снова: должна остаться одна. Если стало две - апстрим создаёт ключ при каждом старте, сообщить агенту (меняется ADR-045 и порядок копии).
-6. Сертификат: поставить `kubeseal` (минорная версия как appVersion контроллера, 0.41; `kubeseal --version`; через Homebrew или из релизов апстрима), затем `mkdir -p deploy/sealed-secrets && kubeseal --fetch-cert > deploy/sealed-secrets/pub-cert.pem`; проверка `openssl x509 -in deploy/sealed-secrets/pub-cert.pem -noout -subject -dates`; закоммитить (это открытый сертификат). Имя и namespace контроллера - умолчания `kubeseal`, флаги `--controller-*` не нужны.
+6. Сертификат: поставить `kubeseal` (минорная версия как appVersion контроллера, 0.41; `kubeseal --version`; через Homebrew или из релизов апстрима), затем владелец (не агент, см. выше): `mkdir -p deploy/sealed-secrets && kubeseal --fetch-cert > deploy/sealed-secrets/pub-cert.pem && openssl x509 -in deploy/sealed-secrets/pub-cert.pem -noout -subject -dates -fingerprint -sha256 && git add deploy/sealed-secrets/pub-cert.pem`; вывод `openssl` можно показать агенту, коммит делает он (это открытый сертификат). Имя и namespace контроллера - умолчания `kubeseal`, флаги `--controller-*` не нужны.
 7. Копия закрытого ключа, **только** в менеджер паролей, на диск и в чат не попадает: `kubectl -n kube-system get secret -l sealedsecrets.bitnami.com/sealed-secrets-key -o yaml | pbcopy`, вставить запись в менеджер паролей, затем `pbcopy < /dev/null`. Копия содержит все ключи с меткой, не только новейший.
 8. Сообщить результат (шаги 1-7, число ключей, дата) в строке SEALED-2: по нему строка закрывается, SECRETS-1 разблокируется.
 
@@ -169,7 +175,7 @@ Chart берётся командами `helm repo add argo https://argoproj.git
 1. Число ключей до: `kubectl -n kube-system get secret -l sealedsecrets.bitnami.com/sealed-secrets-key --no-headers | wc -l`.
 2. Новый ключ (по README апстрима, «Early key renewal»): `kubectl -n kube-system set env deploy/sealed-secrets-controller SEALED_SECRETS_KEY_CUTOFF_TIME="$(date -R)"`, дождаться `rollout status`; ключей стало на один больше. Не проверено на кластере.
 3. Убрать переменную: `kubectl -n kube-system set env deploy/sealed-secrets-controller SEALED_SECRETS_KEY_CUTOFF_TIME-`, дождаться `rollout status`; число ключей не изменилось (старые остаются и продолжают расшифровывать).
-4. Сертификат: `kubeseal --fetch-cert > deploy/sealed-secrets/pub-cert.pem`, закоммитить.
+4. Сертификат: владелец - той же командой, что шаг 6 установки; закоммитить.
 5. Перешифровать секреты каждого приложения новым сертификатом: `pnpm secrets:seal` (SECRETS-1; пока скрипта нет - `kubeseal --raw --cert deploy/sealed-secrets/pub-cert.pem --scope strict --name <секрет> --namespace <namespace>` по одному значению), закоммитить `secrets.yaml`.
 6. Обновить копию в менеджере паролей, как шаг 7 установки: все ключи, заменить старую запись целиком.
 7. Вписать дату в таблицу выше и завести строку на следующую ротацию.
