@@ -1,6 +1,6 @@
 # Runbook: malinina (DO Kubernetes)
 
-Serves: владелец-оператор и агент, действующий за него. Снимок состояния на 2026-11-11 - чтобы кластер можно было
+Serves: владелец-оператор и агент, действующий за него. Снимок состояния на 2026-11-11, вход в кластер обновлён 2026-11-14 (TRAEFIK-2) - чтобы кластер можно было
 сверить и восстановить (ADR-017, backlog RUNBOOK-1). База - отдельно: [bfdb-postgres.md](bfdb-postgres.md); хранилище -
 [spaces.md](spaces.md); ArgoCD - [argocd.md](argocd.md); потеря кластера - [recovery.md](recovery.md).
 
@@ -25,32 +25,36 @@ Serves: владелец-оператор и агент, действующий 
 
 ### Вход в кластер: Load Balancer, сертификат, DNS
 
-| Что | Значение |
-|---|---|
-| Load Balancer | id `c2cd5d8d-b9b0-4010-9e79-14e8714bd702`, REGIONAL, `size_unit=1`, IP `209.38.12.89` (и IPv6), создан сервисом `ingress-nginx-controller`; цели - 3 узла |
-| Правила | 80 -> NodePort 31340 (http), 443 -> NodePort 31251 (TLS завершается на LB, дальше http); редирект http -> https включён; проба `:10256/healthz` |
-| Сертификат | `malinina-ca` (`b6041d52-...`): `malinina.ca`, `*.malinina.ca`, Let's Encrypt, `verified`, до 2027-02-09; продление DO не проверялось |
-| DNS | зона `malinina.ca` на DO (NS `ns1-3.digitalocean.com`): A `@` и A `*` на `209.38.12.89`, ещё один A `@` на тот же адрес (дубль), AAAA `@` на IPv6 балансировщика; AAAA для `*` нет |
-| Ingress | `ingress-nginx` 4.15.1 (контроллер v1.15.1, 2 реплики, `IngressClass nginx`), Helm-релиз ревизия 3, `deployed`, поставлен 2026-11-03; снят с поддержки, заменяется Traefik (ADR-038) |
-
-Эта таблица - снимок 2026-11-11 **до TRAEFIK-2**. Миграция создаёт новый балансировщик (новые id, IP и NodePort) и удаляет старый, после
-неё таблица устарела и заменяется состоянием ниже (в DoD TRAEFIK-2: «runbook обновлён»).
-
-#### Целевое состояние после TRAEFIK-2 (ADR-038)
+Состояние на 2026-11-14, после TRAEFIK-2 (ADR-038). Старый балансировщик `ingress-nginx` (`c2cd5d8d-...`, `209.38.12.89`) удалён.
 
 | Что | Значение |
 |---|---|
-| Балансировщик | создаёт Service Traefik; id и IP новые, записываются после миграции |
-| Аннотации Service | сертификат `malinina-ca` по имени (`do-loadbalancer-certificate-name`, не по id: id Let's Encrypt меняется при продлении), тип `REGIONAL` (HTTP-балансировщик; DOKS с 1.33.1-do.0 по умолчанию ставит `REGIONAL_NETWORK`, TCP без сертификата), протокол `http`, TLS-порт 443, редирект http -> https (ADR-038 п. 4; точные имена аннотаций - в `deploy/argocd/traefik.yaml`) |
-| Доверенные адреса | `forwardedHeaders.trustedIPs` = `10.118.0.0/20` (VPC `default-tor1`), IP клиента из `X-Forwarded-For` (ADR-038 п. 6) |
+| Load Balancer | id `77882fbb-5a96-4620-bacf-549e1dba0bee`, тип `REGIONAL` (HTTP-балансировщик), `active`, IPv4 `209.38.0.223`, IPv6 `2604:a880:cad:d0:0:1:d312:8001`; создан Service `traefik` в namespace `traefik` при синке Application `traefik` |
+| Правила | 80 http -> http, 443 https -> http с сертификатом `b6041d52-2a99-4f99-bcc9-9060e58eff45` (это `malinina-ca`, найден по имени), редирект http -> https включён (`redirect_http_to_https: true`) |
+| Сертификат | `malinina-ca`: `malinina.ca`, `*.malinina.ca`, Let's Encrypt, CN `malinina.ca`, до 2027-02-09; продление DO не проверялось (CERT-1); в аннотации Service задан по имени, не по id |
+| DNS | зона `malinina.ca` на DO (NS `ns1-3.digitalocean.com`), TTL каждой записи - 300: A `@` (`1837993633`) и A `*` (`1837993634`) на `209.38.0.223`, AAAA `@` (`1838012116`) на `2604:a880:cad:d0:0:1:d312:8001`; AAAA для `*` нет; дубль A `@` (`1838012115`) удалён. `dig` через `ns1.digitalocean.com`, `1.1.1.1`, `8.8.8.8` отдаёт эти адреса |
+| Ingress | Traefik: chart `traefik/traefik` 42.3.0, образ `traefik:v3.7.17`, 2 пода в namespace `traefik`, Application `traefik` `Synced` и `Healthy` с 2026-11-14 (ArgoCD, `deploy/argocd/traefik.yaml`) |
+| Проверка | `curl --resolve` на `209.38.0.223`: `:443` на любой путь - `404 page not found` от Traefik (приложений за ним ещё нет, DEPLOY-1); `:80` - 307 на `https://malinina.ca/` (делает балансировщик). Браузер владельца показывает `404 page not found` на `https://malinina.ca/` |
+
+#### Что записано в Service Traefik (ADR-038)
+
+| Что | Значение |
+|---|---|
+| Аннотации | сертификат `malinina-ca` по имени (`do-loadbalancer-certificate-name`, не по id: id Let's Encrypt меняется при продлении), тип `do-loadbalancer-type: REGIONAL`, протокол `http`, TLS-порт 443, редирект http -> https (ADR-038 п. 4; точные имена - в `deploy/argocd/traefik.yaml`) |
+| Доверенные адреса | `forwardedHeaders.trustedIPs` = `10.118.0.0/20` (VPC `default-tor1`), IP клиента из `X-Forwarded-For` (ADR-038 п. 6; что видит Traefik на деле - INGRESS-1) |
 | TLS | завершается на балансировщике, внутри кластера http (ADR-037, Transport); срок и продление сертификата - CERT-1 |
-| DNS | A `@` и A `*` на новый IP, дубль A `@` удаляется на шаге 7 миграции (ниже), AAAA `@` - на новый IPv6 или удаляется |
 
-Проверки владельца (RUNBOOK-2), только чтение; результат - в строку RUNBOOK-2 и, после миграции, в таблицу выше:
+#### Находки миграции TRAEFIK-2 (2026-11-13..14)
+
+1. **Тип балансировщика.** DOKS с 1.33.1-do.0 по умолчанию создаёт для нового Service `LoadBalancer` тип `REGIONAL_NETWORK`: TCP pass-through (tcp-правила 80 и 443), без сертификата, без редиректа, без IPv6. Первый балансировщик (`8acd35ac-6328-4b5b-8304-a722a8b191ca`, `146.190.191.49`) был именно такого типа. Тип существующего балансировщика не меняется: после #53 (аннотация `do-loadbalancer-type: REGIONAL`) ArgoCD применил её, а cloud-controller-manager DO за секунды вернул `REGIONAL_NETWORK`. Лечение: `kubectl -n traefik delete svc traefik` (DO удалил тот балансировщик), синк ArgoCD пересоздал Service, и создался новый нужного типа. С аннотацией в файле на новом кластере тип верный сразу.
+2. **Заголовки только на запросах с маршрутом.** Traefik применяет middleware точки входа лишь к запросу, который совпал с каким-то роутером: безмаршрутный 404 не получает заголовков безопасности (на нём только `x-content-type-options`). Проверено через временный диагностический `IngressRoute` (путь `/__diag` -> `noop@internal`, сразу удалён): пришли все четыре заголовка со значениями ADR-038: `strict-transport-security: max-age=31536000`, `x-content-type-options: nosniff`, `referrer-policy: strict-origin-when-cross-origin`, `x-frame-options: DENY`. Решение владельца 2026-11-14: принято как поведение Traefik; заголовки проверяются на запросе с маршрутом (DoD DEPLOY-1: `curl -sI https://malinina.ca/`).
+3. **DNS-записи от DO.** Когда к новому балансировщику цепляется сертификат Let's Encrypt, DO сам добавляет записи A `@` и AAAA `@` на него (были `1838457238` A `@` и `1838457239` AAAA `@`, TTL 3600; оттуда же взялся старый дубль A `@`). Лишние записи удаляются, а `doctl compute domain records update` без `--record-ttl` сбрасывает TTL в 3600: TTL указывать всегда.
+
+Проверки владельца (RUNBOOK-2), только чтение:
 
 - Тип сертификата и полный id: `doctl compute certificate list --format ID,Name,Type,DNSNames,NotAfter,State` (колонка `Type` отличает `lets_encrypt` от `custom`). Верен ли вывод о продлении - CERT-1.
-- Балансировщик: `doctl compute load-balancer get c2cd5d8d-b9b0-4010-9e79-14e8714bd702 -o json` - правила, цели, проба, редирект совпадают с таблицей выше.
-- DNS: `doctl compute domain records list malinina.ca --format ID,Type,Name,Data,TTL` - дубль A `@` на месте.
+- Балансировщик: `doctl compute load-balancer get 77882fbb-5a96-4620-bacf-549e1dba0bee -o json` - тип, правила, сертификат, редирект совпадают с таблицей выше.
+- DNS: `doctl compute domain records list malinina.ca --format ID,Type,Name,Data,TTL` - ровно одна A `@`, одна A `*`, одна AAAA `@`.
 - Делегирование зоны у регистратора: `dig NS malinina.ca +short` - `ns1-3.digitalocean.com`.
 - Кластер: `doctl kubernetes cluster get 6269b383-1fee-4f12-b7b2-6b49f4264c26 -o json` - автообновление, окно обслуживания и его часовой пояс.
 
@@ -58,13 +62,13 @@ Serves: владелец-оператор и агент, действующий 
 
 | Namespace | Содержимое |
 |---|---|
-| `ingress-nginx` | контроллер (2 пода) - работает |
+| `traefik` | Traefik (2 пода, chart 42.3.0) с 2026-11-14 под ArgoCD, Service `traefik` держит балансировщик (TRAEFIK-2); namespace `ingress-nginx` удалён 2026-11-14 |
 | `kube-system` | компоненты DO: Cilium, CoreDNS, Hubble, CSI, konnectivity, агенты - работают |
-| `argocd` | ArgoCD работает с 2026-11-11: Helm-релиз `argocd` (chart argo-cd 10.11.6, app v3.5.6) `deployed`; Deployment: server 2, repo-server 2, applicationset-controller, dex-server, notifications-controller, redis; StatefulSet application-controller; есть только `AppProject default`; с 2026-11-13 управляет собой и Application из `deploy/argocd/` (`root`, `argo-cd`, `sealed-secrets`, `nats`; ARGOCD-2), UI - через port-forward |
+| `argocd` | ArgoCD работает с 2026-11-11: Helm-релиз `argocd` (chart argo-cd 10.11.6, app v3.5.6) `deployed`; Deployment: server 2, repo-server 2, applicationset-controller, dex-server, notifications-controller, redis; StatefulSet application-controller; есть только `AppProject default`; с 2026-11-13 управляет собой и Application из `deploy/argocd/` (`root`, `argo-cd`, `sealed-secrets`, `nats`, с 2026-11-14 `traefik`; ARGOCD-2, TRAEFIK-2), UI - через port-forward |
 | `bf` | NATS JetStream с 2026-11-13: `nats-0` (2/2), `nats-box`, PVC `nats-js-nats-0` 10Gi, стрим `BF` (NATS-2) |
 | `default` | пусто |
 
-Контроллер Sealed Secrets работает в `kube-system` с 2026-11-13, сертификата и копии ключа ещё нет (SEALED-2). Не установлено: Debezium (CDC-2), Loki и Grafana (OBS-2), чарт `app` (CHART-1), приложения.
+Контроллер Sealed Secrets работает в `kube-system` с 2026-11-13, сертификата и копии ключа ещё нет (SEALED-2). Приложений за Traefik ещё нет (DEPLOY-1). Не установлено: Debezium (CDC-2), Loki и Grafana (OBS-2), чарт `app` (CHART-1), приложения.
 
 ## Что видно и требует решения
 
@@ -75,8 +79,8 @@ Serves: владелец-оператор и агент, действующий 
 | 3 | Control plane без HA, 3 узла без автомасштабирования | сбой control plane останавливает управление кластером, работающие поды живут; при росте нагрузки узлы не добавятся | решение при росте |
 | 4 | Автообновление выключено | версия кластера устареет, обновление - ручное в окно обслуживания | решено: остаётся выключенным, процедура ниже («Обновление кластера вручную») |
 | 5 | Нет metrics-server | не работают `kubectl top` и автомасштабирование подов | при появлении нагрузки |
-| 6 | Дубль A-записи `@` в DNS | безвреден, но лишний; удалять - действие в консоли DO | решено: удаляется на шаге 7 миграции TRAEFIK-2, не раньше |
-| 7 | TLS завершается на балансировщике, внутри кластера http | трафик LB -> узел внутри VPC без шифрования; риск принят в ADR-037; ingress-контроллер, заголовки и IP клиента решены в ADR-038: `ingress-nginx` снят с поддержки и заменяется Traefik (миграция ниже), срок сертификата - CERT-1 | ADR-037, ADR-038, TRAEFIK-1, CERT-1 |
+| 6 | Дубль A-записи `@` в DNS | был безвреден, но лишний | сделано 2026-11-14 (TRAEFIK-2): удалён; DO сам добавляет A и AAAA при подключении сертификата, см. находку 3 выше |
+| 7 | TLS завершается на балансировщике, внутри кластера http | трафик LB -> узел внутри VPC без шифрования; риск принят в ADR-037; ingress-контроллер, заголовки и IP клиента решены в ADR-038: `ingress-nginx` снят с поддержки и заменён Traefik 2026-11-14 (миграция ниже), срок сертификата - CERT-1 | ADR-037, ADR-038, TRAEFIK-1, CERT-1 |
 | 8 | Spaces не видны через `doctl` | нужны отдельные ключи Spaces; состояние бакетов не проверено | ADR-042 (решение), [spaces.md](spaces.md), проверки - RUNBOOK-2 |
 
 ## Не проверено
@@ -86,8 +90,7 @@ Serves: владелец-оператор и агент, действующий 
 - Часовой пояс окна обслуживания, расход ресурсов узлов (нет metrics-server).
 - Sealed Secrets: чарт отрисован `helm template` (`pnpm charts`), на кластере не ставился; команды раздела ниже не выполнялись; поведение контроллера при `--key-renew-period 0` (число ключей после перезапуска) взято из README апстрима.
 - NATS: установлен и проверен 2026-11-13 (NATS-2), под с `drop: [ALL]` и без `runAsNonRoot` на томе DO работает; размеры стрима и requests - допущения без замеров.
-- Traefik: чарт отрисован `helm template` (`pnpm charts`), на кластере не ставился; команды раздела «Миграция ingress» не выполнялись. Не видно без кластера: порядок синка Middleware и CRD, доходит ли http с балансировщика на `websecure` при `tls.enabled=false`, значения DO-аннотаций на новом Service, видит ли Traefik IP клиента (INGRESS-1); requests подов - допущение без замеров.
-- Откуда взялась ревизия 3 у `ingress-nginx` и какие значения чарта заданы (`helm get values`).
+- Traefik: поставлен и проверен 2026-11-14 (TRAEFIK-2): синк без повтора, http с балансировщика доходит до `websecure` при `tls.enabled=false`. Не проверено: видит ли Traefik IP клиента (INGRESS-1) и заголовки на ответе настоящего приложения (DEPLOY-1; на временном маршруте все четыре пришли, находка 2); requests подов - допущение без замеров.
 
 ## Разбор: почему ArgoCD не установился (2026-11-11, только чтение)
 
@@ -115,20 +118,24 @@ Chart берётся командами `helm repo add argo https://argoproj.git
 
 ## Миграция ingress: ingress-nginx -> Traefik (ADR-038, TRAEFIK-2)
 
-Балансировщик одновременно один (решение владельца 2026-11-13): сначала удаляется `ingress-nginx` вместе со старым балансировщиком, потом слияние в `main` создаёт новый. Сайт не отвечает с шага 3 до шага 7, простой допустим (приложений за ним ещё нет, DEPLOY-1). Шаги выполняет агент (ADR-059, решение владельца 2026-11-13): `kubectl`, `helm`, `doctl compute` на чтение и запись DNS; владелец только подтверждает запрос разрешения. Результат каждого шага записывается в строку TRAEFIK-2; на момент написания команды не выполнялись.
+Выполнена агентом 2026-11-13..14 (ADR-059). Результат: Application `traefik` `Synced` и `Healthy` с первого синка, Middleware `security-headers` создан без повтора из-за порядка CRD, 2 пода `Running` (chart 42.3.0, `traefik:v3.7.17`); балансировщик `77882fbb-5a96-4620-bacf-549e1dba0bee`, `REGIONAL`, `active`, IPv4 `209.38.0.223`; DNS на нём. Старый `ingress-nginx` (Helm-релиз ревизия 3, chart 4.15.1) снят `helm uninstall`, старый балансировщик `c2cd5d8d-b9b0-4010-9e79-14e8714bd702` (`209.38.12.89`) удалён DO, namespace `ingress-nginx` удалён. Фактический порядок: TTL AAAA `@` 3600 -> 300 (2026-11-13), `helm uninstall` (2026-11-14) до того, как ArgoCD подхватил #52, слияние #52 (сертификат по имени, `traefik.yaml` убран из исключения корня), на шаге 4 первый балансировщик оказался типа `REGIONAL_NETWORK` (находка 1), слияние #53 (`do-loadbalancer-type: REGIONAL`), пересоздание Service, DNS. Находки 1-3 - выше, в «Вход в кластер». Сайт не отвечал между `helm uninstall` и переключением DNS (простой допустим: приложений за ним не было).
 
-Файлы готовы (TRAEFIK-1, TRAEFIK-2): ArgoCD-приложение `deploy/argocd/traefik.yaml` (chart `traefik/traefik` 42.3.0, ADR-038 п. 3; namespace `traefik`, 2 реплики; Middleware `security-headers`; `websecure` принимает http от балансировщика; `trustedIPs` = `10.118.0.0/20`). Сертификат задан по имени: аннотация `service.beta.kubernetes.io/do-loadbalancer-certificate-name: malinina-ca`. Id подставлять не нужно, и `certificate-id` в файле быть не должно: при двух аннотациях DO берёт id, а id сертификата Let's Encrypt меняется при каждом продлении (CERT-1). Остальные аннотации (протокол `http`, TLS-порт 443, редирект) уже в файле. `traefik.yaml` не входит в `directory.exclude` корня (ADR-046), поэтому слияние файла в `main` создаёт Application, а он создаёт балансировщик. Application не проверялся на кластере.
+Ниже процедура для повтора на новом кластере (восстановление, [recovery.md](recovery.md)); там `ingress-nginx` уже нет, шаги 1-3 пропускаются, а с аннотацией типа в файле Service создаётся нужного типа сразу.
 
-1. Подготовка, только чтение и DNS: сертификат на месте под точным именем `malinina-ca` и в состоянии `verified`: `doctl compute certificate list --format ID,Name,DNSNames,NotAfter,State` (имя - то, что в аннотации; id не нужен). Записи DNS: `doctl compute domain records list malinina.ca --format ID,Type,Name,Data,TTL`; у AAAA `@` снизить TTL до 300: `doctl compute domain records update malinina.ca --record-id <id> --record-ttl 300`, и дождаться старого TTL, чтобы клиенты не держали адрес старого балансировщика дольше пяти минут.
-2. Убедиться, что корень применён и что `traefik` до слияния не синкается: `kubectl -n argocd get applications` (`root`, `argo-cd`, `sealed-secrets`, `nats`; `traefik` в списке нет).
-3. Убрать старый контроллер: `helm -n ingress-nginx uninstall ingress-nginx`; DO удалит старый балансировщик, проверка: `doctl compute load-balancer list` не содержит `c2cd5d8d-b9b0-4010-9e79-14e8714bd702`. Namespace `ingress-nginx` удалить, когда пуст. Дальше назад к `ingress-nginx` пути нет, а старый IP `209.38.12.89` освобождён.
-4. Слить PR с `traefik.yaml` в `main`: синк корня создаёт Application `traefik`, `kubectl -n argocd get application traefik` до `Synced` и `Healthy`, `kubectl -n traefik get pods` - два пода `Running`. Если синк упал на объекте `Middleware`, потому что он дошёл до кластера раньше CRD chart, повторить синк; если не проходит, перенести заголовки в `providers.file` в том же файле (решение владельца 2026-11-12, нового ADR не нужно).
-5. Новый адрес: `kubectl -n traefik get svc traefik` (поле `EXTERNAL-IP`), `doctl compute load-balancer list --format ID,Name,IP,Status`; дождаться `active`; `doctl compute load-balancer get <id> -o json`: правила 80 и 443 в режиме `http`, сертификат `malinina-ca` на 443, редирект включён, есть ли IPv6.
-6. Проверка до DNS, мимо него: `curl -sI --resolve malinina.ca:443:<новый IP> https://malinina.ca/` - 404 от Traefik (пока приложений нет) с `Strict-Transport-Security`, `X-Content-Type-Options`, `Referrer-Policy`, `X-Frame-Options`. Именно это доказывает, что http с балансировщика доходит до `websecure` при `tls.enabled=false`. `curl -sI --resolve malinina.ca:80:<новый IP> http://malinina.ca/` вернёт редирект на https, но его делает сам балансировщик, и до Traefik запрос не доходит, поэтому доказательством он не служит.
-7. DNS: для каждой записи A `@` и A `*` - `doctl compute domain records update malinina.ca --record-id <id> --record-data <новый IP>`; AAAA `@` - на IPv6 нового балансировщика, а если его у балансировщика нет - удалить запись. Дубль A `@` убирается здесь же (находка 6).
-8. Дождаться TTL и сверить: `dig +short malinina.ca`, `dig +short anything.malinina.ca` отдают новый IP, `dig +short AAAA malinina.ca` - новый IPv6 или пусто.
+Балансировщик одновременно один (решение владельца 2026-11-13): сначала удаляется `ingress-nginx` вместе со старым балансировщиком, потом слияние в `main` создаёт новый. Шаги выполняет агент (ADR-059): `kubectl`, `helm`, `doctl compute` на чтение и запись DNS; владелец только подтверждает запрос разрешения.
 
-Отката к `ingress-nginx` нет: старый балансировщик удалён на шаге 3. При сбое Traefik чинится вперёд правкой `deploy/argocd/traefik.yaml` и слиянием.
+Файлы: ArgoCD-приложение `deploy/argocd/traefik.yaml` (chart `traefik/traefik` 42.3.0, ADR-038 п. 3; namespace `traefik`, 2 реплики; Middleware `security-headers`; `websecure` принимает http от балансировщика; `trustedIPs` = `10.118.0.0/20`). Сертификат задан по имени: аннотация `service.beta.kubernetes.io/do-loadbalancer-certificate-name: malinina-ca`. Id подставлять не нужно, и `certificate-id` в файле быть не должно: при двух аннотациях DO берёт id, а id сертификата Let's Encrypt меняется при каждом продлении (CERT-1). Остальные аннотации (тип `REGIONAL`, протокол `http`, TLS-порт 443, редирект) уже в файле. `traefik.yaml` не входит в `directory.exclude` корня (ADR-046), поэтому слияние файла в `main` создаёт Application, а он создаёт балансировщик.
+
+1. Подготовка, только чтение и DNS: сертификат на месте под точным именем `malinina-ca` и в состоянии `verified`: `doctl compute certificate list --format ID,Name,DNSNames,NotAfter,State` (имя - то, что в аннотации; id не нужен). Записи DNS: `doctl compute domain records list malinina.ca --format ID,Type,Name,Data,TTL`; у AAAA `@` снизить TTL до 300: `doctl compute domain records update malinina.ca --record-id <id> --record-ttl 300` (`--record-ttl` указывать всегда, иначе TTL станет 3600), и дождаться старого TTL, чтобы клиенты не держали адрес старого балансировщика дольше пяти минут.
+2. Убедиться, что корень применён: `kubectl -n argocd get applications` (`root`, `argo-cd`, `sealed-secrets`, `nats`). Если `ingress-nginx` ещё стоит, `traefik` до его удаления синкаться не должен (два балансировщика сразу не нужны).
+3. Убрать старый контроллер (если он есть): `helm -n ingress-nginx uninstall ingress-nginx`; DO удалит старый балансировщик, проверка: `doctl compute load-balancer list` его не содержит. Namespace `ingress-nginx` удалить, когда пуст. Назад к `ingress-nginx` пути нет.
+4. Слить PR с `traefik.yaml` в `main`: синк корня создаёт Application `traefik`, `kubectl -n argocd get application traefik` до `Synced` и `Healthy`, `kubectl -n traefik get pods` - два пода `Running`. На `malinina` Middleware создался без повтора; если синк всё же упал на `Middleware` раньше CRD chart, повторить синк, а если не проходит - перенести заголовки в `providers.file` в том же файле (решение владельца 2026-11-12, нового ADR не нужно). Сразу проверить тип балансировщика (шаг 5): при `REGIONAL_NETWORK` - `kubectl -n traefik delete svc traefik` и синк (находка 1).
+5. Новый адрес: `kubectl -n traefik get svc traefik` (поле `EXTERNAL-IP`), `doctl compute load-balancer list --format ID,Name,IP,Status`; дождаться `active`; `doctl compute load-balancer get <id> -o json`: тип `REGIONAL`, правила 80 и 443 в режиме `http`, сертификат `malinina-ca` на 443, редирект включён, есть ли IPv6.
+6. Проверка до DNS, мимо него: `curl -sI --resolve malinina.ca:443:<новый IP> https://malinina.ca/` - 404 от Traefik (пока приложений нет). Это доказывает, что http с балансировщика доходит до `websecure` при `tls.enabled=false`. Заголовков безопасности на безмаршрутном 404 нет (находка 2): их видно на запросе с маршрутом. `curl -sI --resolve malinina.ca:80:<новый IP> http://malinina.ca/` вернёт редирект на https, но его делает сам балансировщик, и до Traefik запрос не доходит, поэтому доказательством он не служит.
+7. DNS: подключение сертификата к балансировщику добавляет в зону записи A `@` и AAAA `@` от самого DO (находка 3). Оставить по одной A `@`, A `*` и AAAA `@`, лишние удалить; для оставшихся `doctl compute domain records update malinina.ca --record-id <id> --record-data <новый адрес> --record-ttl 300`. Если у балансировщика нет IPv6, AAAA `@` удалить.
+8. Дождаться TTL и сверить: `dig +short malinina.ca`, `dig +short anything.malinina.ca` отдают новый IP, `dig +short AAAA malinina.ca` - новый IPv6 или пусто; проверить через `ns1.digitalocean.com`, `1.1.1.1`, `8.8.8.8`.
+
+Отката к `ingress-nginx` нет. При сбое Traefik чинится вперёд правкой `deploy/argocd/traefik.yaml` и слиянием.
 
 ## Sealed Secrets: установка, копия ключа, ротация (ADR-020, ADR-045)
 
@@ -237,7 +244,7 @@ Chart берётся командами `helm repo add argo https://argoproj.git
 
 - Кластер: `doctl kubernetes cluster get malinina`; узлы: `kubectl get nodes -o wide`.
 - Релизы: `helm list -A`; поды: `kubectl get pods -A`.
-- Вход: `doctl compute load-balancer get c2cd5d8d-b9b0-4010-9e79-14e8714bd702`, `kubectl -n ingress-nginx get svc,pods`.
+- Вход: `doctl compute load-balancer get 77882fbb-5a96-4620-bacf-549e1dba0bee`, `kubectl -n traefik get svc,pods`.
 - NATS: `kubectl -n bf get pods,pvc -l app.kubernetes.io/name=nats`; логи `kubectl -n bf logs nats-0 -c nats`; состояние JetStream - `kubectl -n bf exec deploy/nats-box -- nats stream info BF` и `nats server report jetstream`; монитор сервера - `kubectl -n bf port-forward pod/nats-0 8222:8222`, затем `curl -s localhost:8222/jsz`.
 - Три вероятные причины недоступности сайта, по убыванию: контроллер ingress или его Service (LB без здоровых узлов); сертификат или DNS; недоступны узлы.
 
