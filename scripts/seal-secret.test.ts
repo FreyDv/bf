@@ -392,7 +392,7 @@ describe('manifest mode', () => {
 
   it('writes a strict-scope SealedSecret manifest for the given name and namespace', () => {
     const root = repository();
-    writeFileSync(join(root, '.env.nats'), 'USER_PASSWORD=dummy-nats-1\nOTHER=dummy-nats-2\n');
+    writeFileSync(join(root, '.env.nats'), 'NATS_USER=dummy-nats-1\nOTHER=dummy-nats-2\n');
     const { sealer, calls } = fakeSealer();
     const result = exec(root, flags(root, join(root, '.env.nats')), sealer);
     assert.equal(result.code, 0, result.text);
@@ -407,7 +407,7 @@ describe('manifest mode', () => {
     );
     assert.match(
       yaml,
-      /\n {2}encryptedData:\n {4}USER_PASSWORD: AgB\S+\n {4}OTHER: AgB\S+\n {2}template:\n/,
+      /\n {2}encryptedData:\n {4}NATS_USER: AgB\S+\n {4}OTHER: AgB\S+\n {2}template:\n/,
     );
     assert.match(yaml, /\n {4}type: Opaque\n$/);
     assert.doesNotMatch(yaml, /scope|dummy-/);
