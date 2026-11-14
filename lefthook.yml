@@ -14,7 +14,7 @@ pre-commit:
       run: pnpm turbo run typecheck --affected
 
     - name: prettier
-      glob: '{apps/**,packages/**,package.json,turbo.json,.dependency-cruiser.mjs,scripts/boundaries.test.ts,scripts/charts-check.ts,scripts/charts.test.ts,scripts/contracts-generate.ts,scripts/contracts-typecheck.ts,scripts/contracts-typecheck.test.ts,scripts/lib/backend-contract-files.ts,scripts/check-migrations.ts,scripts/check-migrations.test.ts,scripts/image-check.ts}'
+      glob: '{apps/**,packages/**,package.json,turbo.json,.dependency-cruiser.mjs,scripts/boundaries.test.ts,scripts/charts-check.ts,scripts/charts.test.ts,scripts/contracts-generate.ts,scripts/contracts-typecheck.ts,scripts/contracts-typecheck.test.ts,scripts/lib/backend-contract-files.ts,scripts/check-migrations.ts,scripts/check-migrations.test.ts,scripts/image-check.ts,scripts/seal-secret.ts,scripts/seal-secret.test.ts}'
       run: pnpm exec prettier --write --ignore-unknown {staged_files}
       stage_fixed: true
 
@@ -40,9 +40,13 @@ pre-commit:
 
     - name: helm lint and template
       # Last, and only when the deploy files changed (ADR-019). Helm is a local requirement (AGENTS.md).
-      glob: '{deploy/charts/**,deploy/apps/**,deploy/argocd/**,scripts/charts-check.ts,scripts/lib/argocd-application.ts}'
+      glob: '{deploy/charts/**,deploy/apps/**,deploy/argocd/**,scripts/charts-check.ts,scripts/seal-secret.ts,scripts/lib/argocd-application.ts}'
       run: pnpm charts
 
     - name: chart behaviour
       glob: '{deploy/charts/**,deploy/argocd/**,scripts/charts.test.ts,scripts/lib/argocd-application.ts}'
       run: pnpm charts:test
+
+    - name: secret sealing script
+      glob: '{scripts/seal-secret.ts,scripts/seal-secret.test.ts}'
+      run: pnpm secrets:seal:test

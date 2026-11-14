@@ -9,6 +9,7 @@ import {
   readChartApplications,
   renderApplication,
 } from './lib/argocd-application.ts';
+import { checkAll } from './seal-secret.ts';
 
 const deploy = resolve(import.meta.dirname, '../deploy');
 const chart = `${deploy}/charts/app`;
@@ -67,7 +68,14 @@ for (const app of applications) {
   }
 }
 
+// Every encryptedData value of an application is kubeseal ciphertext, never plaintext (ADR-060).
+const sealed = checkAll(resolve(deploy, '..'));
+if (sealed.errors.length > 0) {
+  failed += 1;
+  console.error(`FAIL secrets.yaml is not sealed\n${sealed.errors.join('\n')}`);
+}
+
 if (failed > 0) process.exit(1);
 console.log(
-  `charts-check: OK (${cases.length} value sets, lint and template; ${rendered} of ${applications.length} third-party charts rendered)`,
+  `charts-check: OK (${cases.length} value sets, lint and template; ${rendered} of ${applications.length} third-party charts rendered; ${sealed.files} secrets.yaml checked)`,
 );
