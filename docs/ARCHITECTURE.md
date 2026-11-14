@@ -33,7 +33,7 @@
 
 ## Runtime and deploy
 
-Одно окружение `production` в кластере `malinina`, namespace `bf`; один хост, `/` во frontend и `/api` в backend; ingress - Traefik; TLS завершается на балансировщике DO. Решения и причины: [ADR-038](decision-records/adr/ADR-038-environments-ingress-edge-bot.md), [ADR-037](decision-records/adr/ADR-037-security-baseline.md), [ADR-019](decision-records/adr/ADR-019-deployment-helm-argocd.md). В кластере это ещё не стоит (backlog TRAEFIK-1, DEPLOY-1).
+Одно окружение `production` в кластере `malinina`, namespace `bf`; один хост, `/` во frontend и `/api` в backend; ingress - Traefik; TLS завершается на балансировщике DO. Решения и причины: [ADR-038](decision-records/adr/ADR-038-environments-ingress-edge-bot.md), [ADR-037](decision-records/adr/ADR-037-security-baseline.md), [ADR-019](decision-records/adr/ADR-019-deployment-helm-argocd.md). Приложений в кластере ещё нет (backlog DEPLOY-1); Traefik ставит TRAEFIK-2.
 
 ## Key decisions
 

@@ -5,8 +5,8 @@
 #
 # Excluded from the sync:
 # - argocd-values.yaml is a values file, not a Kubernetes object; argo-cd.yaml reads it as a value file.
-# - traefik.yaml still holds the placeholder CERTIFICATE_ID_OF_MALININA_CA: syncing it would create a DigitalOcean load
-#   balancer with a wrong certificate. TRAEFIK-2 removes it from this list in the same commit that sets the real id.
+# Every other file is an Application, so merging a new one deploys it. traefik.yaml was excluded until TRAEFIK-2
+# (it held a certificate placeholder, ADR-046); it now names the certificate and is synced like the others.
 #
 # No prune and no selfHeal, and no resources-finalizer: deleting this Application must never delete what it deployed,
 # and a mistake in a file here must not remove an object by itself (the same rule as the Applications below it).
@@ -23,7 +23,7 @@ spec:
     path: deploy/argocd
     directory:
       recurse: false
-      exclude: "{argocd-values.yaml,traefik.yaml}"
+      exclude: "{argocd-values.yaml}"
   destination:
     server: https://kubernetes.default.svc
     namespace: argocd

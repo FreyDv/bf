@@ -10,6 +10,10 @@ All notable changes to this project, in [Keep a Changelog](https://keepachangelo
 
 For the owner: you ran the NATS checks on `malinina`. JetStream is on, stream `BF` exists with the limits from ADR-022 (7 days, 6 GiB, discard old), and a test message was published, read, survived a restart of `nats-0` and was removed. The runbook's `nats stream add` failed as written (`-1` after a space is read as a flag); it now passes values with `=`. NATS-2 is archived; CDC-2 (Debezium) and NATS-4 (NetworkPolicy) are no longer blocked.
 
+### Traefik by certificate name, root syncs it (TRAEFIK-2, part 1, 2026-11-13)
+
+For the owner: `deploy/argocd/traefik.yaml` now names the balancer certificate with `do-loadbalancer-certificate-name: malinina-ca` instead of an id, so there is no placeholder and no id to substitute; the Let's Encrypt id changes on every renewal, the name does not (DigitalOcean prefers the id annotation when both are set, so the file must never carry it, and `charts:test` checks that). `traefik.yaml` is no longer in `directory.exclude` of `deploy/argocd/root.yaml`: merging it makes the root create the Application and its load balancer. Only one balancer exists at a time (downtime accepted): `ingress-nginx` is uninstalled with its balancer before the merge, and the migration section of `docs/runbooks/malinina-kubernetes.md` is rewritten to that order (certificate check and AAAA TTL 300, uninstall, merge and sync, new address, `curl --resolve` 404 with the four security headers on :443 as the proof that http reaches `websecure`, DNS with AAAA on the new IPv6 or deleted, `dig`). The agent runs the live steps itself (ADR-059). The chart stays on 42.3.0; the move to 42.3.1 or later is TRAEFIK-3. Not verified: anything on the cluster; the row TRAEFIK-2 stays `todo` until the live steps are done and recorded.
+
 ### Backlog after ARGOCD-2 (2026-11-13)
 
 For the owner: SEALED-2 and TRAEFIK-2 now state what is already live (NATS-2 closed, entry above). The Sealed Secrets controller runs, so SEALED-2 owes the certificate and the key copy. TRAEFIK-2 no longer offers `kubectl apply`: the root deploys `traefik.yaml` once it is merged.
