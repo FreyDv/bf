@@ -47,8 +47,8 @@ https://docs.digitalocean.com/products/spaces/how-to/manage-access/ (читал�
 3. Права: **один** бакет; для медиа - Read/Write/Delete (загрузка по presigned PUT, показ, удаление), для Loki - Read/Write/Delete
    (компактор удаляет чанки по ретеншну, ADR-043). Меньшие права для Loki ломают ретеншн.
 4. Секрет скопировать сразу и положить в менеджер паролей одной записью с идентификатором ключа; на диск и в чат он не попадает.
-5. Запечатать: значение идёт в Sealed Secret потребителя (`pnpm secrets:seal` после SECRETS-1; до этого `kubeseal --raw`, см.
-   [malinina-kubernetes.md](malinina-kubernetes.md), «Sealed Secrets»). Имена секретов и ключей внутри них задают строки DEPLOY-1
+5. Запечатать: значение идёт в `.env.production` потребителя (ключ `NAME=значение`, значения с `#` в кавычках), затем `pnpm secrets:seal`
+   (ADR-060; ключи и сертификат - [malinina-kubernetes.md](malinina-kubernetes.md), «Sealed Secrets»). Имена секретов и ключей внутри них задают строки DEPLOY-1
    и OBS-2; здесь они не фиксируются. Открытое значение в репозиторий не попадает (ADR-020).
 6. Очистить буфер обмена, если секрет копировался через него.
 

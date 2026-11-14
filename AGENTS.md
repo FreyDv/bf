@@ -89,11 +89,13 @@ pnpm deps:test                          # the rules fire on violating fixtures; 
 pnpm contracts:generate                 # rebuild packages/contracts/src/generated/server.ts (the AppRouter type, ADR-035); commit it
 pnpm contracts:check                    # fails when that file is out of date (CI and pre-commit); run after touching a router or request DTO
 pnpm local:up | local:cdc | local:down | local:reset   # docker compose: Postgres, NATS (+ Debezium with local:cdc), ADR-033
-pnpm charts                             # helm lint + helm template for the shared chart and every app under deploy/apps (ADR-019)
+pnpm charts                             # helm lint + helm template for the shared chart and every app under deploy/apps (ADR-019); also `seal-secret --check` (secrets.yaml holds ciphertext only)
 pnpm charts:test                        # chart behaviour: what it renders and refuses; needs `helm` on PATH
 pnpm test:e2e                           # turbo run test:e2e against bf_test and NATS; start them with `pnpm local:up` first (ADR-036)
 pnpm migrations:check                   # applies the migrations of main, then of this branch, to a clean Postgres; skips when none changed (ADR-036); needs Docker
 pnpm migrations:test                    # the migration check on fixtures; needs Docker
+pnpm secrets:seal                       # from the root: each app's `.env.production` -> deploy/apps/<app>/secrets.yaml (kubeseal on PATH; ADR-060); fails when an app has none
+pnpm secrets:seal:test                  # the script on fake and (when on PATH) real kubeseal; no value may reach argv, output or a file
 pnpm image:check lint|secrets|vulns|affected   # hadolint and Trivy as pinned Docker images, and which apps need an image (ADR-036); needs Docker
 ```
 
