@@ -80,7 +80,8 @@ not fixed is in the backlog. Say what was not verified instead of claiming it.
 5. Errors: business failures are typed results with stable codes; technical failures throw; no transport
    types below the driving adapter (ERR-1..4).
 6. Adapters: no business logic (ADP-1); whitelisted responses (ADP-4); DTOs without domain objects
-   (ADP-3); repository maps to a separate persistence model (INF-4, INF-5).
+   (ADP-3); repository maps to a separate persistence model (INF-4, INF-5); every tRPC procedure declares
+   `output` from a `*.response.dto.ts` (ADR-050 item 10).
 7. Tests: three levels, spec criteria covered, doubles for ports, no weakened assertions (TST-1..5).
 8. Enforcement: the boundary check passes and its configuration was not loosened (ENF-1).
 9. Query filters: declared with `defineFilter`, read through a port, relations as `EXISTS` with an indexed

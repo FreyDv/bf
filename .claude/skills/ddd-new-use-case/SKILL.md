@@ -23,7 +23,10 @@ case (STR-2, APP-3).
    model (INF-4, INF-5).
 6. **Driving adapter and DTOs.** Request DTO validated at the boundary, response whitelist, error-code to
    transport mapping (ADP-1..4, ERR-4). No business logic. A list query with a filter follows
-   `.claude/rules/query-filter-rules.md`.
+   `.claude/rules/query-filter-rules.md`. Every tRPC procedure declares `output` with the schema from the
+   slice's or module's `*.response.dto.ts` (ADR-050 item 10): without it the contract generator imports the
+   router class into `packages/contracts/src/generated/server.ts`, the frontend fails on its decorators
+   (`TS1241`) and `pnpm deps` stops it only after the code is written.
 7. **Behavioural test** from the spec's acceptance criteria through the adapter against a test database
    (TST-1, TST-3).
 8. **Finish.** Run the boundary check and the tests; update the spec in the same PR; run `ddd-review`.
