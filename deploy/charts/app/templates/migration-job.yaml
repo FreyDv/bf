@@ -42,16 +42,16 @@ spec:
           env:
             {{- include "app.env" . | trim | nindent 12 }}
           {{- end }}
-          {{- if include "app.envFrom" . }}
+          {{- if include "app.migrationEnvFrom" . }}
           envFrom:
-            {{- include "app.envFrom" . | trim | nindent 12 }}
+            {{- include "app.migrationEnvFrom" . | trim | nindent 12 }}
           {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           securityContext:
             {{- include "app.containerSecurityContext" . | nindent 12 }}
           volumeMounts:
-            {{- include "app.tmpVolumeMount" . | nindent 12 }}
+            {{- include "app.volumeMounts" . | nindent 12 }}
       volumes:
-        {{- include "app.tmpVolume" . | nindent 8 }}
+        {{- include "app.volumes" . | nindent 8 }}
 {{- end }}

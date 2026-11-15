@@ -2,10 +2,13 @@
 // Runs `helm template`, so Helm is a local requirement (AGENTS.md).
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { readdirSync, readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { describe, it } from 'node:test';
+import { createHash } from 'node:crypto';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { after, describe, it } from 'node:test';
 import { readChartApplications, renderApplication } from './lib/argocd-application.ts';
+import { run, type Sealer, type SealRequest } from './seal-secret.ts';
 
 const deploy = resolve(import.meta.dirname, '../deploy');
 const chart = `${deploy}/charts/app`;
@@ -33,8 +36,26 @@ const kindOf = (doc: string) => /^kind: (\w+)/m.exec(doc)?.[1];
 const kinds = (output: string) => docs(output).map(kindOf).sort();
 const find = (output: string, kind: string) =>
   docs(output).find((doc) => kindOf(doc) === kind) ?? '';
-const checksum = (output: string) =>
-  /checksum\/secret: (\w+)/.exec(find(output, 'Deployment'))?.[1];
+const all = (output: string, kind: string) => docs(output).filter((doc) => kindOf(doc) === kind);
+const named = (output: string, kind: string, name: string) =>
+  all(output, kind).find((doc) => new RegExp(`^ {2}name: ${name}$`, 'm').test(doc)) ?? '';
+const checksum = (output: string, annotation = 'secret') =>
+  new RegExp(`checksum/${annotation}: (\\w+)`).exec(find(output, 'Deployment'))?.[1];
+const wave = (doc: string) => Number(/argocd\.argoproj\.io\/sync-wave: "(-?\d+)"/.exec(doc)?.[1]);
+// The Secrets a pod template reads whole as environment, in order.
+const envFromNames = (doc: string) =>
+  [...doc.matchAll(/secretRef:\n\s+name: (\S+)/g)].map((match) => match[1]);
+const envNames = (doc: string) =>
+  [...doc.matchAll(/- name: ([A-Z_]+)\n\s+value:/g)].map((match) => match[1]);
+const DB_KEYS = [
+  'DB_HOST',
+  'DB_PORT',
+  'DB_NAME',
+  'DB_SCHEMA',
+  'DB_SSL_MODE',
+  'DB_USER',
+  'DB_PASSWORD',
+];
 
 describe('app chart: what it renders', () => {
   it('renders a Deployment, a Service and a ServiceAccount from an image alone', () => {
@@ -48,28 +69,39 @@ describe('app chart: what it renders', () => {
 
   it('renders every optional object when its feature is on', () => {
     assert.deepEqual(kinds(render([full])), [
+      'ConfigMap',
       'CronJob',
       'Deployment',
       'Ingress',
       'Job',
       'NetworkPolicy',
       'SealedSecret',
+      'SealedSecret',
+      'SealedSecret',
       'Service',
       'ServiceAccount',
     ]);
   });
 
-  it('orders the first rollout: secret and account, then the migration Job, then the workloads (ADR-047)', () => {
+  it('orders the first rollout: secrets, CA and account, then the migration Job, then the workloads (ADR-047)', () => {
     const output = render([full]);
-    const wave = (doc: string) =>
-      Number(/argocd\.argoproj\.io\/sync-wave: "(-?\d+)"/.exec(doc)?.[1]);
     const job = find(output, 'Job');
     assert.match(job, /argocd\.argoproj\.io\/hook: Sync\n/);
     assert.match(job, /argocd\.argoproj\.io\/hook-delete-policy: BeforeHookCreation/);
     assert.doesNotMatch(output, /hook: PreSync/, 'PreSync runs before wave -1 exists');
-    const before = ['SealedSecret', 'ServiceAccount'].map((kind) => wave(find(output, kind)));
-    const after = ['Deployment', 'CronJob'].map((kind) => wave(find(output, kind)));
-    assert.deepEqual([wave(job), ...before, ...after], [0, -1, -1, 1, 1]);
+    const secrets = all(output, 'SealedSecret');
+    assert.equal(secrets.length, 3, 'the main secret and both extraSecrets entries');
+    const early = [...secrets, find(output, 'ConfigMap'), find(output, 'ServiceAccount')];
+    assert.deepEqual(
+      early.map(wave),
+      [-1, -1, -1, -1, -1],
+      'three SealedSecrets, the CA, the account',
+    );
+    assert.equal(wave(job), 0);
+    assert.deepEqual(
+      ['Deployment', 'CronJob'].map((kind) => wave(find(output, kind))),
+      [1, 1],
+    );
     assert.equal(
       docs(output).filter((doc) => /hook:/.test(doc)).length,
       1,
@@ -77,12 +109,94 @@ describe('app chart: what it renders', () => {
     );
   });
 
-  it('mounts the built secret and the named ones into the Deployment, the CronJob and the Job', () => {
+  it('renders every extraSecrets entry as <release>-<name>-secrets with strict scope', () => {
     const output = render([full]);
+    for (const [name, key] of [
+      ['web-secrets', 'OPENAI_API_KEY'],
+      ['web-migrator-secrets', 'DB_PASSWORD'],
+      ['web-reports-secrets', 'REPORTS_TOKEN'],
+    ]) {
+      const doc = named(output, 'SealedSecret', name);
+      assert.ok(doc, `${name} is rendered`);
+      assert.match(doc, /namespace: apps\n/);
+      assert.match(doc, new RegExp(`\\n {4}${key}: AgB`));
+      assert.match(doc, new RegExp(`template:\\n {4}metadata:\\n {6}name: ${name}\\n`));
+    }
+    assert.doesNotMatch(named(output, 'SealedSecret', 'web-secrets'), /REPORTS_TOKEN/);
+  });
+
+  it('gives the Deployment and the CronJob the app secret and the named ones, never the migrator secret', () => {
+    const output = render([full]);
+    for (const kind of ['Deployment', 'CronJob']) {
+      assert.deepEqual(envFromNames(find(output, kind)), ['web-secrets', 'shared-config'], kind);
+    }
+  });
+
+  it('gives the migration Job the migrator secret only, not the app secret and not envFromSecrets', () => {
+    const job = find(render([full]), 'Job');
+    assert.deepEqual(envFromNames(job), ['web-migrator-secrets']);
+    assert.ok(envNames(job).includes('LOG_LEVEL'), 'the plain env still reaches the Job');
+  });
+
+  it('attaches an extraSecrets entry other than migrator only when envFromSecrets names it', () => {
+    const output = render([full], ['envFromSecrets[1]=web-reports-secrets']);
+    const expected = ['web-secrets', 'shared-config', 'web-reports-secrets'];
+    assert.deepEqual(envFromNames(find(output, 'Deployment')), expected);
+    assert.deepEqual(envFromNames(find(output, 'CronJob')), expected);
+    assert.deepEqual(
+      envFromNames(find(output, 'Job')),
+      ['web-migrator-secrets'],
+      'the Job never reads envFromSecrets',
+    );
+  });
+
+  it('renders the CA as a ConfigMap and mounts it read-only in all three workloads (ADR-053 item 5)', () => {
+    const output = render([full]);
+    const map = find(output, 'ConfigMap');
+    assert.match(map, /name: web-db-ca\n/);
+    assert.match(map, /ca\.crt: \|\n {4}-----BEGIN CERTIFICATE-----\n/);
     for (const kind of ['Deployment', 'CronJob', 'Job']) {
       const doc = find(output, kind);
-      assert.match(doc, /name: web-secrets/, `${kind} reads the built secret`);
-      assert.match(doc, /name: shared-config/, `${kind} reads the named secret`);
+      assert.match(doc, /name: DB_SSL_CA_FILE\n\s+value: "\/etc\/bf\/db-ca\/ca\.crt"/, kind);
+      assert.match(doc, /mountPath: \/etc\/bf\/db-ca\n\s+readOnly: true/, kind);
+      assert.match(doc, /configMap:\n\s+name: web-db-ca\n/, kind);
+    }
+  });
+
+  it('renders no ConfigMap, no mount and no CA variable for an application without a database', () => {
+    const output = render([minimal]);
+    assert.ok(!kinds(output).includes('ConfigMap'));
+    assert.doesNotMatch(output, /db-ca|DB_SSL_CA_FILE/);
+  });
+
+  it('renders only what an application with a secret and no database asks for', () => {
+    const output = render([minimal], ['secret.encryptedData.API_KEY=AgBplain']);
+    assert.deepEqual(kinds(output), [
+      'Deployment',
+      'NetworkPolicy',
+      'SealedSecret',
+      'Service',
+      'ServiceAccount',
+    ]);
+  });
+
+  it('puts the seven DB_* names in each database secret of the fixture and DATABASE_URL nowhere', () => {
+    const output = render([full]);
+    for (const name of ['web-secrets', 'web-migrator-secrets']) {
+      const doc = named(output, 'SealedSecret', name);
+      for (const key of DB_KEYS) {
+        assert.match(doc, new RegExp(`\\n {4}${key}: `), `${name} ${key}`);
+      }
+    }
+    assert.doesNotMatch(output, /DATABASE_URL/);
+  });
+
+  it('never names doadmin: not in the values, not in a fixture, not in a rendered manifest (ADR-053 item 1)', () => {
+    for (const file of [`${chart}/values.yaml`, minimal, full]) {
+      assert.doesNotMatch(readFileSync(file, 'utf8'), /doadmin/i, file);
+    }
+    for (const output of [render([minimal]), render([full])]) {
+      assert.doesNotMatch(output, /doadmin/i);
     }
   });
 
@@ -97,26 +211,60 @@ describe('app chart: what it renders', () => {
   });
 });
 
-describe('app chart: secret hash in the Deployment', () => {
-  it('has no hash when the application has no secret', () => {
+describe('app chart: restart hash in the Deployment', () => {
+  it('has no hash when the application has no secret and no CA', () => {
     assert.equal(checksum(render([minimal])), undefined);
+    assert.equal(checksum(render([minimal]), 'db-ca'), undefined);
   });
 
-  it('keeps the hash for the same secret', () => {
+  it('keeps the hash for the same input', () => {
     assert.equal(checksum(render([full])), checksum(render([full])));
+    assert.equal(checksum(render([full]), 'db-ca'), checksum(render([full]), 'db-ca'));
   });
 
-  it('changes the hash when a sealed value changes, so the pods restart', () => {
+  it('changes the hash when a sealed value of the app secret changes, so the pods restart', () => {
     const before = checksum(render([full]));
-    const after = checksum(render([full], ['secret.encryptedData.DATABASE_URL=AgBchanged']));
+    const after = checksum(render([full], ['secret.encryptedData.DB_PASSWORD=AgBchanged']));
     assert.ok(before && after);
     assert.notEqual(before, after);
   });
 
-  it('keeps the hash when something other than the secret changes', () => {
+  it('changes the CA hash when the CA changes, and leaves the secret hash alone', () => {
+    const before = render([full]);
+    const after = render([full], ['dbCa.pem=another certificate']);
+    assert.ok(checksum(before, 'db-ca'));
+    assert.notEqual(checksum(before, 'db-ca'), checksum(after, 'db-ca'));
+    assert.equal(checksum(before), checksum(after));
+  });
+
+  it('keeps every hash when only the migrator secret changes: the Deployment does not get it', () => {
+    const before = render([full]);
+    const after = render([full], ['extraSecrets.migrator.encryptedData.DB_PASSWORD=AgBchanged']);
+    assert.notEqual(
+      named(before, 'SealedSecret', 'web-migrator-secrets'),
+      named(after, 'SealedSecret', 'web-migrator-secrets'),
+      'the change reaches the migrator secret',
+    );
+    assert.equal(checksum(before), checksum(after));
+    assert.equal(checksum(before, 'db-ca'), checksum(after, 'db-ca'));
+  });
+
+  it('keeps every hash when only an unattached extra secret changes', () => {
+    const before = render([full]);
+    const after = render([full], ['extraSecrets.reports.encryptedData.REPORTS_TOKEN=AgBchanged']);
+    assert.equal(checksum(before), checksum(after));
+  });
+
+  it('keeps the hash when something other than the secret or the CA changes', () => {
     const before = checksum(render([full]));
     const after = checksum(render([full], ['replicas=3', 'env.LOG_LEVEL=debug']));
     assert.equal(before, after);
+  });
+
+  it('puts no hash on the CronJob and the Job', () => {
+    const output = render([full]);
+    assert.doesNotMatch(find(output, 'CronJob'), /checksum\//);
+    assert.doesNotMatch(find(output, 'Job'), /checksum\//);
   });
 });
 
@@ -185,7 +333,90 @@ describe('app chart: network policy (ADR-037 item 4, backlog CHART-3)', () => {
   });
 });
 
-describe('app chart: what it refuses', () => {
+describe('app chart: what it refuses (ADR-061)', () => {
+  const dbKeysText = DB_KEYS.join(', ');
+
+  it('refuses the migration without the secret of role app', () => {
+    const failure = renderFails([minimal], ['migration.enabled=true']);
+    assert.match(failure, /migration\.enabled requires secret\.encryptedData/);
+  });
+
+  it('refuses the migration without extraSecrets.migrator', () => {
+    const failure = renderFails([full], ['extraSecrets.migrator=null']);
+    assert.match(failure, /migration\.enabled requires extraSecrets\.migrator\.encryptedData/);
+  });
+
+  it('refuses the migration without the CA', () => {
+    assert.match(renderFails([full], ['dbCa.pem=']), /dbCa\.pem is required/);
+  });
+
+  // Built from nothing, so a key left out is absent and not a null that a values file left behind.
+  const sets = (path: string, omit: string[] = []) =>
+    DB_KEYS.filter((key) => !omit.includes(key)).map((key) => `${path}.${key}=AgBx`);
+  const migration = ['migration.enabled=true', 'dbCa.pem=ca'];
+
+  it('refuses a key that is absent or null as missing', () => {
+    const base = [...migration, ...sets('extraSecrets.migrator.encryptedData')];
+    render([minimal], [...base, ...sets('secret.encryptedData')]);
+    const absent = renderFails([minimal], [...base, ...sets('secret.encryptedData', ['DB_HOST'])]);
+    assert.match(absent, /secret\.encryptedData must carry all of .*; missing: DB_HOST\b/);
+    const nulled = renderFails([full], ['secret.encryptedData.DB_HOST=null']);
+    assert.match(nulled, /missing: DB_HOST\b/);
+  });
+
+  it('refuses a secret that has some DB_* keys but not all seven, naming the missing ones', () => {
+    const app = renderFails([full], ['secret.encryptedData.DB_PORT=null']);
+    assert.match(
+      app,
+      new RegExp(`secret\\.encryptedData must carry all of ${dbKeysText}; missing: DB_PORT\\b`),
+    );
+    const migrator = renderFails(
+      [full],
+      [
+        'extraSecrets.migrator.encryptedData.DB_USER=null',
+        'extraSecrets.migrator.encryptedData.DB_SSL_MODE=null',
+      ],
+    );
+    assert.match(
+      migrator,
+      /extraSecrets\.migrator\.encryptedData must carry all of .*; missing: DB_SSL_MODE, DB_USER/,
+    );
+  });
+
+  it('refuses another extra secret that holds a DB_* key, by the same rule', () => {
+    const failure = renderFails([full], ['extraSecrets.reports.encryptedData.DB_HOST=AgBx']);
+    assert.match(failure, /extraSecrets\.reports\.encryptedData must carry all of/);
+    assert.match(
+      failure,
+      /missing: DB_PORT, DB_NAME, DB_SCHEMA, DB_SSL_MODE, DB_USER, DB_PASSWORD/,
+    );
+  });
+
+  it('requires the CA for a database secret even without the migration', () => {
+    const set = DB_KEYS.map((key) => `secret.encryptedData.${key}=AgBx`);
+    assert.match(renderFails([minimal], set), /dbCa\.pem is required/);
+    render([minimal], [...set, 'dbCa.pem=some certificate']);
+  });
+
+  it('requires nothing for an application with neither the migration nor a DB_* key', () => {
+    render([minimal]);
+    render(
+      [minimal],
+      ['secret.encryptedData.API_KEY=AgBx', 'extraSecrets.other.encryptedData.TOKEN=AgBx'],
+    );
+  });
+
+  it('names keys only: no sealed value and no CA text reaches a refusal', () => {
+    const failures = [
+      renderFails([full], ['secret.encryptedData.DB_PORT=null']),
+      renderFails([full], ['dbCa.pem=']),
+      renderFails([full], ['extraSecrets.migrator=null']),
+    ];
+    for (const failure of failures) {
+      assert.doesNotMatch(failure, /AgBexampleciphertext|BEGIN CERTIFICATE/);
+    }
+  });
+
   it('refuses a missing image tag', () => {
     assert.match(renderFails([minimal], ['image.tag=']), /image\.tag is required/);
   });
@@ -466,5 +697,102 @@ describe('ArgoCD self-management (ADR-019, ADR-046, backlog ARGOCD-1)', () => {
       /do-loadbalancer-certificate-id/,
       'the id annotation wins over the name and changes on every renewal',
     );
+  });
+});
+
+// The two halves of ADR-060 and ADR-061 meet here: what scripts/seal-secret.ts writes is what the chart reads.
+describe('seal-secret output rendered by the chart (ADR-060, ADR-061)', () => {
+  const scratch = mkdtempSync(join(tmpdir(), 'charts-test-'));
+  after(() => rmSync(scratch, { recursive: true, force: true }));
+
+  const calls: SealRequest[] = [];
+  const sealer: Sealer = {
+    available: () => true,
+    seal(value, request) {
+      calls.push(request);
+      const digest = createHash('sha256')
+        .update(`${request.name}\n${request.namespace}\n${value}`)
+        .digest('base64')
+        .replaceAll(/[=+/]/g, 'x');
+      return `AgB${digest.repeat(8)}`;
+    },
+  };
+
+  // Dummy values only; the role is in each value so a mix-up would show.
+  const envFile = (role: string) =>
+    [
+      ...DB_KEYS.map(
+        (key) => `${key}=${key === 'DB_PORT' ? '5432' : `${role}-${key.toLowerCase()}`}`,
+      ),
+      ...(role === 'app' ? ['OPENAI_API_KEY=dummy-key'] : []),
+    ].join('\n');
+
+  it('renders the secrets.yaml of two env files as the two secrets of the Deployment and the Job', () => {
+    const root = join(scratch, 'repo');
+    mkdirSync(join(root, 'apps/web'), { recursive: true });
+    mkdirSync(join(root, 'deploy/sealed-secrets'), { recursive: true });
+    execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: root });
+    writeFileSync(join(root, '.gitignore'), '.env\n.env.*\n');
+    execFileSync(
+      'openssl',
+      [
+        ...['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', join(scratch, 'key.pem')],
+        ...['-out', join(root, 'deploy/sealed-secrets/pub-cert.pem'), '-subj', '/', '-days', '2'],
+      ],
+      { stdio: 'ignore' },
+    );
+    writeFileSync(join(root, 'apps/web/.env.production'), `${envFile('app')}\n`);
+    writeFileSync(join(root, 'apps/web/.env.migrator.production'), `${envFile('migrator')}\n`);
+    const text: string[] = [];
+    const code = run([], {
+      cwd: join(root, 'apps/web'),
+      root,
+      sealer,
+      now: new Date(),
+      out: (line) => text.push(line),
+      err: (line) => text.push(line),
+    });
+    assert.equal(code, 0, text.join('\n'));
+
+    const values = join(scratch, 'values.yaml');
+    writeFileSync(
+      values,
+      [
+        'migration:',
+        '  enabled: true',
+        '  command: [node]',
+        '  args: [dist/migrate.js]',
+        'dbCa:',
+        '  pem: |',
+        '    -----BEGIN CERTIFICATE-----',
+        '    placeholder',
+        '    -----END CERTIFICATE-----',
+        '',
+      ].join('\n'),
+    );
+    const output = execFileSync(
+      'helm',
+      [
+        ...['template', 'web', chart, '--namespace', 'bf', '-f', minimal, '-f', values],
+        ...['-f', join(root, 'deploy/apps/web/secrets.yaml')],
+      ],
+      { encoding: 'utf8' },
+    );
+
+    // Every value the sealer saw comes back under the name and namespace it was sealed for (strict scope).
+    assert.deepEqual(
+      [...new Set(calls.map((call) => `${call.namespace}/${call.name}`))],
+      ['bf/web-secrets', 'bf/web-migrator-secrets'],
+    );
+    for (const name of ['web-secrets', 'web-migrator-secrets']) {
+      const doc = named(output, 'SealedSecret', name);
+      assert.match(doc, /namespace: bf\n/);
+      for (const key of DB_KEYS) {
+        assert.match(doc, new RegExp(`\\n {4}${key}: AgB`), `${name} ${key}`);
+      }
+    }
+    assert.deepEqual(envFromNames(find(output, 'Deployment')), ['web-secrets']);
+    assert.deepEqual(envFromNames(find(output, 'Job')), ['web-migrator-secrets']);
+    assert.doesNotMatch(output, /doadmin|DATABASE_URL|dummy-key|app-db_|migrator-db_/i);
   });
 });
