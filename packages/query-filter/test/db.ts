@@ -4,12 +4,9 @@
 import { randomBytes } from 'node:crypto';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import pg from 'pg';
+import { buildConnectionUrl, readDbConfig } from '@bf/db-utils';
 
 const TEST_NAME = /(^|[^a-z0-9])test($|[^a-z0-9])/i;
-
-/** The name of the database a connection string points at. */
-export const databaseName = (url: string): string =>
-  decodeURIComponent(new URL(url).pathname.slice(1));
 
 /** TST-3: throws unless the name has `test` as a word of its own (`bf_test`, `test`, `qa-test-2`). */
 export function assertTestDatabase(name: string): void {
@@ -32,8 +29,8 @@ export interface TestDatabase {
 }
 
 /**
- * Connects to DATABASE_URL after TST-3 has passed for the name in the URL and for the database the server
- * reports, then runs `ddl` inside a fresh schema. Start the local database first with `pnpm local:up`.
+ * Connects with the DB_* variables (read by @bf/db-utils, ADR-061) after TST-3 has passed for DB_NAME and for the
+ * database the server reports, then runs `ddl` inside a fresh schema. Start the local database first with `pnpm local:up`.
  */
 export async function openTestDatabase(
   schema: string,
@@ -42,13 +39,19 @@ export async function openTestDatabase(
   if (!/^qf_[0-9a-f]{8}$/.test(schema)) {
     throw new Error(`unexpected schema name ${schema}`);
   }
-  const url = process.env['DATABASE_URL'];
-  if (!url) {
-    throw new Error('DATABASE_URL is not set; start the local database with `pnpm local:up`');
+  // readDbConfig names every missing variable; the hint is for the usual cause, a database that is not up.
+  let config;
+  try {
+    config = readDbConfig(process.env);
+  } catch (error) {
+    throw new Error(
+      `${(error as Error).message}; start the local database with \`pnpm local:up\``,
+      { cause: error },
+    );
   }
-  assertTestDatabase(databaseName(url));
+  assertTestDatabase(config.name);
 
-  const pool = new pg.Pool({ connectionString: url, max: 4 });
+  const pool = new pg.Pool({ connectionString: buildConnectionUrl(config), max: 4 });
   let closed = false;
   const close = async (): Promise<void> => {
     if (closed) return;

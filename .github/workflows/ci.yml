@@ -104,7 +104,14 @@ jobs:
       - name: End-to-end tests
         if: steps.e2e.outputs.count != '0'
         env:
-          DATABASE_URL: postgres://doadmin:bf_local_only@127.0.0.1:5432/bf_test
+          # The local role stays doadmin until LOCAL-3 brings the two roles of ADR-053; the password is the dummy of compose.yaml.
+          DB_HOST: 127.0.0.1
+          DB_PORT: '5432'
+          DB_NAME: bf_test
+          DB_SCHEMA: public
+          DB_SSL_MODE: disable
+          DB_USER: doadmin
+          DB_PASSWORD: bf_local_only
           NATS_URL: nats://127.0.0.1:4222
         run: pnpm turbo run test:e2e ${{ github.event_name == 'pull_request' && '--affected' || '' }}
       - name: Migrations
