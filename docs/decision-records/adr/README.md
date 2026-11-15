@@ -71,6 +71,7 @@ Architecture Decision Records - технические причины. Тест 
 | [063](ADR-063-agent-merges-and-decides-technical-choices.md) | Агент сам пушит, сливает PR на зелёном CI и решает технические развилки; владельцу - деньги, продукт и настройки GitHub; жёсткие запреты без изменений (заменяет п. 6 ADR-056) | Accepted |
 | [064](ADR-064-pre-commit-step-for-backend-contract-files.md) | Шаг pre-commit на файлы контракта backend запускает typecheck и lint contracts и frontend; флаг `affectedUsingTaskInputs` не включается (дополняет ADR-058 п. 6) | Accepted |
 | [065](ADR-065-frontend-build-inputs-with-backend-contract-files.md) | Входы `build` frontend с файлами контракта backend: правка DTO сбрасывает кеш локальной сборки (дополняет ADR-058 п. 2) | Accepted |
+| [066](ADR-066-csp-nonce-via-proxy.md) | Content-Security-Policy: nonce и `'strict-dynamic'` через `proxy.ts`, динамический рендеринг, `style-src` с `'unsafe-inline'`, SRI проверен и не годится (заменяет пункты 1-2 ADR-055) | Accepted |
 
 Первая ячейка - номер-ссылка на файл; остальное - свободный текст. `scripts/decision-records-check.mjs` сверяет таблицу с файлами. Нумерация без пропусков, номера не переиспользуются. Шаблон: [`_template.md`](_template.md). Решения прототипа не переносятся (ADR-006).
 
@@ -106,5 +107,5 @@ Architecture Decision Records - технические причины. Тест 
 | AI-провайдер | ADR-041 |
 | Аутентификация и авторизация | ADR-040; счётчик неудачных входов против отката, токен сессии из адаптера - ADR-054 |
 | Стратегия тестирования | ADR-039; Vitest - ADR-016; где тесты идут в CI - ADR-018, ADR-036 |
-| Базовая безопасность | ADR-037; канал отчётов и оповещения о зависимостях - ADR-062 вместо включения настроек в строках «Dependencies» и «Embargoed work» ADR-037; аутентификация и авторизация - ADR-040; роли БД и SSL клиента - ADR-053; CSP во frontend - ADR-055; границы агента (ask-список) - ADR-056, кластер без подтверждений - ADR-059 вместо пунктов 1, 2, 7 ADR-056; push, слияние и технические развилки - ADR-063 вместо п. 6 ADR-056 |
+| Базовая безопасность | ADR-037; канал отчётов и оповещения о зависимостях - ADR-062 вместо включения настроек в строках «Dependencies» и «Embargoed work» ADR-037; аутентификация и авторизация - ADR-040; роли БД и SSL клиента - ADR-053; CSP во frontend - ADR-055, nonce вместо его пунктов 1-2 - ADR-066; границы агента (ask-список) - ADR-056, кластер без подтверждений - ADR-059 вместо пунктов 1, 2, 7 ADR-056; push, слияние и технические развилки - ADR-063 вместо п. 6 ADR-056 |
 | Бюджет производительности и масштабирования | ADR-052; замер fsync - при первой критичной команде (DBSEC-4), см. ADR-044 |
