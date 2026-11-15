@@ -103,10 +103,11 @@ A relation takes an already declared spec, never a lazy reference, so the relati
   application/ports/cycle-read.port.ts
   infrastructure/
     cycle-read.adapter.ts            Drizzle, compile(...), row validation (VAL-4)
-    find-cycles.filter-binding.ts    field -> column
+    find-cycles.filter-binding.ts    field -> column (only here)
+    cycle.filter-compiler.ts         the compiler of the module's filter for other modules; the code lives here (drizzle entry)
   public/                            only what the module gives to others
     cycle.filter-spec.ts             importable by every layer except domain
-    cycle.filter-compiler.ts         importable only by another module's infrastructure
+    cycle.filter-compiler.ts         re-exports infrastructure/cycle.filter-compiler.ts; importable only by another module's infrastructure
 ```
 
 Client call: `trpc.<module>.findCycles.query({ filter })`.

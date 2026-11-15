@@ -1,7 +1,12 @@
 // Architecture boundaries (ENF-1, ADR-014). Layers are told apart by folder and by file suffix
 // (STR-6, STR-7). Loosening a rule needs an ADR naming its ID; fix the import instead.
 
-import { GENERATED_FILE_IMPORTS } from './scripts/lib/backend-contract-files.ts';
+import {
+  BACKEND_DTO_FILES,
+  DTO_IMPORT_TARGETS,
+  FILTER_SPEC_IMPORT_TARGETS,
+  GENERATED_FILE_IMPORTS,
+} from './scripts/lib/backend-contract-files.ts';
 
 const SRC = '^apps/backend/src';
 const MODULE = `${SRC}/([^/]+)`;
@@ -33,8 +38,19 @@ const TOOLKIT_SRC = '^packages/query-filter/src/';
 // ADR-061: the connection settings and URL builder read process configuration and build a connection string, so
 // they belong to infrastructure and the composition root. The pattern reads the package name as well as the path.
 const DB_UTILS = '^@bf/db-utils(/|$)|^packages/db-utils/';
-// ADR-024 item 7, QRY-12: the compiler of a module's filter, which another module's infrastructure imports.
+const TOOLKIT_CORE = '^@bf/query-filter/core(/|$)|^packages/query-filter/dist/core/';
+const ZOD = '(^|/)node_modules/zod/|^zod(/|$)';
+// ADR-068: the suffixes .filter-spec, .filter-binding, .filter-compiler and the folder public/ are defined in
+// query-filter-rules.md (QRY rules, Layout of one query) and enforced here.
+const PUBLIC = `${MODULE}/public/`;
+const FILTER_SPEC = `${SRC}/.*\\.filter-spec\\.ts$`;
+const FILTER_BINDING = `${SRC}/.*\\.filter-binding\\.ts$`;
+// ADR-024 item 7, QRY-12: the compiler of a module's filter, which another module's infrastructure imports. The code
+// lives in the module's infrastructure/ (QRY-7); the file in public/ only re-exports it (ADR-068).
 const FILTER_COMPILER = `${SRC}/[^/]+/public/.*\\.filter-compiler\\.ts$`;
+const FILTER_COMPILER_FILE = '\\.filter-compiler\\.ts$';
+// What public/ may import (ADR-068): other public/ files, the toolkit core entry, specs and enum files.
+const PUBLIC_IMPORTS = [PUBLIC, TOOLKIT_CORE, FILTER_SPEC_IMPORT_TARGETS.source];
 
 const NPM = [
   'npm',
@@ -258,7 +274,7 @@ export default {
     {
       name: 'qry-7-drizzle-entry-only-in-infrastructure',
       comment:
-        'QRY-7, ADR-051: the drizzle entry (compile) is imported by infrastructure only, where the read adapter holds the Drizzle query. A filter compiler a module publishes in public/ for other modules (ADR-024 item 7) is not exempt here: that is left to QUERY-4.',
+        'QRY-7, ADR-051: the drizzle entry (compile) is imported by infrastructure only, where the read adapter holds the Drizzle query. A filter compiler a module publishes in public/ for other modules (ADR-024 item 7) is not exempt here: its code lives in infrastructure/ and the file in public/ only re-exports it (ADR-068).',
       severity: 'error',
       from: {
         pathNot: [INFRASTRUCTURE, TEST, TOOLKIT_SRC, '^packages/query-filter/test/'],
@@ -272,6 +288,64 @@ export default {
       severity: 'error',
       from: { pathNot: [INFRASTRUCTURE, TEST] },
       to: { path: FILTER_COMPILER },
+    },
+    {
+      name: 'dep-2-domain-no-filter-spec',
+      comment:
+        'DEP-2, QRY-7, ADR-068: a filter spec is neutral for application, adapters and infrastructure, and the domain imports none: a spec is built on the toolkit core entry, which the domain may not read.',
+      severity: 'error',
+      from: { path: DOMAIN },
+      to: { path: FILTER_SPEC },
+    },
+    {
+      name: 'dep-2-domain-no-public',
+      comment:
+        "DEP-2, DEP-5, ADR-068: the domain does not import a public/ folder, its own or another module's; public/ is what a module gives to others, outside the domain.",
+      severity: 'error',
+      from: { path: DOMAIN },
+      to: { path: PUBLIC },
+    },
+    {
+      name: 'qry-filter-spec-is-leaf',
+      comment:
+        "QRY-1, QRY-7, ADR-068: a .filter-spec imports only the toolkit core entry, other .filter-spec files (its module, or another module's public/) and enum files that are not in domain/ (QRY-20), so the spec stays plain data every layer but the domain may read.",
+      severity: 'error',
+      from: { path: FILTER_SPEC },
+      to: { pathNot: [TOOLKIT_CORE, FILTER_SPEC_IMPORT_TARGETS.source] },
+    },
+    {
+      name: 'qry-filter-binding-only-in-infrastructure',
+      comment:
+        "QRY-7, QRY-15, ADR-068: a .filter-binding maps fields to columns, which is Drizzle, so the file lives in infrastructure/. The check reads the file's imports: a binding always imports the drizzle entry and its spec.",
+      severity: 'error',
+      from: { path: FILTER_BINDING, pathNot: INFRASTRUCTURE },
+      to: {},
+    },
+    {
+      name: 'qry-public-only-contract-files',
+      comment:
+        "DEP-5, QRY-12, ADR-068: public/ imports only other public/ files, the toolkit core entry, .filter-spec and enum files. The domain, the application layer and the module's infrastructure are not imported from there; the one exception is a filter compiler re-export, the next rule.",
+      severity: 'error',
+      from: { path: PUBLIC, pathNot: [TEST, FILTER_COMPILER_FILE] },
+      to: { pathNot: PUBLIC_IMPORTS },
+    },
+    {
+      name: 'qry-public-compiler-reexports-own-infrastructure',
+      comment:
+        "QRY-7, QRY-12, ADR-068: a .filter-compiler in public/ may import, on top of what public/ may import, the .filter-compiler files of its own module's infrastructure/ (the code lives there and the file in public/ re-exports it). That it re-exports and does no more is not machine-checked.",
+      severity: 'error',
+      from: { path: `${PUBLIC}.*${FILTER_COMPILER_FILE}`, pathNot: TEST },
+      to: {
+        pathNot: [...PUBLIC_IMPORTS, `${SRC}/$1/infrastructure/.*${FILTER_COMPILER_FILE}`],
+      },
+    },
+    {
+      name: 'contracts-dto-imports-only-contract-files',
+      comment:
+        'ADR-035, ADR-057 item 6, ADR-068: what a request DTO, a response DTO or an enum file imports decides the type the frontend sees, and the generated router file reads them. They import other contract files outside domain/, the toolkit core and zod entries, zod and the enum files of packages/contracts; never the @bf/contracts index, which imports the generated file.',
+      severity: 'error',
+      from: { path: BACKEND_DTO_FILES.source },
+      to: { pathNot: [DTO_IMPORT_TARGETS.source, TOOLKIT_CORE, TOOLKIT_ZOD, ZOD] },
     },
     {
       name: 'qry-6-drizzle-entry-only-drizzle-orm',
