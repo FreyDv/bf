@@ -30,6 +30,9 @@ const TOOLKIT = '^@bf/query-filter(/|$)|^packages/query-filter/';
 const TOOLKIT_ZOD = '^@bf/query-filter/zod(/|$)|^packages/query-filter/dist/zod/';
 const TOOLKIT_DRIZZLE = '^@bf/query-filter/drizzle(/|$)|^packages/query-filter/dist/drizzle/';
 const TOOLKIT_SRC = '^packages/query-filter/src/';
+// ADR-061: the connection settings and URL builder read process configuration and build a connection string, so
+// they belong to infrastructure and the composition root. The pattern reads the package name as well as the path.
+const DB_UTILS = '^@bf/db-utils(/|$)|^packages/db-utils/';
 // ADR-024 item 7, QRY-12: the compiler of a module's filter, which another module's infrastructure imports.
 const FILTER_COMPILER = `${SRC}/[^/]+/public/.*\\.filter-compiler\\.ts$`;
 
@@ -197,6 +200,14 @@ export default {
       severity: 'error',
       from: { path: `^packages/kernel/.*${TEST}` },
       to: { dependencyTypes: NPM, pathNot: '(^|/)node_modules/(neverthrow|vitest)/' },
+    },
+    {
+      name: 'db-utils-not-in-domain-or-application',
+      comment:
+        'DEP-3, DEP-4, ADR-061: @bf/db-utils (DB_* settings, connection URL) is imported neither by the domain nor by the application layer, tests included. Infrastructure and the composition root read the configuration and hand the application a port.',
+      severity: 'error',
+      from: { path: [...DOMAIN_ANY, DOMAIN, APPLICATION, `${SLICE}.*${APPLICATION_IN_SLICE}`] },
+      to: { path: DB_UTILS },
     },
     {
       name: 'qry-7-domain-no-toolkit',
