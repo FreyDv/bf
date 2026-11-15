@@ -6,6 +6,10 @@ All notable changes to this project, in [Keep a Changelog](https://keepachangelo
 
 <!-- A PR describes its change here, one entry per change - never a version heading, never VERSION itself (R18). The maintainer alone promotes this section into a release: https://github.com/repository-standards/core/blob/main/docs/method/changelog-process.md -->
 
+### Every tRPC procedure must declare `output` (QUERY-5, 2026-11-15)
+
+For whoever adds a backend use case: `ddd-new-use-case` now names `output` (the schema from `*.response.dto.ts`) as a required part of a tRPC procedure, and `ddd-review` and the AIP-6 checklist treat a procedure without it as a blocker. Without `output` the contract generator pulls the router class into the frontend's types and the frontend build fails (ADR-050 item 10); before this the problem showed only in `pnpm deps` after the code was written. QUERY-3 (client enums in contracts) now waits for the first module (`blocked:SPEC-1`): its test needs a real client enum.
+
 ### Contract for substring search, sorting and pagination of list queries (ADR-067, QUERY-2, 2026-11-15)
 
 For whoever builds the first list screen: list queries now have a written contract beyond the filter. A field can opt in to case-insensitive substring search (`contains`, set `Op.Text`); the request may carry `sort` (up to 3 keys from an allowlist, always a stable order) and `page` (`limit` 20 by default, at most 100; `offset` up to 10 000; a total count only on request); the response is `{ items, total? }`. Existing `{ filter }` requests keep working. The rules are QRY-21..26 in `.claude/rules/query-filter-rules.md`; the code in `@bf/query-filter` comes with the first list module. Decided by the agent under ADR-063.
