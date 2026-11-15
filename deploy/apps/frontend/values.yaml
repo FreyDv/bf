@@ -1,0 +1,10 @@
+# The frontend (DEPLOY-1): the site on / of malinina.ca (ADR-038). It has no database and no secret.
+image:
+  repository: ghcr.io/freydv/bf-frontend
+
+ingress:
+  enabled: true
+  className: traefik
+  host: malinina.ca
+  path: /
+  pathType: Prefix

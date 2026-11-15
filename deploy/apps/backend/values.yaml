@@ -1,0 +1,12 @@
+# The backend without a database (DEPLOY-1). The CA, the two database secrets and the migration Job arrive with
+# DEPLOY-2, so there is no secret, no dbCa and `migration.enabled` stays false (ADR-019, ADR-061).
+image:
+  repository: ghcr.io/freydv/bf-backend
+
+# Backend on /api of the same host as the frontend; Traefik does not strip the prefix, the app serves it (ADR-038).
+ingress:
+  enabled: true
+  className: traefik
+  host: malinina.ca
+  path: /api
+  pathType: Prefix

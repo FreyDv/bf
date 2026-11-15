@@ -1,0 +1,38 @@
+# Application frontend (DEPLOY-1, ADR-019, ADR-030, ADR-038). The root Application syncs this file, so merging it deploys
+# the app. One source: the shared chart of this repository with the value files of the app; image.yaml is the tag the
+# bot commits after every publish, so a rollout is a commit to main and a rollback is a revert of that commit.
+# The frontend is the site on / of malinina.ca (ADR-038).
+#
+# The name is the Helm release and must equal the directory in apps/ and deploy/apps/: the SealedSecrets of the
+# app are sealed for exactly that name and namespace (strict scope, ADR-060 item 7). secrets.yaml does not exist
+# until the app has a secret, hence ignoreMissingValueFiles. The paths are relative to the chart path.
+#
+# Unlike the infrastructure Applications, these prune and self-heal (ADR-030 item 5): the app is wholly described
+# in deploy/, and a hand edit in the cluster is drift that Git must win against.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: frontend
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/FreyDv/bf
+    targetRevision: main
+    path: deploy/charts/app
+    helm:
+      ignoreMissingValueFiles: true
+      valueFiles:
+        - ../../apps/frontend/values.yaml
+        - ../../apps/frontend/image.yaml
+        - ../../apps/frontend/secrets.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: bf
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      # nats creates the namespace too; neither Application may depend on the other having run first.
+      - CreateNamespace=true

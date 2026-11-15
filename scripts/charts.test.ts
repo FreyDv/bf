@@ -3,7 +3,15 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { after, describe, it } from 'node:test';
@@ -672,6 +680,8 @@ describe('ArgoCD self-management (ADR-019, ADR-046, backlog ARGOCD-1)', () => {
     );
     assert.deepEqual(synced.sort(), [
       'argo-cd.yaml',
+      'backend.yaml',
+      'frontend.yaml',
       'nats.yaml',
       'root.yaml',
       'sealed-secrets.yaml',
@@ -697,6 +707,101 @@ describe('ArgoCD self-management (ADR-019, ADR-046, backlog ARGOCD-1)', () => {
       /do-loadbalancer-certificate-id/,
       'the id annotation wins over the name and changes on every renewal',
     );
+  });
+});
+
+// DEPLOY-1: the Applications of our own apps. The name is the Helm release, the directory of the app and the name
+// the SealedSecrets are sealed for (ADR-060 item 7), so a mismatch breaks decryption with no error at render time.
+describe('app Applications of deploy/argocd (DEPLOY-1, ADR-019, ADR-030, ADR-038, ADR-060)', () => {
+  const dir = `${deploy}/argocd`;
+  const repoRoot = resolve(deploy, '..');
+  const own = readdirSync(dir)
+    .filter((name) => name.endsWith('.yaml'))
+    .map((name) => ({ name, source: readFileSync(`${dir}/${name}`, 'utf8') }))
+    .filter(({ source }) => /^\s+path: deploy\/charts\/app$/m.test(source));
+  const dirs = (path: string) =>
+    readdirSync(path, { withFileTypes: true })
+      .filter((e) => e.isDirectory())
+      .map((e) => e.name)
+      .sort();
+  const nameOf = (source: string) => /^metadata:\n\s+name: (\S+)$/m.exec(source)?.[1];
+
+  it('has one per app: its name is the directory in apps/ and in deploy/apps/', () => {
+    const names = own.map(({ source }) => nameOf(source)).sort();
+    assert.deepEqual(names, dirs(`${repoRoot}/apps`));
+    assert.deepEqual(names, dirs(`${deploy}/apps`));
+    for (const { name, source } of own) {
+      assert.equal(`${nameOf(source)}.yaml`, name, 'the file is named like the Application');
+    }
+  });
+
+  it('reads one source of this repository: the shared chart and the value files of its own app, in order', () => {
+    for (const { source } of own) {
+      const app = nameOf(source);
+      assert.match(
+        source,
+        /repoURL: https:\/\/github\.com\/FreyDv\/bf\n\s+targetRevision: main\n\s+path: deploy\/charts\/app\n/,
+      );
+      assert.match(source, /ignoreMissingValueFiles: true\n/);
+      assert.deepEqual(
+        [...source.matchAll(/^\s+- (\.\.\/\.\.\/apps\/\S+)$/gm)].map((match) => match[1]),
+        ['values.yaml', 'image.yaml', 'secrets.yaml'].map((file) => `../../apps/${app}/${file}`),
+      );
+      assert.doesNotMatch(
+        source,
+        /valuesObject|releaseName|chart:/,
+        'no inline values and no other release name',
+      );
+    }
+  });
+
+  it('deploys into bf, creates the namespace itself, prunes and self-heals (ADR-030 item 5)', () => {
+    for (const { source } of own) {
+      assert.match(
+        source,
+        /destination:\n\s+server: https:\/\/kubernetes\.default\.svc\n\s+namespace: bf\n/,
+      );
+      assert.match(source, /automated:\n\s+prune: true\n\s+selfHeal: true\n/);
+      assert.match(source, /- CreateNamespace=true/);
+    }
+  });
+
+  it('renders each app with the files its Application lists: no database objects, the ingress of ADR-038, a SHA tag', () => {
+    const paths: Record<string, string> = { backend: '/api', frontend: '/' };
+    for (const { source } of own) {
+      const app = nameOf(source) as string;
+      const files = ['values.yaml', 'image.yaml', 'secrets.yaml']
+        .map((file) => `${deploy}/apps/${app}/${file}`)
+        .filter((file) => existsSync(file));
+      const output = execFileSync(
+        'helm',
+        ['template', app, chart, '--namespace', 'bf', ...files.flatMap((file) => ['-f', file])],
+        { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
+      );
+      assert.deepEqual(kinds(output), [
+        'Deployment',
+        'Ingress',
+        'NetworkPolicy',
+        'Service',
+        'ServiceAccount',
+      ]);
+      assert.doesNotMatch(output, /DB_|db-ca|migrate/, 'DEPLOY-2 owns the database');
+      const ingress = find(output, 'Ingress');
+      assert.match(ingress, /ingressClassName: traefik\n/);
+      assert.match(ingress, /- host: malinina\.ca\n/);
+      assert.match(ingress, new RegExp(`- path: ${paths[app]}\\n\\s+pathType: Prefix\\n`));
+      assert.match(output, new RegExp(`image: ghcr\\.io/freydv/bf-${app}:[0-9a-f]{40}\\n`));
+    }
+  });
+
+  it('keeps image.yaml to the tag alone, which is all the tag job writes (ADR-030)', () => {
+    for (const { source } of own) {
+      const text = readFileSync(`${deploy}/apps/${nameOf(source)}/image.yaml`, 'utf8').replace(
+        /^\s*#.*$/gm,
+        '',
+      );
+      assert.match(text.trim(), /^image:\n\s+tag: [0-9a-f]{40}$/);
+    }
   });
 });
 
