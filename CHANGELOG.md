@@ -6,6 +6,10 @@ All notable changes to this project, in [Keep a Changelog](https://keepachangelo
 
 <!-- A PR describes its change here, one entry per change - never a version heading, never VERSION itself (R18). The maintainer alone promotes this section into a release: https://github.com/repository-standards/core/blob/main/docs/method/changelog-process.md -->
 
+### A backend DTO change invalidates the cached frontend build (ADR-065, CONTRACT-7, 2026-11-15)
+
+For whoever runs `pnpm build` locally: `apps/frontend/turbo.json` now gives the `build` task the backend contract files as inputs, so after a DTO edit the frontend is rebuilt instead of a stale green result coming from the Turborepo cache. CI and the frontend image were never affected (no cache there). Decided by the agent under ADR-063.
+
 ### Pre-commit checks contracts and frontend on a backend DTO change (ADR-064, CONTRACT-6, 2026-11-15)
 
 For whoever edits a backend DTO: committing a `*.request.dto.ts`, `*.response.dto.ts`, `*.enum.ts` or `*.filter-spec.ts` under `apps/backend/src/` now runs typecheck and lint of `@bf/contracts` and `@bf/frontend` in pre-commit (`lefthook.yml`, step `contracts of a DTO change`), so a broken frontend type shows at commit time instead of in CI. Decided by the agent under ADR-063; the Turborepo flag `affectedUsingTaskInputs` stays off until the first real DTO can test it (CONTRACT-4).
