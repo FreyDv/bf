@@ -121,6 +121,8 @@ GitHub - `FreyDv/bf` (ADR-038 п. 7), то есть `https://github.com/FreyDv/b
 
 Откат: `git revert` коммита тега (или ручная правка `image.yaml` на прежний SHA) и слияние PR в `main`; он не запускает `ci` (путь исключён), ArgoCD применит при ближайшем опросе. `git revert` откатывает образ, не схему БД (ADR-013).
 
+Первый выкат выполнен агентом 2026-11-15 (DEPLOY-1, слияние `fc794ca`). Корень подхватил `backend` и `frontend` (после ручного `refresh`, без него - при ближайшем опросе), относительные `valueFiles` ArgoCD 3.5.6 принял, оба приложения `Synced` и `Healthy`, поды `Ready` без рестартов. Сначала поднялся образ `ca4fd3af` (тег из PR): страница пустая, `/api/trpc/x` - 404 Nest (в том образе ещё нет `/api`). Run `ci` на `main` прошёл `ci`, `image`, `publish`, `tag`; бот закоммитил `2bf00da` (только два `image.yaml`), `ci` на нём не стартовал, ArgoCD выкатил `fc794ca`. После этого `https://malinina.ca/` - 200, `<main>Hello world</main>`, четыре заголовка безопасности на месте, `http://` - 307 на `https://`; `/api/trpc/x` - JSON tRPC `NOT_FOUND`, `/trpc/x` - 404.
+
 Если под не поднялся:
 
 - `kubectl -n argocd get applications backend frontend` и `kubectl -n argocd describe application <app>`: состояние синка и ошибка рендера (имя файла значений, тег).
@@ -155,7 +157,7 @@ GitHub - `FreyDv/bf` (ADR-038 п. 7), то есть `https://github.com/FreyDv/b
 - **Под Job в `CreateContainerConfigError`:** Secret ещё нет. Смотреть `kubectl -n <ns> get sealedsecret,secret` и события `kubectl -n <ns> get events --sort-by=.lastTimestamp`: статус SealedSecret (`Synced` или ошибка расшифровки), логи `kubectl -n kube-system logs deploy/sealed-secrets-controller`. Типичная причина - SealedSecret запечатан другим ключом, с другим именем или namespace (строгий scope, ADR-020); имена `<app>-secrets` и `<app>-migrator-secrets` совпадают с именем каталога приложения и именем релиза (ADR-060 п. 7). Под Job без файла CA - ConfigMap `<app>-db-ca` (`kubectl -n <ns> get configmap`).
 - **Хук Sync выполняется на каждом синке,** в том числе при смене одной конфигурации; команда миграции обязана безопасно повторяться, когда новых миграций нет (выбор механизма - ADR-013, ADR-036).
 
-### Проверки владельца на первом выкате (не выполнялись; пп. 1-4 - DEPLOY-2, п. 5 - DEPLOY-1; выполняет агент, ADR-059)
+### Проверки владельца на первом выкате (пп. 1-4 не выполнялись, они - DEPLOY-2; п. 5 выполнен 2026-11-15 в DEPLOY-1; выполняет агент, ADR-059)
 
 1. `argocd app sync <app>` (или автосинк): порядок - оба SealedSecret, ConfigMap с CA и ServiceAccount, Job `migrate`, затем Deployment и CronJob. Во время выката `kubectl -n <ns> get sealedsecret,secret,configmap` и `kubectl get events -n <ns>`: оба Secret появились до старта пода Job, под не завис в `CreateContainerConfigError`; под Job видит `/etc/bf/db-ca/ca.crt` и читает только `<app>-migrator-secrets`, под Deployment - только `<app>-secrets` (`kubectl -n <ns> get pod <pod> -o yaml`, раздел `envFrom`).
 2. Каждый SealedSecret получает статус `Synced`, и ArgoCD ждёт их перед волной 0 (ArgoCD v3.5.6, контроллер 0.41.2). Если Job стартовал раньше Secret - сообщить агенту: нужна собственная проверка здоровья SealedSecret (ADR-047, «Revisit when»).
@@ -169,6 +171,7 @@ GitHub - `FreyDv/bf` (ADR-038 п. 7), то есть `https://github.com/FreyDv/b
    - Через Traefik работает: `curl -sI https://malinina.ca/` отвечает (запрос идёт через ingress-контроллер из namespace `traefik`).
    - Пробы kubelet проходят: `kubectl -n bf get pods` показывает `Ready`, события пода без `Readiness probe failed` после старта.
    - Если под вне списка всё же получил ответ - Cilium политику не применяет (режим принудительного применения или версия): сообщить агенту, это решается строкой бэклога, а не правкой чарта вслепую. Если не прошёл запрос через Traefik - сверить метку namespace и `networkPolicy.ingressControllerNamespace`.
+   - **Результат 2026-11-15 (DEPLOY-1):** политики `backend` и `frontend` на месте, у namespace `traefik` метка `kubernetes.io/metadata.name=traefik`; Cilium показывает у эндпоинтов обоих подов `INGRESS POLICY` `Enabled` (`cilium-dbg`, контейнер `cilium-agent` на узле пода). Под `busybox:1.37` в `bf` вне списка: `nc -z -w 3` к `backend:80` и `frontend:80` - нет соединения, к `nats:4222` (без политики) - соединение есть. Через Traefik отвечает, пробы проходят. Соседа из `allowFrom` нет - пункт пропущен. `EGRESS POLICY` тоже `Enabled`: это кластерная `CiliumClusterwideNetworkPolicy` DigitalOcean `deny-imds-egress` (закрывает метаданные узла), остальной выход открыт (из пода backend `https://github.com` - 200).
 
 ## Diagnose
 
@@ -194,9 +197,8 @@ GitHub - `FreyDv/bf` (ADR-038 п. 7), то есть `https://github.com/FreyDv/b
 - Имя сервиса `argocd-server` и поведение `port-forward` на этом кластере.
 - Видимость репозитория сейчас (`gh repo view`): решение исходит из того, что он публичный.
 - Сброс пароля после удаления начального секрета и работа User Info -> Update Password в версии 10.11.6.
-- Применение NetworkPolicy чарта `app` Cilium на DOKS (версия Cilium и режим принудительного применения политик в репозитории не записаны): проверено только `helm template` и `pnpm charts:test`, на кластере нет (DEPLOY-1, п. 5 выше).
 - Порядок волн первого выката и ожидание расшифровки SealedSecret: проверено только `helm template`, `pnpm charts:test` и `kubectl apply --dry-run=server` отрисованных манифестов (CHART-5, ничего не создаётся), на кластере с настоящими секретами нет (проверки - DEPLOY-2, раздел «Первый выкат приложения»).
-- Выкат `backend` и `frontend` (DEPLOY-1): до слияния проверено только `helm template`, `kubectl apply --dry-run=server` Application и манифестов (ничего не создаётся) и запуск образов ca4fd3a с `--read-only`. Job `tag` в GitHub Actions, первый коммит бота и поведение относительных путей `valueFiles` в ArgoCD 3.5.6 проверяются после слияния; если ArgoCD откажется от `../../apps/...`, Application переписывается на несколько источников, как `argo-cd.yaml`.
+- Выкат `backend` и `frontend` (DEPLOY-1) проверен на кластере 2026-11-15 (раздел «Выкат приложения»). Не проверялось: откат `git revert` коммита тега и поведение двух слияний подряд (очередь `deploy-tag`, повтор push).
 - Самоуправление на кластере проверено 2026-11-13 (ARGOCD-2): объекты Helm приняты без пересоздания, адрес без `.git` работает. Не проверялось: поведение хуков chart при смене версии `argo-cd`.
 
 Связано: [malinina-kubernetes.md](malinina-kubernetes.md), [recovery.md](recovery.md), ADR-005, ADR-019, ADR-020, ADR-037, ADR-038, ADR-046, ADR-047, ADR-053, ADR-060, ADR-061.
