@@ -30,6 +30,12 @@ pre-commit:
       run: pnpm exec eslint --fix {staged_files}
       stage_fixed: true
 
+    - name: contracts of a DTO change
+      # ADR-064: `--affected` above does not reach contracts and frontend from backend DTO files (ADR-058 p. 6).
+      # Same command as COMMAND in scripts/contracts-typecheck.ts, suffixes as BACKEND_CONTRACT_FILES.
+      glob: 'apps/backend/src/**/*.{request.dto,response.dto,enum,filter-spec}.ts'
+      run: pnpm turbo run typecheck lint --filter=@bf/contracts --filter=@bf/frontend
+
     - name: boundaries
       glob: '{apps/**/*.{ts,tsx},packages/**/*.ts,.dependency-cruiser.mjs,scripts/boundaries.test.ts}'
       run: pnpm deps

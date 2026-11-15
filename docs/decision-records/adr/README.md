@@ -69,6 +69,7 @@ Architecture Decision Records - технические причины. Тест 
 | [061](ADR-061-db-env-fields-two-secrets-and-ca.md) | Подключение к БД: семь полей `DB_*` вместо `DATABASE_URL`, пакет `@bf/db-utils`, два секрета (`extraSecrets.migrator` только у Job), CA в ConfigMap, отказы и контрольная сумма чарта `app` (исполняет ADR-053 пп. 4, 5; заменяет `DATABASE_URL` в ADR-036, ADR-051) | Accepted |
 | [062](ADR-062-no-private-reporting-no-dependabot-alerts.md) | Без private vulnerability reporting и Dependabot alerts; канал отчётов - issue `security contact` (заменяет в ADR-037 включение обеих настроек) | Accepted |
 | [063](ADR-063-agent-merges-and-decides-technical-choices.md) | Агент сам пушит, сливает PR на зелёном CI и решает технические развилки; владельцу - деньги, продукт и настройки GitHub; жёсткие запреты без изменений (заменяет п. 6 ADR-056) | Accepted |
+| [064](ADR-064-pre-commit-step-for-backend-contract-files.md) | Шаг pre-commit на файлы контракта backend запускает typecheck и lint contracts и frontend; флаг `affectedUsingTaskInputs` не включается (дополняет ADR-058 п. 6) | Accepted |
 
 Первая ячейка - номер-ссылка на файл; остальное - свободный текст. `scripts/decision-records-check.mjs` сверяет таблицу с файлами. Нумерация без пропусков, номера не переиспользуются. Шаблон: [`_template.md`](_template.md). Решения прототипа не переносятся (ADR-006).
 
@@ -92,7 +93,7 @@ Architecture Decision Records - технические причины. Тест 
 | Язык, рантайм, фреймворки, инструменты | ADR-007, ADR-010, ADR-011, ADR-016; UI-библиотека - ADR-031 |
 | Логи и наблюдаемость | ADR-032; срок хранения, потолок цены, сборщик, доступ к Grafana, правила схемы - ADR-043; метрики и алерты не по логам - открыто: backlog MON-1 |
 | Топология репозитория и сборка | ADR-008, ADR-009; пакет shared kernel - ADR-048 |
-| Стиль API и контракта | ADR-012; тип роутера во frontend - ADR-035; фильтр query - ADR-024, пакет и его границы - ADR-050, entry `drizzle` - ADR-051; проверки frontend на файлы контракта backend - ADR-057; входы задач с файлами DTO вместо `--force` - ADR-058 вместо пункта 2 ADR-057 в части кеша |
+| Стиль API и контракта | ADR-012; тип роутера во frontend - ADR-035; фильтр query - ADR-024, пакет и его границы - ADR-050, entry `drizzle` - ADR-051; проверки frontend на файлы контракта backend - ADR-057; входы задач с файлами DTO вместо `--force` - ADR-058 вместо пункта 2 ADR-057 в части кеша; pre-commit на правке DTO - ADR-064 |
 | Хранилище данных | ADR-013; размещение - ADR-017; надёжность записи (`synchronous_commit`) - ADR-044, оговорка его п. 4 про счётчик входа снята и пункт подтверждён в ADR-054; роли, база и SSL клиента - ADR-053 (п. 3 ADR-033 заменён в части роли приложения); поля подключения `DB_*`, пакет `@bf/db-utils`, CA в чарте - ADR-061 (заменяет `DATABASE_URL` в ADR-036, ADR-051) |
 | Модель ошибок | ERR-1..6 (ADR-002); тип результата - ADR-015; откуда `Result` в domain - ADR-048; отказ, обязанный оставить след (неудачный вход): `ok` с исходом вместо `err` - ADR-054 |
 | Платформа и описание инфраструктуры | ADR-017 |
