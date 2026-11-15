@@ -1,8 +1,9 @@
 # Security
 
-**Reporting a vulnerability.** Use GitHub's private vulnerability reporting on this repository (Security tab ->
-"Report a vulnerability") so the report reaches the owner without a public issue; do not open a public issue for
-anything exploitable. Expect an acknowledgment within 3 business days.
+**Reporting a vulnerability.** Open an issue titled `security contact` with no technical details; the owner replies
+in the issue and agrees a private channel with you. Never put the details of anything exploitable in a public issue.
+Expect an acknowledgment within 3 business days. GitHub's private vulnerability reporting is not enabled
+(ADR-062).
 
 **Scope.** This repository and whatever it deploys; third-party dependencies go to their own maintainers.
 
