@@ -28,9 +28,10 @@ const backendFiles = (suffixes: string[]) =>
   `^apps/backend/src/${NOT_IN_DOMAIN}.*\\.(${alternation(suffixes)})\\.ts$`;
 const CONTRACTS_ENUM_FILES = '^packages/contracts/src/.*\\.enum\\.ts$';
 
-// The files the rule above judges: the same suffixes as the generated file's direct imports, inside the backend.
+// The files the rule above judges: the same suffixes as the generated file's direct imports, inside the backend. An
+// enum in domain/ is a domain file, which the generated file never reads; DEP-2 and DEP-3 judge it (ADR-068).
 export const BACKEND_DTO_FILES = new RegExp(
-  `^apps/backend/src/.*\\.(${alternation(DTO_SUFFIXES)})\\.ts$`,
+  `^apps/backend/src/${NOT_IN_DOMAIN}.*\\.(${alternation(DTO_SUFFIXES)})\\.ts$`,
 );
 
 export const DTO_IMPORT_TARGETS = new RegExp(

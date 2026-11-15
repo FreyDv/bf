@@ -260,6 +260,9 @@ const files: Record<string, string> = {
 
   // Filter specs, bindings, public/ and what a DTO imports (ADR-068). The core entry and zod resolve to dist/ as above.
   [`${S}/orders/domain/order-status.enum.ts`]: 'export const status = 1;',
+  // legal: an enum in domain/ is a domain file, not a contract file; the DTO import rule does not judge it
+  [`${S}/orders/domain/order-kind.enum.ts`]:
+    "import { status } from './order-status.enum.js';\nexport const kind = status;",
   [`${S}/orders/helper.ts`]: 'export const helper = 1;',
   [`${S}/orders/queries/find/status.enum.ts`]: 'export const status = 1;',
   'packages/contracts/src/orders/status.enum.ts': 'export const status = 1;',
