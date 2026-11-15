@@ -6,6 +6,10 @@ All notable changes to this project, in [Keep a Changelog](https://keepachangelo
 
 <!-- A PR describes its change here, one entry per change - never a version heading, never VERSION itself (R18). The maintainer alone promotes this section into a release: https://github.com/repository-standards/core/blob/main/docs/method/changelog-process.md -->
 
+### The agent pushes, merges on green CI and settles technical choices (ADR-063, 2026-11-15)
+
+For the owner: backlog items now run from research to merge without pauses. The agent decides technical forks on its own recommendation and records them; it asks only about money, product and GitHub settings, and squash-merges a PR once every required check is green (never `--admin`). Hard stops are unchanged: no remote database writes, no force-push or branch deletion, no secrets in chat, no hook edits. `.claude/skills/backlog-burndown/SKILL.md` follows the new rule; the permission change in `.claude/settings.json` is applied by the owner. The backlog row AGENT-2 closes into this record.
+
 ### No private vulnerability reporting and no Dependabot alerts (ADR-062, 2026-11-15)
 
 For anyone reporting a vulnerability: `SECURITY.md` now asks you to open an issue titled `security contact` with no technical details; the owner replies and agrees a private channel. The owner decided not to enable GitHub's private vulnerability reporting or Dependabot alerts (ADR-062, replacing that part of ADR-037), so vulnerable dependencies show up only in the Trivy report in the CI summary. The backlog row for enabling them was dropped.
