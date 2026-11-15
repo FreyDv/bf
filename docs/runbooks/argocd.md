@@ -104,6 +104,32 @@ GitHub - `FreyDv/bf` (ADR-038 п. 7), то есть `https://github.com/FreyDv/b
 - **Откат конфигурации и версии:** `git revert` и слияние; синк применит.
 - **Удаление Application из `deploy/argocd/`** не удаляет объекты (нет `prune`): удалить вручную, если так и задумано.
 
+## Выкат приложения: от слияния до пода (DEPLOY-1, ADR-030, ADR-038)
+
+Приложения `backend` и `frontend` описаны в `deploy/apps/<app>/` (`values.yaml`, `image.yaml`, позже `secrets.yaml`) и общим чартом `deploy/charts/app`. Application каждого - файл `deploy/argocd/<app>.yaml`; корневой Application подхватывает его сам. Имя Application = каталог в `apps/` и `deploy/apps/` = релиз Helm: от него зависит расшифровка SealedSecret (ADR-060 п. 7). Источник один: путь `deploy/charts/app`, файлы значений `../../apps/<app>/values.yaml`, `image.yaml`, `secrets.yaml` (последнего нет, пока у приложения нет секрета, поэтому `ignoreMissingValueFiles`). Синк автоматический с `prune` и `selfHeal` (ADR-030 п. 5); namespace `bf` Application создаёт сам.
+
+Путь изменения:
+
+1. Слияние PR в `main` запускает workflow `ci`: `ci` и `image` проходят, `publish` собирает образы, сканирует, пушит `ghcr.io/freydv/bf-<app>:<SHA>` и проверяет анонимный pull (до пяти попыток с паузами 5, 10, 20, 40 с: GHCR сразу после пуша бывает отвечает `manifest unknown`).
+2. Job `tag` (нужен `publish`, запускается только после его успеха) берёт токен GitHub App `bf-tag-bot` (секреты `BOT_APP_ID`, `BOT_APP_PRIVATE_KEY`, токен только на этот репозиторий) и запускает `scripts/commit-image-tag.ts`: пишет SHA в оба `deploy/apps/*/image.yaml`, отрисовывает каждое приложение `helm template` теми же файлами, что и Application, проверяет, что изменились только `image.yaml`, коммитит `chore(deploy): image <короткий SHA>` от имени бота и пушит в `main` (ruleset пускает в обход только App, BOT-1). Старый SHA поверх нового не пишется (тег, не являющийся предком SHA запуска, значит, что новее уже записал другой запуск), при отказе пуша скрипт берёт новый `main` и собирает коммит заново (до трёх попыток), очередь `deploy-tag` не отменяется.
+3. Если `publish` упал, `tag` не запускается: тега нет, прежняя версия работает.
+4. ArgoCD опрашивает Git (около трёх минут), видит новый тег и катит Deployment.
+
+Коммит тега не запускает `ci`: у `push` в `ci.yml` стоит `paths-ignore: deploy/apps/*/image.yaml` (ADR-038 п. 8), иначе бот бесконечно собирал бы и коммитил заново. Остальные workflow на `push` в `main` (`spec-guard`, `gitleaks`) запускаются и на коммите бота; они читают репозиторий, не публикуют и не пишут в `main`, цикла нет. `standards-update-watch` идёт по расписанию.
+
+Адреса (ADR-038): frontend - `https://malinina.ca/`, backend - `https://malinina.ca/api/...` на том же хосте; Traefik префикс не срезает, backend сам отдаёт всё под `/api`, tRPC - под `/api/trpc/<модуль>.<процедура>` (`TRPCModule.forRoot({ basePath })` в `app.module.ts`, `setGlobalPrefix('api')` для будущих обычных маршрутов в `configure-app.ts`: `nestjs-trpc` монтируется через `app.use` и префикс не учитывает). Проверка: `curl -s https://malinina.ca/api/trpc/x` отвечает JSON-ошибкой tRPC `NOT_FOUND` от backend, а не текстовым 404 Traefik. Заголовки безопасности: `curl -sI https://malinina.ca/` (на 404 без маршрута Traefik их не ставит, TRAEFIK-2).
+
+Откат: `git revert` коммита тега (или ручная правка `image.yaml` на прежний SHA) и слияние PR в `main`; он не запускает `ci` (путь исключён), ArgoCD применит при ближайшем опросе. `git revert` откатывает образ, не схему БД (ADR-013).
+
+Если под не поднялся:
+
+- `kubectl -n argocd get applications backend frontend` и `kubectl -n argocd describe application <app>`: состояние синка и ошибка рендера (имя файла значений, тег).
+- `kubectl -n bf get pods`, `kubectl -n bf describe pod <pod>`, `kubectl -n bf logs deploy/<app>`.
+- `ImagePullBackOff`: образ с этим SHA есть в GHCR и пакет публичный (`docker pull ghcr.io/freydv/bf-<app>:<SHA>` без входа, ADR-026). Тег написал бот только после успешного анонимного pull, так что это либо ручная правка, либо пакет закрыли.
+- `CrashLoopBackOff`: у чарта корневая ФС только на чтение, писать можно в `/tmp`; оба образа ca4fd3a проверены с `--read-only --tmpfs /tmp --user 1000:1000 --cap-drop ALL` и стартуют.
+- Пробы по умолчанию - TCP на порт 3000 (`probes.path` пуст): HTTP-пробы ждут эндпоинта здоровья.
+- Ingress не отвечает: `kubectl -n bf get ingress`, затем NetworkPolicy (вход разрешён только из namespace `traefik`).
+
 ## Первый выкат приложения: порядок и проверки (ADR-047, CHART-2)
 
 Порядок задан в чарте `deploy/charts/app/`, приложение его не пишет. Все ресурсы идут в фазе Sync, по волнам (ArgoCD берёт следующую волну, когда предыдущая применена и здорова):
@@ -161,7 +187,7 @@ GitHub - `FreyDv/bf` (ADR-038 п. 7), то есть `https://github.com/FreyDv/b
 
 ## Rollback
 
-Откат конфигурации и самого ArgoCD - `git revert` и слияние в `main`; синк применит (ADR-019, ADR-046). До ARGOCD-2, пока корень не применён, откат ArgoCD - `helm -n argocd rollback argocd <ревизия>`; после - запрещён. CRD вне Helm откатом не меняются. Потеря кластера - порядок в [recovery.md](recovery.md).
+Откат приложения - раздел «Выкат приложения»: `git revert` коммита тега. Откат конфигурации и самого ArgoCD - `git revert` и слияние в `main`; синк применит (ADR-019, ADR-046). До ARGOCD-2, пока корень не применён, откат ArgoCD - `helm -n argocd rollback argocd <ревизия>`; после - запрещён. CRD вне Helm откатом не меняются. Потеря кластера - порядок в [recovery.md](recovery.md).
 
 ## Не проверено
 
@@ -170,6 +196,7 @@ GitHub - `FreyDv/bf` (ADR-038 п. 7), то есть `https://github.com/FreyDv/b
 - Сброс пароля после удаления начального секрета и работа User Info -> Update Password в версии 10.11.6.
 - Применение NetworkPolicy чарта `app` Cilium на DOKS (версия Cilium и режим принудительного применения политик в репозитории не записаны): проверено только `helm template` и `pnpm charts:test`, на кластере нет (DEPLOY-1, п. 5 выше).
 - Порядок волн первого выката и ожидание расшифровки SealedSecret: проверено только `helm template`, `pnpm charts:test` и `kubectl apply --dry-run=server` отрисованных манифестов (CHART-5, ничего не создаётся), на кластере с настоящими секретами нет (проверки - DEPLOY-2, раздел «Первый выкат приложения»).
+- Выкат `backend` и `frontend` (DEPLOY-1): до слияния проверено только `helm template`, `kubectl apply --dry-run=server` Application и манифестов (ничего не создаётся) и запуск образов ca4fd3a с `--read-only`. Job `tag` в GitHub Actions, первый коммит бота и поведение относительных путей `valueFiles` в ArgoCD 3.5.6 проверяются после слияния; если ArgoCD откажется от `../../apps/...`, Application переписывается на несколько источников, как `argo-cd.yaml`.
 - Самоуправление на кластере проверено 2026-11-13 (ARGOCD-2): объекты Helm приняты без пересоздания, адрес без `.git` работает. Не проверялось: поведение хуков chart при смене версии `argo-cd`.
 
 Связано: [malinina-kubernetes.md](malinina-kubernetes.md), [recovery.md](recovery.md), ADR-005, ADR-019, ADR-020, ADR-037, ADR-038, ADR-046, ADR-047, ADR-053, ADR-060, ADR-061.
