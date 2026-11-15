@@ -6,6 +6,10 @@ All notable changes to this project, in [Keep a Changelog](https://keepachangelo
 
 <!-- A PR describes its change here, one entry per change - never a version heading, never VERSION itself (R18). The maintainer alone promotes this section into a release: https://github.com/repository-standards/core/blob/main/docs/method/changelog-process.md -->
 
+### Pre-commit checks contracts and frontend on a backend DTO change (ADR-064, CONTRACT-6, 2026-11-15)
+
+For whoever edits a backend DTO: committing a `*.request.dto.ts`, `*.response.dto.ts`, `*.enum.ts` or `*.filter-spec.ts` under `apps/backend/src/` now runs typecheck and lint of `@bf/contracts` and `@bf/frontend` in pre-commit (`lefthook.yml`, step `contracts of a DTO change`), so a broken frontend type shows at commit time instead of in CI. Decided by the agent under ADR-063; the Turborepo flag `affectedUsingTaskInputs` stays off until the first real DTO can test it (CONTRACT-4).
+
 ### The agent pushes, merges on green CI and settles technical choices (ADR-063, 2026-11-15)
 
 For the owner: backlog items now run from research to merge without pauses. The agent decides technical forks on its own recommendation and records them; it asks only about money, product and GitHub settings, and squash-merges a PR once every required check is green (never `--admin`). Hard stops are unchanged: no remote database writes, no force-push or branch deletion, no secrets in chat, no hook edits. `.claude/skills/backlog-burndown/SKILL.md` follows the new rule; the permission change in `.claude/settings.json` is applied by the owner. The backlog row AGENT-2 closes into this record.
