@@ -1,6 +1,6 @@
 ---
 name: backlog-burndown
-description: Use when the owner wants to work the backlog down item by item - "close the backlog", "take the next item", "разгреби бэклог", "закрой следующий пункт". Opus orchestrates, Sonnet agents research and build through two workflows (at most 5 agents at once); every decision is grilled out of the owner with drill-me, and each item lands in main as its own squash-merged PR before the next one starts.
+description: Use when the owner wants to work the backlog down item by item - "close the backlog", "take the next item", "разгреби бэклог", "закрой следующий пункт". Opus orchestrates, Sonnet agents research and build through two workflows (at most 5 agents at once); the agent settles technical choices itself and asks the owner only about money, product and GitHub settings (ADR-063), and each item lands in main as its own squash-merged PR, merged by the agent on green CI, before the next one starts.
 ---
 
 # backlog-burndown
@@ -9,9 +9,13 @@ One item at a time, fully closed, then the next. You (the main session) are the 
 must run on Opus; every worker is a Sonnet agent inside `.claude/workflows/backlog-prepare.js` and
 `.claude/workflows/backlog-execute.js`, which cap themselves at 5 concurrent agents.
 
-**The owner decides. You and the agents never do.** When the owner asks "help me choose" or
-"explain", explain and recommend - then wait for their answer. A deferral ("decide later") is an
-answer: record it as a `[NEEDS DECISION]` marker or a backlog row, never drop it.
+**Who decides (ADR-063).** You settle technical choices yourself, on your own recommendation, and
+record each where it belongs (an ADR says "Decided by: агент по поручению владельца, ADR-063").
+The owner decides only: new paid resources or DO spend; product and users (BDR, specs, personas);
+writes to GitHub settings and secrets; anything the owner explicitly kept. When the owner asks
+"help me choose" or "explain", explain and recommend - then wait for their answer. A deferral
+("decide later") is an answer: record it as a `[NEEDS DECISION]` marker or a backlog row, never
+drop it.
 
 Talk to the owner in Russian. Files follow AGENTS.md "Working language".
 
@@ -48,24 +52,30 @@ When it returns, read `brief` and `critique` yourself:
 
 ## Step 3 - Grill the owner (drill-me)
 
-Invoke the `drill-me` skill. The design tree is `brief.decisions` (after step 2's fixes);
+Split `brief.decisions` (after step 2's fixes): technical ones you settle yourself on your
+recommendation (ADR-063) and list for the owner in step 7; only owner-level ones (see "Who decides")
+go to the owner. If none are owner-level, skip to step 5.
+
+For the owner-level ones, invoke the `drill-me` skill. The design tree is those decisions;
 `brief.settled` is never re-asked. Each round: the whole frontier, numbered, each with your
 recommendation, worded so "yes" accepts it. Lead with the plain-language `why`, then the options
 with cost where there is one.
 
 - Facts you are missing go to a Sonnet subagent (`Agent` with `model: "sonnet"`), never to the owner.
-- A decision that contradicts an Accepted ADR/BDR means superseding it: say so, the owner decides.
+- A decision that contradicts an Accepted ADR/BDR means superseding it: say so; a BDR, or an ADR on an owner-level matter, the owner decides; a technical ADR you supersede yourself with a new record.
 - New dependency, datastore, broker or paid service: its ADR becomes part of this item.
 - Loop until the frontier is empty and the owner confirms you understand each other.
 
 ## Step 4 - Lock the decisions
 
-One `AskUserQuestion` that lists every decision in a line each and asks to confirm. Set
+Only when step 3 asked the owner anything: one `AskUserQuestion` that lists those decisions in a
+line each and asks to confirm. Set
 `metadata.source` to the elicitation point ids that gate the files this item writes
 (`.claude/elicitation/points.json`): `spec.scope,spec.acceptance,spec.unknowns` for a spec,
 `discover.materials,discover.decisions` for `docs/discovery/**`; records, personas and
 `PRODUCT.md` are already settled by `docs/adoption-provenance.md`. The confirmed list is the
-`decisions` object passed to step 6 - keys from the brief, values in the owner's words.
+`decisions` object passed to step 6 - keys from the brief, values in the owner's words for the
+owner-level ones and your recommendation for the technical ones.
 
 ## Step 5 - Branch and the writes only you may make
 
@@ -106,10 +116,11 @@ Then check it yourself: `git log main..HEAD`, read the whole diff, run
 `node scripts/self-verify.mjs` and the item's verification commands. Your reading is the review
 the owner relies on; an agent's "passed" is a claim until you saw it.
 
-## Step 7 - Show the owner
+## Step 7 - Tell the owner
 
-In Russian, short: what changed (decision -> file), checks you saw pass, what was not verified,
-backlog rows filed, `advice` worth their attention. Ask: push and open the PR?
+In Russian, short: what changed (decision -> file), the technical choices you made and why,
+checks you saw pass, what was not verified, backlog rows filed, `advice` worth their attention.
+Do not ask; go on to step 8 (ADR-063).
 
 ## Step 8 - Push and PR
 
@@ -124,8 +135,9 @@ Sonnet `Agent` with the failing log, then you review its commit, push again, wai
 
 ## Step 9 - Merge
 
-CI green -> ask the owner to merge. On yes: `gh pr merge <n> --squash` (ADR-003). Never
-`--delete-branch` and never `--admin` (AGENTS.md red flag 7). Then
+Every required check green -> merge it yourself: `gh pr merge <n> --squash` (ADR-003, ADR-063).
+Never on a red or unfinished check, never `--delete-branch`, never `--admin` (AGENTS.md red
+flag 7). Then
 `git switch main && git pull --ff-only`.
 
 For items whose DoD is a state in the cluster (synced ArgoCD app, running pod), verify it after
