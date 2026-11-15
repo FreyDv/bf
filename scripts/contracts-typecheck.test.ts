@@ -94,13 +94,18 @@ describe('turbo inputs of the tasks that compile backend contract files', () => 
       ));
   }
 
-  for (const directory of ['packages/contracts', 'apps/frontend']) {
+  // ADR-065: `next build` checks the frontend types too, so a DTO edit must miss its cache; contracts has no build.
+  const tasksOf: Record<string, string[]> = {
+    'packages/contracts': ['lint', 'typecheck'],
+    'apps/frontend': ['build', 'lint', 'typecheck'],
+  };
+  for (const [directory, tasks] of Object.entries(tasksOf)) {
     const config = JSON.parse(readFileSync(join(repositoryRoot, directory, 'turbo.json'), 'utf8'));
 
-    it(`${directory}/turbo.json extends the root and lists the globs for typecheck and lint`, () => {
+    it(`${directory}/turbo.json extends the root and lists the globs for ${tasks.join(', ')}`, () => {
       assert.deepEqual(config.extends, ['//']);
-      assert.deepEqual(Object.keys(config.tasks).sort(), ['lint', 'typecheck']);
-      for (const task of ['typecheck', 'lint']) {
+      assert.deepEqual(Object.keys(config.tasks).sort(), tasks);
+      for (const task of tasks) {
         // $TURBO_DEFAULT$ keeps the package's own files; without it only the DTO files would be hashed.
         assert.deepEqual(config.tasks[task], {
           inputs: ['$TURBO_DEFAULT$', ...BACKEND_CONTRACT_TURBO_GLOBS],
@@ -113,6 +118,10 @@ describe('turbo inputs of the tasks that compile backend contract files', () => 
     const rootConfig = JSON.parse(readFileSync(join(repositoryRoot, 'turbo.json'), 'utf8'));
     assert.deepEqual(rootConfig.tasks.typecheck, { dependsOn: ['^build'] });
     assert.deepEqual(rootConfig.tasks.lint, { dependsOn: ['^build'] });
+    assert.deepEqual(rootConfig.tasks.build, {
+      dependsOn: ['^build'],
+      outputs: ['dist/**', '.next/**', '!.next/cache/**'],
+    });
   });
 });
 

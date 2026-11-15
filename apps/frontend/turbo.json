@@ -2,6 +2,15 @@
   "$schema": "https://turbo.build/schema.json",
   "extends": ["//"],
   "tasks": {
+    "build": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/apps/backend/src/**/*.request.dto.ts",
+        "$TURBO_ROOT$/apps/backend/src/**/*.response.dto.ts",
+        "$TURBO_ROOT$/apps/backend/src/**/*.enum.ts",
+        "$TURBO_ROOT$/apps/backend/src/**/*.filter-spec.ts"
+      ]
+    },
     "typecheck": {
       "inputs": [
         "$TURBO_DEFAULT$",

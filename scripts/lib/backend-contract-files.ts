@@ -3,9 +3,9 @@
 // packages/contracts/src/generated/server.ts imports the DTO files by relative path, and `turbo --affected` does not
 // see them: backend is not a dependency of frontend in the Turborepo graph.
 //
-// The `inputs` of the typecheck and lint tasks in packages/contracts/turbo.json and apps/frontend/turbo.json (ADR-058)
-// are static JSON and cannot import this module: BACKEND_CONTRACT_TURBO_GLOBS is what they must list, and
-// contracts-typecheck.test.ts fails when they do not.
+// The `inputs` of the typecheck and lint tasks in packages/contracts/turbo.json and apps/frontend/turbo.json, and of
+// the frontend build (ADR-058, ADR-065), are static JSON and cannot import this module: BACKEND_CONTRACT_TURBO_GLOBS
+// is what they must list, and contracts-typecheck.test.ts fails when they do not.
 
 // What the generated file may import directly: the files of a procedure's input, output and client enums.
 const DTO_SUFFIXES = ['request.dto', 'response.dto', 'enum'];
