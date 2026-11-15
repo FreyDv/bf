@@ -1,6 +1,6 @@
 # Query filter rules (binding, loaded in every session)
 
-Every list query with a filter follows this file. Decision and rejected options: `docs/decision-records/adr/ADR-024-query-filter-contract.md`.
+Every list query with a filter follows this file. Decision and rejected options: `docs/decision-records/adr/ADR-024-query-filter-contract.md`; text search, sorting and pagination: `docs/decision-records/adr/ADR-067-query-text-search-sort-and-pagination.md`.
 Same binding level as `architecture-rules.md`: a deviation is legal only as a recorded ADR that names the rule ID (AIP-1).
 
 ## Contract
@@ -15,6 +15,7 @@ Same binding level as `architecture-rules.md`: a deviation is legal only as a re
 | `between` | tuple `[v1, v2]`, `v1 <= v2` | inside the range, both bounds included |
 | `nbetween` | tuple `[v1, v2]`, `v1 <= v2` | outside the range, both bounds excluded from the result |
 | `isnull`, `nisnull` | none, `value` is forbidden | NULL, not NULL |
+| `contains` | one string, 1..200 characters | substring, case-insensitive; the value is a literal (`%`, `_`, `\` escaped by the server); `str` only (ADR-067) |
 
 `gt`, `gte`, `lt`, `lte`, `between`, `nbetween` do not compile on `bool`, `uuid` and `oneOf` fields.
 
@@ -35,6 +36,7 @@ Op.Id     = [eq, neq, in, nin]
 Op.Enum   = [eq, neq, in, nin]
 Op.Bool   = [eq]
 Op.Null   = [isnull, nisnull]
+Op.Text   = [contains]           // opt-in per field: str(Op.String, Op.Text)
 
 export const userFilter = defineFilter({
   name:       str(Op.eq, Op.neq),
@@ -78,6 +80,7 @@ A relation takes an already declared spec, never a lazy reference, so the relati
 - `AND` and `OR` are non-empty arrays of nodes; `NOT` is one node. Upper case keeps them apart from field names.
 - A condition is a sum type on `operator`, holding only the operators the field allows.
 - A one-to-many relation takes exactly one of `some`, `none`, `every`.
+- Next to `filter` a list query MAY take `sort` and `page` (QRY-21..26); all three keys are optional, so a client sending only `{ filter }` keeps working.
 
 ### What a spec produces
 
@@ -145,6 +148,15 @@ A spec used by several slices of a module moves to module level; a spec used by 
 
 - **QRY-18** Toolkit tests: type-level (a forbidden operator does not compile, `z.infer` of `toZod(S)` equals `FilterOf<S>`), NULL and quantifiers on a real Postgres (TST-2, TST-3). Every query has behavioural tests for the filters in its spec (TST-1).
 - **QRY-19** dependency-cruiser enforces QRY-7, QRY-12 and the ban on importing contracts from `domain/` (QRY-20, ENF-1).
+
+### Text search, sorting, pagination (ADR-067)
+
+- **QRY-21** Substring search MUST use `contains` from `Op.Text`, enabled per field; `Op.String` MUST NOT gain it. The server escapes `\`, `%` and `_` and binds `'%' || value || '%'` as a parameter of `ILIKE ... ESCAPE '\'`; a pattern from the client MUST NOT reach SQL.
+- **QRY-22** The request of a list query is `{ filter?, sort?, page? }`, strict, every key optional. `toZod(S)` describes only `filter`; `sort` and `page` are sibling keys of the request DTO.
+- **QRY-23** `sort` is an array of 1..3 `{ field, direction: 'asc' | 'desc' }`. The fields come from an explicit sortable allowlist of the query (sortable is not the same as filterable) and are columns of the root table only; sorting by a relation needs its own ADR.
+- **QRY-24** The order is always total: the server appends the primary key `asc` as the last key, and NULL sorts last (`NULLS LAST`) in both directions. Without `sort` the order is the primary key.
+- **QRY-25** `page` is `{ limit?, offset?, total? }`: `limit` defaults to 20 and is at most 100, `offset` is 0..10000; a query MAY only tighten these. `COUNT` runs only when `total: true`.
+- **QRY-26** A list response is `{ items, total? }` in `*.response.dto.ts` (ADP-3, ADP-4); `total` is present only when requested. `ORDER BY`, `LIMIT` and `OFFSET` are built by the module's read adapter; `compile` still returns only the `WHERE` condition.
 
 ### Enums
 
