@@ -258,6 +258,109 @@ const files: Record<string, string> = {
   [`${S}/orders/queries/find/bad-db-utils.query-handler.ts`]:
     "import { readDbConfig } from '@bf/db-utils';\nexport const a = readDbConfig;",
 
+  // Filter specs, bindings, public/ and what a DTO imports (ADR-068). The core entry and zod resolve to dist/ as above.
+  [`${S}/orders/domain/order-status.enum.ts`]: 'export const status = 1;',
+  // legal: an enum in domain/ is a domain file, not a contract file; the DTO import rule does not judge it
+  [`${S}/orders/domain/order-kind.enum.ts`]:
+    "import { status } from './order-status.enum.js';\nexport const kind = status;",
+  [`${S}/orders/helper.ts`]: 'export const helper = 1;',
+  [`${S}/orders/queries/find/status.enum.ts`]: 'export const status = 1;',
+  'packages/contracts/src/orders/status.enum.ts': 'export const status = 1;',
+  [`${S}/orders/public/order.facade.ts`]: 'export const facade = 1;',
+  [`${S}/orders/public/order.filter-spec.ts`]:
+    "import { Op } from '@bf/query-filter/core';\nexport const spec = Op;",
+  [`${S}/orders/infrastructure/order.filter-compiler.ts`]:
+    "import { compile } from '@bf/query-filter/drizzle';\nexport const a = compile;",
+  [`${S}/billing/infrastructure/invoice.filter-compiler.ts`]: 'export const a = 1;',
+  // legal: a spec reaches the core entry, other specs (own slice, public/, another module's public/) and enum files
+  [`${S}/orders/queries/find/composed.filter-spec.ts`]: [
+    "import '@bf/query-filter/core';",
+    "import './find.filter-spec.js';",
+    "import '../../public/order.filter-spec.js';",
+    "import '../../../billing/public/invoice.filter-spec.js';",
+    "import './status.enum.js';",
+    "import '../../../../../../packages/contracts/src/orders/status.enum.js';",
+  ].join('\n'),
+  // legal: application, adapters and infrastructure read a spec
+  [`${S}/orders/application/ports/find-orders.port.ts`]:
+    "import { spec } from '../../queries/find/find.filter-spec.js';\nexport const port = spec;",
+  [`${S}/orders/queries/find/uses-spec.query-handler.ts`]:
+    "import { spec } from './find.filter-spec.js';\nexport const a = spec;",
+  [`${S}/orders/queries/find/uses-spec.router.ts`]:
+    "import { spec } from './find.filter-spec.js';\nexport const a = spec;",
+  [`${S}/orders/infrastructure/uses-spec.adapter.ts`]:
+    "import { spec } from '../queries/find/find.filter-spec.js';\nexport const a = spec;",
+  // legal: public/ reaches other public/ files, the core entry, specs and enum files; a compiler there re-exports
+  // the one in its own infrastructure/
+  [`${S}/orders/public/composed.filter-spec.ts`]: [
+    "import '@bf/query-filter/core';",
+    "import './order.filter-spec.js';",
+    "import '../queries/find/find.filter-spec.js';",
+    "import '../queries/find/status.enum.js';",
+  ].join('\n'),
+  [`${S}/orders/public/order.filter-compiler.ts`]:
+    "export { a } from '../infrastructure/order.filter-compiler.js';",
+  // legal: a DTO reaches other contract files outside domain/, a public spec of another module, the toolkit core and
+  // zod entries, zod and the enum files of the contracts package
+  [`${S}/orders/queries/find/composed.request.dto.ts`]: [
+    "import './find.request.dto.js';",
+    "import './find.filter-spec.js';",
+    "import './status.enum.js';",
+    "import '../../dtos/order.response.dto.js';",
+    "import '../../../billing/public/invoice.filter-spec.js';",
+    "import '@bf/query-filter/core';",
+    "import '@bf/query-filter/zod';",
+    "import 'zod';",
+    "import '../../../../../../packages/contracts/src/orders/status.enum.js';",
+  ].join('\n'),
+  [`${S}/orders/dtos/composed.response.dto.ts`]: [
+    "import './order.response.dto.js';",
+    "import '../queries/find/status.enum.js';",
+  ].join('\n'),
+  // violations: the domain imports no spec and no public/
+  [`${S}/orders/domain/bad-slice-spec.ts`]:
+    "import { spec } from '../queries/find/find.filter-spec.js';\nexport const a = spec;",
+  [`${S}/orders/domain/bad-public-spec.ts`]:
+    "import { spec } from '../../billing/public/invoice.filter-spec.js';\nexport const a = spec;",
+  [`${S}/orders/domain/bad-own-public.ts`]:
+    "import { facade } from '../public/order.facade.js';\nexport const a = facade;",
+  // violations: a spec is a leaf
+  [`${S}/orders/queries/find/bad-infrastructure.filter-spec.ts`]:
+    "import { repo } from '../../infrastructure/order.repository.js';\nexport const a = repo;",
+  [`${S}/orders/queries/find/bad-domain-enum.filter-spec.ts`]:
+    "import { status } from '../../domain/order-status.enum.js';\nexport const a = status;",
+  [`${S}/orders/queries/find/bad-helper.filter-spec.ts`]:
+    "import { helper } from '../../helper.js';\nexport const a = helper;",
+  [`${S}/orders/queries/find/bad-dto.filter-spec.ts`]:
+    "import { dto } from './find.request.dto.js';\nexport const a = dto;",
+  // violations: a binding lives in infrastructure/
+  [`${S}/orders/queries/find/bad-location.filter-binding.ts`]:
+    "import { Op } from '@bf/query-filter/core';\nexport const a = Op;",
+  [`${S}/orders/application/bad-location.filter-binding.ts`]:
+    "import { Op } from '@bf/query-filter/core';\nexport const a = Op;",
+  // violations: public/ is narrow
+  [`${S}/orders/public/bad-domain.facade.ts`]:
+    "import { order } from '../domain/order.aggregate.js';\nexport const a = order;",
+  [`${S}/orders/public/bad-application.facade.ts`]:
+    "import { port } from '../application/ports/order.port.js';\nexport const a = port;",
+  [`${S}/orders/public/bad-infrastructure.facade.ts`]:
+    "import { a } from '../infrastructure/order.filter-compiler.js';\nexport const b = a;",
+  [`${S}/orders/public/bad-repository.filter-compiler.ts`]:
+    "import { repo } from '../infrastructure/order.repository.js';\nexport const a = repo;",
+  [`${S}/orders/public/bad-foreign.filter-compiler.ts`]:
+    "export { a } from '../../billing/infrastructure/invoice.filter-compiler.js';",
+  // violations: what a DTO imports
+  [`${S}/orders/queries/find/bad-domain-enum.request.dto.ts`]:
+    "import { status } from '../../domain/order-status.enum.js';\nexport const a = status;",
+  [`${S}/orders/queries/find/bad-plain-file.request.dto.ts`]:
+    "import { helper } from '../../helper.js';\nexport const a = helper;",
+  [`${S}/orders/queries/find/bad-contracts-index.request.dto.ts`]:
+    "import { contracts } from '@bf/contracts';\nexport const a = contracts;",
+  [`${S}/orders/queries/find/bad-plain-file.enum.ts`]:
+    "import { helper } from '../../helper.js';\nexport const a = helper;",
+  [`${S}/orders/dtos/bad-plain-file.response.dto.ts`]:
+    "import { helper } from '../helper.js';\nexport const a = helper;",
+
   // What the kernel itself may import (ADR-049): neverthrow, and vitest in a test file
   'packages/kernel/src/uses-neverthrow.ts':
     "import { ok } from 'neverthrow';\nexport const a = ok;",
@@ -361,6 +464,52 @@ const expected: Array<[rule: string, from: string]> = [
   ['qry-6-entries-are-independent', 'packages/query-filter/src/zod/bad-drizzle-entry.ts'],
   ['qry-6-entries-are-independent', 'packages/query-filter/src/drizzle/bad-zod-entry.ts'],
   ['qry-6-toolkit-no-apps', 'packages/query-filter/src/zod/bad-app.ts'],
+  ['dep-2-domain-no-filter-spec', `${S}/orders/domain/bad-slice-spec.ts`],
+  ['dep-2-domain-no-filter-spec', `${S}/orders/domain/bad-public-spec.ts`],
+  ['dep-2-domain-no-public', `${S}/orders/domain/bad-public-spec.ts`],
+  ['dep-2-domain-no-public', `${S}/orders/domain/bad-own-public.ts`],
+  ['qry-filter-spec-is-leaf', `${S}/orders/queries/find/bad-infrastructure.filter-spec.ts`],
+  ['qry-filter-spec-is-leaf', `${S}/orders/queries/find/bad-domain-enum.filter-spec.ts`],
+  ['qry-filter-spec-is-leaf', `${S}/orders/queries/find/bad-helper.filter-spec.ts`],
+  ['qry-filter-spec-is-leaf', `${S}/orders/queries/find/bad-dto.filter-spec.ts`],
+  [
+    'qry-filter-binding-only-in-infrastructure',
+    `${S}/orders/queries/find/bad-location.filter-binding.ts`,
+  ],
+  [
+    'qry-filter-binding-only-in-infrastructure',
+    `${S}/orders/application/bad-location.filter-binding.ts`,
+  ],
+  ['qry-public-only-contract-files', `${S}/orders/public/bad-domain.facade.ts`],
+  ['qry-public-only-contract-files', `${S}/orders/public/bad-application.facade.ts`],
+  ['qry-public-only-contract-files', `${S}/orders/public/bad-infrastructure.facade.ts`],
+  [
+    'qry-public-compiler-reexports-own-infrastructure',
+    `${S}/orders/public/bad-repository.filter-compiler.ts`,
+  ],
+  [
+    'qry-public-compiler-reexports-own-infrastructure',
+    `${S}/orders/public/bad-foreign.filter-compiler.ts`,
+  ],
+  ['dep-5-modules-only-through-public', `${S}/orders/public/bad-foreign.filter-compiler.ts`],
+  [
+    'dep-2-adapters-no-domain-no-infrastructure',
+    `${S}/orders/queries/find/bad-domain-enum.request.dto.ts`,
+  ],
+  [
+    'contracts-dto-imports-only-contract-files',
+    `${S}/orders/queries/find/bad-domain-enum.request.dto.ts`,
+  ],
+  [
+    'contracts-dto-imports-only-contract-files',
+    `${S}/orders/queries/find/bad-plain-file.request.dto.ts`,
+  ],
+  [
+    'contracts-dto-imports-only-contract-files',
+    `${S}/orders/queries/find/bad-contracts-index.request.dto.ts`,
+  ],
+  ['contracts-dto-imports-only-contract-files', `${S}/orders/queries/find/bad-plain-file.enum.ts`],
+  ['contracts-dto-imports-only-contract-files', `${S}/orders/dtos/bad-plain-file.response.dto.ts`],
   ['apps-do-not-import-each-other', 'apps/frontend/app/bad-app-import.ts'],
   ['contracts-only-dtos-from-backend', 'packages/contracts/src/bad-domain.ts'],
 ];
@@ -564,6 +713,43 @@ describe('dependency-cruiser boundaries', () => {
     );
   });
 
+  // ADR-068: the legal fixtures of the specs, public/ and DTO rules must have been seen, or they would pass vacuously.
+  const resolvedOf = (source: string) =>
+    modules.find((m) => m.source === source)?.dependencies.map((d) => d.resolved) ?? [];
+
+  it('sees the imports of a spec, a public compiler and a DTO and finds them legal', () => {
+    assert.deepEqual(resolvedOf(`${S}/orders/public/order.filter-compiler.ts`), [
+      `${S}/orders/infrastructure/order.filter-compiler.ts`,
+    ]);
+    for (const source of [
+      `${S}/orders/queries/find/composed.filter-spec.ts`,
+      `${S}/orders/queries/find/composed.request.dto.ts`,
+    ]) {
+      const resolved = resolvedOf(source);
+      for (const target of [
+        `${S}/orders/queries/find/find.filter-spec.ts`,
+        `${S}/billing/public/invoice.filter-spec.ts`,
+        `${S}/orders/queries/find/status.enum.ts`,
+        'packages/contracts/src/orders/status.enum.ts',
+        'packages/query-filter/dist/core/index.js',
+      ]) {
+        assert.ok(resolved.includes(target), `${source} should import ${target}: ${resolved}`);
+      }
+    }
+    const dto = resolvedOf(`${S}/orders/queries/find/composed.request.dto.ts`);
+    for (const target of [
+      `${S}/orders/queries/find/find.request.dto.ts`,
+      `${S}/orders/dtos/order.response.dto.ts`,
+      'packages/query-filter/dist/zod/index.js',
+    ]) {
+      assert.ok(dto.includes(target), `the DTO should import ${target}: ${dto}`);
+    }
+    assert.ok(
+      dto.some((d) => /(^|\/)node_modules\/zod\//.test(d)),
+      `the DTO should import zod: ${dto}`,
+    );
+  });
+
   it('sees the infrastructure import of @bf/db-utils in dist/ and finds it legal', () => {
     const config = modules.find((m) => m.source === `${S}/orders/infrastructure/db.config.ts`);
     assert.ok(config?.dependencies.some((d) => d.resolved === 'packages/db-utils/dist/index.js'));
@@ -655,6 +841,10 @@ describe('dependency-cruiser boundaries with the toolkit not installed', () => {
       "import { compile } from '@bf/query-filter/drizzle';\nexport const a = compile;",
     [`${S}/orders/infrastructure/find-orders.filter-binding.ts`]:
       "import { compile } from '@bf/query-filter/drizzle';\nexport const a = compile;",
+    [`${S}/orders/queries/find/find.filter-spec.ts`]:
+      "import { Op } from '@bf/query-filter/core';\nexport const spec = Op;",
+    [`${S}/orders/queries/find/bad-toolkit-zod.filter-spec.ts`]:
+      "import { toZod } from '@bf/query-filter/zod';\nexport const a = toZod;",
   };
   let tmp = '';
   let cruise: Cruise = { violations: [], modules: [] };
@@ -707,6 +897,22 @@ describe('dependency-cruiser boundaries with the toolkit not installed', () => {
         (v) =>
           v.from === `${S}/orders/infrastructure/find-orders.filter-binding.ts` &&
           v.rule.name.startsWith('qry-'),
+      ),
+    );
+  });
+
+  it('lets a spec import the core entry by name and rejects its zod entry', () => {
+    assert.ok(!fires('qry-filter-spec-is-leaf', `${S}/orders/queries/find/find.filter-spec.ts`));
+    assert.ok(
+      fires('qry-filter-spec-is-leaf', `${S}/orders/queries/find/bad-toolkit-zod.filter-spec.ts`),
+    );
+  });
+
+  it('lets the request DTO import the zod entry by name under the DTO rule', () => {
+    assert.ok(
+      !fires(
+        'contracts-dto-imports-only-contract-files',
+        `${S}/orders/queries/find/find.request.dto.ts`,
       ),
     );
   });

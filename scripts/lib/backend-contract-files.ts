@@ -18,6 +18,31 @@ const alternation = (suffixes: string[]) => suffixes.map((s) => s.replaceAll('.'
 // For dependency-cruiser `pathNot`: the direct imports of the generated file (rule contracts-only-dtos-from-backend).
 export const GENERATED_FILE_IMPORTS = new RegExp(`\\.(${alternation(DTO_SUFFIXES)})\\.ts$`);
 
+// ADR-068: what a DTO file may import (rule contracts-dto-imports-only-contract-files). A DTO is read by the generated
+// router file and so by the frontend type check: whatever it imports decides the type the frontend sees. Contract
+// files outside domain/, and the enum files of packages/contracts (QRY-20); never the package index, which imports
+// the generated file, which imports the DTOs. The filter toolkit entries and zod are in the config: they are not
+// backend files.
+const NOT_IN_DOMAIN = '(?!domain/)(?!.*/domain/)';
+const backendFiles = (suffixes: string[]) =>
+  `^apps/backend/src/${NOT_IN_DOMAIN}.*\\.(${alternation(suffixes)})\\.ts$`;
+const CONTRACTS_ENUM_FILES = '^packages/contracts/src/.*\\.enum\\.ts$';
+
+// The files the rule above judges: the same suffixes as the generated file's direct imports, inside the backend. An
+// enum in domain/ is a domain file, which the generated file never reads; DEP-2 and DEP-3 judge it (ADR-068).
+export const BACKEND_DTO_FILES = new RegExp(
+  `^apps/backend/src/${NOT_IN_DOMAIN}.*\\.(${alternation(DTO_SUFFIXES)})\\.ts$`,
+);
+
+export const DTO_IMPORT_TARGETS = new RegExp(
+  `${backendFiles(CONTRACT_SUFFIXES)}|${CONTRACTS_ENUM_FILES}`,
+);
+
+// ADR-068: what a .filter-spec may import beyond the toolkit core entry: other specs and enum files.
+export const FILTER_SPEC_IMPORT_TARGETS = new RegExp(
+  `${backendFiles(['filter-spec', 'enum'])}|${CONTRACTS_ENUM_FILES}`,
+);
+
 // A change to one of these can break the frontend type check and the frontend image.
 export const BACKEND_CONTRACT_FILES = new RegExp(
   `^apps/backend/src/.*\\.(${alternation(CONTRACT_SUFFIXES)})\\.ts$`,
