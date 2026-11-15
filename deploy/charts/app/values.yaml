@@ -16,13 +16,31 @@ args: []
 # Plain environment variables. Anything secret goes to `secret`.
 env: {}
 
-# Names of existing Secrets mounted whole as environment, in addition to the one built from `secret`.
+# Names of existing Secrets mounted whole as environment into the Deployment and the CronJobs (never the migration
+# Job), in addition to the one built from `secret`. An extraSecrets entry other than `migrator` is reached this way,
+# by its name <release>-<name>-secrets.
 envFromSecrets: []
 
 # Values encrypted with kubeseal for exactly this name and namespace (strict scope, ADR-020);
-# `pnpm secrets:seal` writes them. The chart builds one SealedSecret named <release>-secrets.
+# `pnpm secrets:seal` writes them. The chart builds one SealedSecret named <release>-secrets, read by the Deployment
+# and the CronJobs. With a database it carries all of DB_HOST, DB_PORT, DB_NAME, DB_SCHEMA, DB_SSL_MODE, DB_USER and
+# DB_PASSWORD of the role `app` (never DATABASE_URL, ADR-061).
 secret:
   encryptedData: {}
+
+# More SealedSecrets, the shape `pnpm secrets:seal` writes from apps/<app>/.env.<name>.production (ADR-060):
+#   extraSecrets: { <name>: { encryptedData: { KEY: ciphertext } } }
+# each rendered as <release>-<name>-secrets on wave -1. `migrator` is the only name the chart attaches itself: the
+# migration Job reads it and nothing else, and the Deployment never does. It carries the seven DB_* names of the role
+# `migrator`. Any other entry is rendered and attached to nothing unless listed in envFromSecrets (ADR-061).
+extraSecrets: {}
+
+# The public CA certificate of the database (ADR-053 item 5): PEM text. When set, the chart renders a ConfigMap on
+# wave -1, mounts it read-only at /etc/bf/db-ca/ca.crt in the Deployment, the CronJobs and the migration Job, and sets
+# DB_SSL_CA_FILE to that path. Required by any secret holding a DB_* key and by the migration; an application
+# without a database leaves it empty.
+dbCa:
+  pem: ''
 
 service:
   enabled: true
@@ -65,11 +83,12 @@ securityContext:
   runAsGroup: 1000
   readOnlyRootFilesystem: true
 
-# Each item: name, schedule, command, args, concurrencyPolicy (default Forbid). Same image, env and secrets as the Deployment.
+# Each item: name, schedule, command, args, concurrencyPolicy (default Forbid). Same image, env, secrets and CA as the Deployment.
 cronJobs: []
 
 # A hook Job that runs before the new version is synced; a failing migration stops the sync and the running
-# version stays (ADR-019). The database credentials must already exist as a Secret in the namespace.
+# version stays (ADR-019). It reads only extraSecrets.migrator and the plain `env` (ADR-053 item 4, ADR-061): the chart
+# refuses `enabled` without that secret, without `secret` (role `app`) or without dbCa.pem.
 migration:
   enabled: false
   command: []

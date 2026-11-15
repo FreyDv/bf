@@ -1,0 +1,16 @@
+{{- if .Values.dbCa.pem }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "app.dbCaName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "app.labels" . | nindent 4 }}
+  annotations:
+    # Wave -1, with the secrets: the migration Job (wave 0) mounts it (ADR-047).
+    argocd.argoproj.io/sync-wave: "-1"
+data:
+  # A public certificate, not a secret (ADR-053 item 5).
+  ca.crt: |
+    {{- .Values.dbCa.pem | trim | nindent 4 }}
+{{- end }}

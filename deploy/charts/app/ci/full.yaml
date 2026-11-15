@@ -1,4 +1,5 @@
-# Every feature on: sealed secret, ingress, a neighbour allowed through the NetworkPolicy, cron jobs and the migration Job.
+# Every feature on: both database secrets, one more secret, the database CA, ingress, a neighbour allowed through the
+# NetworkPolicy, cron jobs and the migration Job. The ciphertexts and the PEM are placeholders, not real values.
 image:
   repository: ghcr.io/example/app
   tag: 0123456789abcdef0123456789abcdef01234567
@@ -12,8 +13,32 @@ env:
 envFromSecrets: [shared-config]
 secret:
   encryptedData:
-    DATABASE_URL: AgBexampleciphertextone
-    OPENAI_API_KEY: AgBexampleciphertexttwo
+    DB_HOST: AgBexampleciphertextapp1
+    DB_PORT: AgBexampleciphertextapp2
+    DB_NAME: AgBexampleciphertextapp3
+    DB_SCHEMA: AgBexampleciphertextapp4
+    DB_SSL_MODE: AgBexampleciphertextapp5
+    DB_USER: AgBexampleciphertextapp6
+    DB_PASSWORD: AgBexampleciphertextapp7
+    OPENAI_API_KEY: AgBexampleciphertextapp8
+extraSecrets:
+  migrator:
+    encryptedData:
+      DB_HOST: AgBexampleciphertextmig1
+      DB_PORT: AgBexampleciphertextmig2
+      DB_NAME: AgBexampleciphertextmig3
+      DB_SCHEMA: AgBexampleciphertextmig4
+      DB_SSL_MODE: AgBexampleciphertextmig5
+      DB_USER: AgBexampleciphertextmig6
+      DB_PASSWORD: AgBexampleciphertextmig7
+  reports:
+    encryptedData:
+      REPORTS_TOKEN: AgBexampleciphertextrep1
+dbCa:
+  pem: |
+    -----BEGIN CERTIFICATE-----
+    MIIBexamplePlaceholderCertificateNotARealOneAAAAAAAAAAAAAAAAAAAA
+    -----END CERTIFICATE-----
 ingress:
   enabled: true
   host: app.example.test

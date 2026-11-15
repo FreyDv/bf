@@ -235,6 +235,29 @@ const files: Record<string, string> = {
     "import { a } from '../zod/to-zod.js';\nexport const b = a;",
   'packages/query-filter/src/zod/bad-app.ts': `import { order } from '../../../../apps/backend/src/orders/domain/order.aggregate.js';\nexport const a = order;`,
 
+  // The DB settings package (ADR-061): infrastructure and the composition root may import it, the domain and the
+  // application layer may not. The tree simulates a package built to dist/, like a real install.
+  'packages/db-utils/package.json': JSON.stringify({
+    name: '@bf/db-utils',
+    type: 'module',
+    exports: { '.': './dist/index.js' },
+  }),
+  'packages/db-utils/dist/index.js': 'export const readDbConfig = 1;',
+  [`${S}/orders/infrastructure/db.config.ts`]:
+    "import { readDbConfig } from '@bf/db-utils';\nexport const a = readDbConfig;",
+  [`${S}/db-root.config.ts`]:
+    "import { readDbConfig } from '@bf/db-utils';\nexport const a = readDbConfig;",
+  [`${S}/orders/domain/bad-db-utils.ts`]:
+    "import { readDbConfig } from '@bf/db-utils';\nexport const a = readDbConfig;",
+  [`${S}/orders/domain/bad-db-utils.test.ts`]:
+    "import { readDbConfig } from '@bf/db-utils';\nexport const a = readDbConfig;",
+  [`${S}/orders/application/bad-db-utils.service.ts`]:
+    "import { readDbConfig } from '@bf/db-utils';\nexport const a = readDbConfig;",
+  [`${S}/orders/application/ports/bad-db-utils.port.ts`]:
+    "import { readDbConfig } from '@bf/db-utils';\nexport const a = readDbConfig;",
+  [`${S}/orders/queries/find/bad-db-utils.query-handler.ts`]:
+    "import { readDbConfig } from '@bf/db-utils';\nexport const a = readDbConfig;",
+
   // What the kernel itself may import (ADR-049): neverthrow, and vitest in a test file
   'packages/kernel/src/uses-neverthrow.ts':
     "import { ok } from 'neverthrow';\nexport const a = ok;",
@@ -278,6 +301,14 @@ const expected: Array<[rule: string, from: string]> = [
   ['domain-packages-only-kernel', `${S}/orders/domain/bad-contracts.test.ts`],
   ['domain-packages-only-kernel', `${S}/orders/domain/bad-contracts-relative.ts`],
   ['domain-packages-only-kernel', 'apps/frontend/src/feature/domain/bad-contracts.ts'],
+  ['db-utils-not-in-domain-or-application', `${S}/orders/domain/bad-db-utils.ts`],
+  ['db-utils-not-in-domain-or-application', `${S}/orders/domain/bad-db-utils.test.ts`],
+  ['db-utils-not-in-domain-or-application', `${S}/orders/application/bad-db-utils.service.ts`],
+  ['db-utils-not-in-domain-or-application', `${S}/orders/application/ports/bad-db-utils.port.ts`],
+  [
+    'db-utils-not-in-domain-or-application',
+    `${S}/orders/queries/find/bad-db-utils.query-handler.ts`,
+  ],
   ['qry-7-domain-no-toolkit', `${S}/orders/domain/bad-toolkit-core.ts`],
   ['qry-7-domain-no-toolkit', `${S}/orders/domain/bad-toolkit-zod.test.ts`],
   ['domain-packages-only-kernel', `${S}/orders/domain/bad-toolkit-core.ts`],
@@ -463,7 +494,7 @@ describe('dependency-cruiser boundaries', () => {
     let cruise: Cruise;
     [cruise, tmp] = cruiseTree(
       files,
-      ['kernel', 'contracts', 'query-filter'],
+      ['kernel', 'contracts', 'query-filter', 'db-utils'],
       ['neverthrow', 'openai'],
     );
     ({ violations, modules } = cruise);
@@ -531,6 +562,11 @@ describe('dependency-cruiser boundaries', () => {
         (d) => d.resolved === `${S}/billing/public/invoice.filter-compiler.ts`,
       ),
     );
+  });
+
+  it('sees the infrastructure import of @bf/db-utils in dist/ and finds it legal', () => {
+    const config = modules.find((m) => m.source === `${S}/orders/infrastructure/db.config.ts`);
+    assert.ok(config?.dependencies.some((d) => d.resolved === 'packages/db-utils/dist/index.js'));
   });
 
   it('reports nothing on the legal imports', () => {
@@ -603,6 +639,10 @@ describe('dependency-cruiser boundaries with packages exported from dist/', () =
 // read the name too, so the import is judged although the file behind it is not there.
 describe('dependency-cruiser boundaries with the toolkit not installed', () => {
   const tree: Record<string, string> = {
+    [`${S}/orders/domain/bad-db-utils.ts`]:
+      "import { readDbConfig } from '@bf/db-utils';\nexport const a = readDbConfig;",
+    [`${S}/orders/application/bad-db-utils.service.ts`]:
+      "import { readDbConfig } from '@bf/db-utils';\nexport const a = readDbConfig;",
     [`${S}/orders/domain/bad-toolkit-core.ts`]:
       "import { Op } from '@bf/query-filter/core';\nexport const a = Op;",
     [`${S}/orders/application/bad-toolkit-zod.service.ts`]:
@@ -627,6 +667,16 @@ describe('dependency-cruiser boundaries with the toolkit not installed', () => {
 
   const fires = (rule: string, from: string) =>
     cruise.violations.some((v) => v.rule.name === rule && v.from === from);
+
+  it('rejects @bf/db-utils in the domain and the application layer by name', () => {
+    assert.ok(fires('db-utils-not-in-domain-or-application', `${S}/orders/domain/bad-db-utils.ts`));
+    assert.ok(
+      fires(
+        'db-utils-not-in-domain-or-application',
+        `${S}/orders/application/bad-db-utils.service.ts`,
+      ),
+    );
+  });
 
   it('rejects the toolkit in the domain by name', () => {
     assert.ok(fires('qry-7-domain-no-toolkit', `${S}/orders/domain/bad-toolkit-core.ts`));

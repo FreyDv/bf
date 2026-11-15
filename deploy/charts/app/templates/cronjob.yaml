@@ -57,7 +57,7 @@ spec:
               securityContext:
                 {{- include "app.containerSecurityContext" $ | nindent 16 }}
               volumeMounts:
-                {{- include "app.tmpVolumeMount" $ | nindent 16 }}
+                {{- include "app.volumeMounts" $ | nindent 16 }}
           volumes:
-            {{- include "app.tmpVolume" $ | nindent 12 }}
+            {{- include "app.volumes" $ | nindent 12 }}
 {{- end }}

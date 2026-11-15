@@ -16,10 +16,16 @@ spec:
     metadata:
       labels:
         {{- include "app.selectorLabels" . | nindent 8 }}
-      {{- if .Values.secret.encryptedData }}
+      {{- if or .Values.secret.encryptedData .Values.dbCa.pem }}
       annotations:
-        # A new secret restarts the pods: environment is read once at start (ADR-019).
-        checksum/secret: {{ include (print $.Template.BasePath "/sealedsecret.yaml") . | sha256sum }}
+        # A new secret or CA restarts the pods: environment is read once at start (ADR-019). Only what the Deployment
+        # itself gets is hashed: the migrator secret goes to the migration Job alone, so changing it restarts nothing (ADR-061).
+        {{- if .Values.secret.encryptedData }}
+        checksum/secret: {{ toYaml .Values.secret.encryptedData | sha256sum }}
+        {{- end }}
+        {{- if .Values.dbCa.pem }}
+        checksum/db-ca: {{ .Values.dbCa.pem | sha256sum }}
+        {{- end }}
       {{- end }}
     spec:
       serviceAccountName: {{ include "app.fullname" . }}
@@ -76,6 +82,6 @@ spec:
           securityContext:
             {{- include "app.containerSecurityContext" . | nindent 12 }}
           volumeMounts:
-            {{- include "app.tmpVolumeMount" . | nindent 12 }}
+            {{- include "app.volumeMounts" . | nindent 12 }}
       volumes:
-        {{- include "app.tmpVolume" . | nindent 8 }}
+        {{- include "app.volumes" . | nindent 8 }}
