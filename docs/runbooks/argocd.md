@@ -120,7 +120,7 @@ GitHub - `FreyDv/bf` (ADR-038 п. 7), то есть `https://github.com/FreyDv/b
 
 - **Кто что читает.** Job `<app>-migrate` - только `<app>-migrator-secrets` (роль `migrator`) и `env`. Deployment и CronJob - `<app>-secrets` (роль `app`), `env` и `envFromSecrets`; секрет `migrator` до них не доходит. Другие `extraSecrets` рисуются, но подключены, только если их имя в `envFromSecrets`.
 - **Откуда секреты.** `pnpm secrets:seal` (ADR-060) пишет `deploy/apps/<app>/secrets.yaml` из `apps/<app>/.env.production` (`secret.encryptedData`) и `apps/<app>/.env.migrator.production` (`extraSecrets.migrator.encryptedData`). В каждом из двух файлов все семь полей: `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_SCHEMA`, `DB_SSL_MODE`, `DB_USER`, `DB_PASSWORD`; `DATABASE_URL` не используется. Чарт отказывается рисоваться без любого из семи, без `extraSecrets.migrator` при `migration.enabled` и без `dbCa.pem` (сообщение называет ключи, не значения).
-- **CA.** PEM в `dbCa.pem` значений приложения (`deploy/apps/<app>/values.yaml`; получение - `doctl databases get-ca <id>`, шаг DEPLOY-1). Чарт кладёт его в ConfigMap `<app>-db-ca` и монтирует файлом `/etc/bf/db-ca/ca.crt` (только чтение) в Job, Deployment и CronJob; путь в `DB_SSL_CA_FILE`.
+- **CA.** PEM в `dbCa.pem` значений приложения (`deploy/apps/<app>/values.yaml`; получение - `doctl databases get-ca <id>`, шаг DEPLOY-2). Чарт кладёт его в ConfigMap `<app>-db-ca` и монтирует файлом `/etc/bf/db-ca/ca.crt` (только чтение) в Job, Deployment и CronJob; путь в `DB_SSL_CA_FILE`.
 - **Перезапуск.** Смена главного секрета или CA перезапускает поды Deployment (`checksum/secret`, `checksum/db-ca`); смена `migrator` их не перезапускает, она действует со следующего запуска Job.
 
 Как читать провал:
@@ -129,7 +129,7 @@ GitHub - `FreyDv/bf` (ADR-038 п. 7), то есть `https://github.com/FreyDv/b
 - **Под Job в `CreateContainerConfigError`:** Secret ещё нет. Смотреть `kubectl -n <ns> get sealedsecret,secret` и события `kubectl -n <ns> get events --sort-by=.lastTimestamp`: статус SealedSecret (`Synced` или ошибка расшифровки), логи `kubectl -n kube-system logs deploy/sealed-secrets-controller`. Типичная причина - SealedSecret запечатан другим ключом, с другим именем или namespace (строгий scope, ADR-020); имена `<app>-secrets` и `<app>-migrator-secrets` совпадают с именем каталога приложения и именем релиза (ADR-060 п. 7). Под Job без файла CA - ConfigMap `<app>-db-ca` (`kubectl -n <ns> get configmap`).
 - **Хук Sync выполняется на каждом синке,** в том числе при смене одной конфигурации; команда миграции обязана безопасно повторяться, когда новых миграций нет (выбор механизма - ADR-013, ADR-036).
 
-### Проверки владельца на первом выкате (DEPLOY-1, не выполнялись)
+### Проверки владельца на первом выкате (не выполнялись; пп. 1-4 - DEPLOY-2, п. 5 - DEPLOY-1; выполняет агент, ADR-059)
 
 1. `argocd app sync <app>` (или автосинк): порядок - оба SealedSecret, ConfigMap с CA и ServiceAccount, Job `migrate`, затем Deployment и CronJob. Во время выката `kubectl -n <ns> get sealedsecret,secret,configmap` и `kubectl get events -n <ns>`: оба Secret появились до старта пода Job, под не завис в `CreateContainerConfigError`; под Job видит `/etc/bf/db-ca/ca.crt` и читает только `<app>-migrator-secrets`, под Deployment - только `<app>-secrets` (`kubectl -n <ns> get pod <pod> -o yaml`, раздел `envFrom`).
 2. Каждый SealedSecret получает статус `Synced`, и ArgoCD ждёт их перед волной 0 (ArgoCD v3.5.6, контроллер 0.41.2). Если Job стартовал раньше Secret - сообщить агенту: нужна собственная проверка здоровья SealedSecret (ADR-047, «Revisit when»).
@@ -169,7 +169,7 @@ GitHub - `FreyDv/bf` (ADR-038 п. 7), то есть `https://github.com/FreyDv/b
 - Видимость репозитория сейчас (`gh repo view`): решение исходит из того, что он публичный.
 - Сброс пароля после удаления начального секрета и работа User Info -> Update Password в версии 10.11.6.
 - Применение NetworkPolicy чарта `app` Cilium на DOKS (версия Cilium и режим принудительного применения политик в репозитории не записаны): проверено только `helm template` и `pnpm charts:test`, на кластере нет (DEPLOY-1, п. 5 выше).
-- Порядок волн первого выката и ожидание расшифровки SealedSecret: проверено только `helm template`, `pnpm charts:test` и `kubectl apply --dry-run=server` отрисованных манифестов (CHART-5, ничего не создаётся), на кластере с настоящими секретами нет (проверки владельца - DEPLOY-1, раздел «Первый выкат приложения»).
+- Порядок волн первого выката и ожидание расшифровки SealedSecret: проверено только `helm template`, `pnpm charts:test` и `kubectl apply --dry-run=server` отрисованных манифестов (CHART-5, ничего не создаётся), на кластере с настоящими секретами нет (проверки - DEPLOY-2, раздел «Первый выкат приложения»).
 - Самоуправление на кластере проверено 2026-11-13 (ARGOCD-2): объекты Helm приняты без пересоздания, адрес без `.git` работает. Не проверялось: поведение хуков chart при смене версии `argo-cd`.
 
 Связано: [malinina-kubernetes.md](malinina-kubernetes.md), [recovery.md](recovery.md), ADR-005, ADR-019, ADR-020, ADR-037, ADR-038, ADR-046, ADR-047, ADR-053, ADR-060, ADR-061.
