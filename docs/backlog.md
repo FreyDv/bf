@@ -33,7 +33,6 @@ Alignment scope for this repo -> standard@1.0.19
 
 | id | title | cap | persona | owner | assignee | size | why | source | DoD | status |
 |----|-------|-----|---------|-------|----------|------|-----|--------|-----|--------|
-| GHSET-1 | Настройки GitHub для безопасности: private vulnerability reporting и Dependabot alerts | - | Maintainer (internal) | dev |  | S | `SECURITY.md` отправляет отчёты в приватный канал, который выключен (проверено `gh api` 2026-11-12); Dependabot alerts тоже выключены (ADR-037) | decision: ADR-037 | владелец включил оба по пути из `docs/runbooks/github-settings.md` (раздел «Безопасность репозитория»); команды проверки из того раздела вернули `enabled:true` и 204 | todo |
 | AGENT-2 | Ask-список агента, остаточные пробелы ADR-056: другие команды записи `gh`, написания флагов, глобальные флаги `helm` | - | Maintainer (internal) | dev |  | S | ADR-056 п. 6: шаблоны `settings.json` сопоставляют строку и не покрывают `-fkey=value`, `-X=POST`, `-X post`, `helm --namespace x upgrade`, `gh repo edit`, `gh release create`, `gh workflow run`, `gh pr edit`, `gh label`, вызов через обёртку | decision: ADR-056 | каждый перечисленный путь записи либо в `ask` или `deny` файла `.claude/settings.json`, либо назван в ADR-056 принятым остатком с причиной; правка хука, если выбрана, идёт с записью в `exceptions` манифеста и причиной; `bash scripts/verifyAgentGuards.sh` зелёный | todo |
 
 ## Epic: Каркас монорепо
