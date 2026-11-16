@@ -83,6 +83,9 @@ jobs:
         run: pnpm deps:test
       - name: Contract typecheck selection
         run: pnpm contracts:typecheck:test
+      - name: Roles and grants of bfdb
+        # The two files the owner applies in DBSEC-7, on a real Postgres set up like DigitalOcean (ADR-078); Docker.
+        run: pnpm db:roles:test
       - name: Migration check works
         # The check itself on fixtures, against a real Postgres container; Docker is on the runner.
         run: pnpm migrations:test

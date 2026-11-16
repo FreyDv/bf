@@ -58,6 +58,7 @@ checks them ([self-verify.md](docs/standards/vendor/repository-standards-core/me
 | Path | Purpose |
 |------|---------|
 | `apps/`, `packages/` | backend (NestJS), frontend (Next.js), shared config package (ADR-008, ADR-009); `packages/db-utils` reads the `DB_*` settings and builds the connection URL (ADR-061); `packages/kernel` (`@bf/kernel`) holds the Logger and RequestContext ports and `Result` (ADR-070); `packages/test-db` (`@bf/test-db`, devDependency only, test files only) is the guarded connection to `bf_test` for tests (ADR-071) |
+| `database/roles/` | the role and grant SQL of the managed database, applied by the owner (ADR-078); `database/schema/` and its typed pair (R24) arrive with the first table (SCHEMA-2) |
 | `compose.yaml`, `deploy/` | local environment (ADR-033), ArgoCD bootstrap values; Helm charts and manifests arrive with CHART-1 |
 | `docs/PRODUCT.md`, `docs/personas.md` | what we build and for whom; personas confirmed by the owner (BDR-001), success defined in the owner's words, metrics deferred (METRICS-1) |
 | `docs/decision-records/` | ADR (technical why) and BDR (business why), MADR form |
