@@ -10,6 +10,7 @@ allowBuilds:
   '@swc/core': true
   esbuild: true
   sharp: true
+  # Its postinstall installs the pre-commit hook on `pnpm install`, so a fresh clone has it (ADR-018, HOOKS-2).
   lefthook: true
   unrs-resolver: true
 
