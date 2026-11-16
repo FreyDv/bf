@@ -6,6 +6,10 @@ All notable changes to this project, in [Keep a Changelog](https://keepachangelo
 
 <!-- A PR describes its change here, one entry per change - never a version heading, never VERSION itself (R18). The maintainer alone promotes this section into a release: https://github.com/repository-standards/core/blob/main/docs/method/changelog-process.md -->
 
+### GitHub Actions on their current majors (DEPS-1, 2026-11-16)
+
+For whoever reads the workflows: `actions/checkout` v7.0.1, `actions/setup-node` v7.1.0 and `actions/cache` v6.1.0, pinned by SHA in every workflow. All run on node24; the inputs used here are unchanged (setup-node v6 limits automatic caching to npm, which this pnpm repo had already turned off).
+
 ### Backend image without next and typescript (ADR-077, IMG-2, 2026-11-16)
 
 For whoever pulls or scans the backend image: `node_modules` in it shrank from 434 MB to 69 MB (image 321 MB). The optional peer `next` and the type-only peer `typescript` of `@trpc/server` were resolved from the workspace and shipped; a pnpm override with the value `-` removes both edges. The frontend and the builds are unchanged.
