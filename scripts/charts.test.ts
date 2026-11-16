@@ -605,6 +605,26 @@ describe('traefik Application (ADR-038, backlog TRAEFIK-1)', () => {
     assert.match(service, /do-loadbalancer-redirect-http-to-https: "true"/);
   });
 
+  it('keeps one pod through a drain, spreads the two over nodes, logs JSON and exposes no metrics (TRAEFIK-3)', () => {
+    const rendered = renderApplication(app);
+    const budget = find(rendered, 'PodDisruptionBudget');
+    assert.match(budget, /maxUnavailable: 1\n/);
+    const set = find(rendered, 'Deployment');
+    assert.match(
+      set,
+      /topologyKey: kubernetes\.io\/hostname\n\s+whenUnsatisfiable: ScheduleAnyway/,
+    );
+    // The spread selects the pods the chart labels, or it spreads nothing.
+    assert.match(
+      set,
+      /labelSelector:\n\s+matchLabels:\n\s+app\.kubernetes\.io\/instance: traefik-traefik\n\s+app\.kubernetes\.io\/name: traefik/,
+    );
+    assert.match(set, /app\.kubernetes\.io\/instance: traefik-traefik\n/);
+    assert.ok(set.includes('--log.format=json'));
+    assert.ok(set.includes('--log.level=INFO'));
+    assert.doesNotMatch(rendered, /--metrics|9100|prometheus\.io/, 'metrics stay off until MON-1');
+  });
+
   it('serves the IngressClass that the app chart names by default', () => {
     assert.match(find(renderApplication(app), 'IngressClass'), /\n {2}name: traefik\n/);
   });
