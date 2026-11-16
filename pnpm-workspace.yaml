@@ -12,3 +12,9 @@ allowBuilds:
   sharp: true
   lefthook: true
   unrs-resolver: true
+
+# IMG-2: the backend runs the express adapter of @trpc/server; its optional peer next and its type-only peer typescript
+# are not needed at runtime and must not enter the backend image.
+overrides:
+  '@trpc/server>next': '-'
+  '@trpc/server>typescript': '-'

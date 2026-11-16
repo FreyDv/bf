@@ -4,6 +4,10 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+overrides:
+  '@trpc/server>next': '-'
+  '@trpc/server>typescript': '-'
+
 importers:
 
   .:
@@ -43,13 +47,13 @@ importers:
         version: 12.3.2(@nestjs/common@12.3.2(reflect-metadata@0.2.2)(rxjs@7.8.1)(supports-color@7.2.0))(@nestjs/core@12.3.2)(supports-color@7.2.0)
       '@trpc/server':
         specifier: 11.23.0
-        version: 11.23.0(next@16.4.4(@babel/core@7.29.7(supports-color@7.2.0))(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(typescript@6.0.3)
+        version: 11.23.0
       nestjs-pino:
         specifier: 5.3.1
         version: 5.3.1(@nestjs/common@12.3.2(reflect-metadata@0.2.2)(rxjs@7.8.1)(supports-color@7.2.0))(@nestjs/core@12.3.2)(pino-http@11.0.0)(pino@10.4.0)(rxjs@7.8.1)
       nestjs-trpc:
         specifier: 2.14.0
-        version: 2.14.0(@nestjs/common@12.3.2(reflect-metadata@0.2.2)(rxjs@7.8.1)(supports-color@7.2.0))(@nestjs/core@12.3.2)(@trpc/server@11.23.0(next@16.4.4(@babel/core@7.29.7(supports-color@7.2.0))(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(typescript@6.0.3))(reflect-metadata@0.2.2)(rxjs@7.8.1)(zod@4.6.7)
+        version: 2.14.0(@nestjs/common@12.3.2(reflect-metadata@0.2.2)(rxjs@7.8.1)(supports-color@7.2.0))(@nestjs/core@12.3.2)(@trpc/server@11.23.0)(reflect-metadata@0.2.2)(rxjs@7.8.1)(zod@4.6.7)
       pino:
         specifier: 10.4.0
         version: 10.4.0
@@ -157,7 +161,7 @@ importers:
     dependencies:
       '@trpc/server':
         specifier: 11.23.0
-        version: 11.23.0(next@16.4.4(@babel/core@7.29.7(supports-color@7.2.0))(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(typescript@6.0.3)
+        version: 11.23.0
       zod:
         specifier: 4.6.7
         version: 4.6.7
@@ -958,8 +962,6 @@ packages:
       '@types/express': '*'
       '@types/ws': '*'
       fastify: '*'
-      next: '*'
-      typescript: '>=5.7.2'
     peerDependenciesMeta:
       '@types/aws-lambda':
         optional: true
@@ -968,8 +970,6 @@ packages:
       '@types/ws':
         optional: true
       fastify:
-        optional: true
-      next:
         optional: true
 
   '@turbo/darwin-64@2.11.10':
@@ -3802,11 +3802,7 @@ snapshots:
 
   '@tokenizer/token@0.3.0': {}
 
-  '@trpc/server@11.23.0(next@16.4.4(@babel/core@7.29.7(supports-color@7.2.0))(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(typescript@6.0.3)':
-    dependencies:
-      typescript: 6.0.3
-    optionalDependencies:
-      next: 16.4.4(@babel/core@7.29.7(supports-color@7.2.0))(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+  '@trpc/server@11.23.0': {}
 
   '@turbo/darwin-64@2.11.10':
     optional: true
@@ -5301,11 +5297,11 @@ snapshots:
       pino-http: 11.0.0
       rxjs: 7.8.1
 
-  nestjs-trpc@2.14.0(@nestjs/common@12.3.2(reflect-metadata@0.2.2)(rxjs@7.8.1)(supports-color@7.2.0))(@nestjs/core@12.3.2)(@trpc/server@11.23.0(next@16.4.4(@babel/core@7.29.7(supports-color@7.2.0))(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(typescript@6.0.3))(reflect-metadata@0.2.2)(rxjs@7.8.1)(zod@4.6.7):
+  nestjs-trpc@2.14.0(@nestjs/common@12.3.2(reflect-metadata@0.2.2)(rxjs@7.8.1)(supports-color@7.2.0))(@nestjs/core@12.3.2)(@trpc/server@11.23.0)(reflect-metadata@0.2.2)(rxjs@7.8.1)(zod@4.6.7):
     dependencies:
       '@nestjs/common': 12.3.2(reflect-metadata@0.2.2)(rxjs@7.8.1)(supports-color@7.2.0)
       '@nestjs/core': 12.3.2(@nestjs/common@12.3.2(reflect-metadata@0.2.2)(rxjs@7.8.1)(supports-color@7.2.0))(@nestjs/platform-express@12.3.2)(reflect-metadata@0.2.2)(rxjs@7.8.1)
-      '@trpc/server': 11.23.0(next@16.4.4(@babel/core@7.29.7(supports-color@7.2.0))(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(typescript@6.0.3)
+      '@trpc/server': 11.23.0
       lodash: 4.18.1
       reflect-metadata: 0.2.2
       rxjs: 7.8.1

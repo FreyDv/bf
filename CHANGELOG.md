@@ -6,6 +6,10 @@ All notable changes to this project, in [Keep a Changelog](https://keepachangelo
 
 <!-- A PR describes its change here, one entry per change - never a version heading, never VERSION itself (R18). The maintainer alone promotes this section into a release: https://github.com/repository-standards/core/blob/main/docs/method/changelog-process.md -->
 
+### Backend image without next and typescript (ADR-077, IMG-2, 2026-11-16)
+
+For whoever pulls or scans the backend image: `node_modules` in it shrank from 434 MB to 69 MB (image 321 MB). The optional peer `next` and the type-only peer `typescript` of `@trpc/server` were resolved from the workspace and shipped; a pnpm override with the value `-` removes both edges. The frontend and the builds are unchanged.
+
 ### Image digests: check in CI, weekly due check, one-command bump (ADR-076, IMG-1, 2026-11-16)
 
 For whoever maintains the images: `pnpm image:pins check` (in `ci`) keeps the node tag of both Dockerfiles equal to `.nvmrc` and pinned by one digest; `pnpm image:pins bump` writes the newer digest of the same tag for node, hadolint and Trivy once the image is at least 7 days old. The weekly workflow `image-pins` fails when a bump is due, which mails the owner; the bump is then a pull request.
