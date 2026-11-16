@@ -1,0 +1,42 @@
+name: cache-check
+
+# ADR-009 Confirmation, ADR-073 (CI-4). `ci` restores the Turborepo cache of earlier runs, so a task whose `inputs`
+# miss a file can pass on a stale cache hit. Once a week, and on demand, every package's typecheck, lint and unit
+# tests run with `--force` and no restored cache: a failure here that `ci` did not show is a cache bug. A failed
+# scheduled run notifies the repository owner by GitHub mail. Separate from `ci.yml`, whose `image`, `publish` and
+# `tag` jobs must never run on a schedule.
+on:
+  schedule:
+    # Monday 06:00 UTC.
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cache-check
+  cancel-in-progress: false
+
+jobs:
+  forced:
+    permissions:
+      contents: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - name: Install pnpm
+        # The version and hash pinned in `packageManager` of package.json (ADR-072).
+        run: node scripts/install-pnpm.ts
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Contracts are generated
+        # typecheck reads the generated AppRouter file (ADR-035), as in `ci`.
+        run: pnpm contracts:check
+      - name: Typecheck, lint and unit tests without the cache
+        run: pnpm turbo run typecheck lint test --force
