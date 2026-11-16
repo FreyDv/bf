@@ -1,0 +1,30 @@
+name: image-pins
+
+# ADR-076 (IMG-1), ADR-027 item 1: once a week, whether the registry serves a newer digest for a pinned image tag
+# (the node base of the Dockerfiles, hadolint and Trivy of scripts/image-check.ts) that is past the 7-day cooldown.
+# It fails when a bump is due, so the owner gets the GitHub mail; the bump itself is a pull request made with
+# `pnpm image:pins bump`. Reads Docker Hub anonymously and writes nothing.
+on:
+  schedule:
+    # Monday 07:00 UTC.
+    - cron: '0 7 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  due:
+    permissions:
+      contents: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - name: Is a digest bump due
+        # Plain node, no dependencies.
+        run: node scripts/image-pins.ts bump --dry-run

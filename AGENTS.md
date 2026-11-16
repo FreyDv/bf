@@ -97,6 +97,7 @@ pnpm migrations:test                    # the migration check on fixtures; needs
 pnpm secrets:seal                       # from the root: each app's `.env.production` -> deploy/apps/<app>/secrets.yaml (kubeseal on PATH; ADR-060); fails when an app has none
 pnpm secrets:seal:test                  # the script on fake and (when on PATH) real kubeseal; no value may reach argv, output or a file
 pnpm image:check lint|secrets|vulns|affected   # hadolint and Trivy as pinned Docker images, and which apps need an image (ADR-036); needs Docker
+pnpm image:pins check|bump [--dry-run]    # image digests: node tag equals .nvmrc; bump writes a newer digest of the same tag after the 7-day cooldown (ADR-076)
 ```
 
 Helm (v4) is a local requirement for the chart commands above. Before any of it the toolchain the

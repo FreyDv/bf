@@ -11,7 +11,8 @@ import { appendFileSync, existsSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { touchesBackendContract } from './lib/backend-contract-files.ts';
 
-// Bump deliberately: a version older than the 7-day cooldown (ADR-005) and its digest from the registry.
+// Bump deliberately: a version older than the 7-day cooldown (ADR-005); `pnpm image:pins bump` writes its digest
+// once the image is past the cooldown (ADR-076).
 const HADOLINT =
   'hadolint/hadolint:v2.15.1@sha256:32dac94127fd60b7b7e3fbfc65e1383b9b5e25c9bfd7b8536de7a539fe68a12d';
 const TRIVY =
