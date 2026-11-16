@@ -6,6 +6,10 @@ All notable changes to this project, in [Keep a Changelog](https://keepachangelo
 
 <!-- A PR describes its change here, one entry per change - never a version heading, never VERSION itself (R18). The maintainer alone promotes this section into a release: https://github.com/repository-standards/core/blob/main/docs/method/changelog-process.md -->
 
+### Roles and grants of bfdb as two files for the owner (ADR-078, SCHEMA-1, 2026-11-16)
+
+For the owner, before the first deploy with a database (DBSEC-7): `database/roles/01-as-doadmin.sql` (as doadmin) and `database/roles/02-as-migrator.sql` (as migrator) set up the database `bf`: the schema `app` owned by migrator, app reading and writing every table migrator creates but never creating anything, nobody else connecting. Both files check their preconditions, are safe to run again and print what to write into the runbook. `pnpm db:roles:test` proves them on Postgres 18.6 set up like DigitalOcean. The R24 schema pair and the `bf_test` migration script come with the first table (SCHEMA-2).
+
 ### GitHub Actions on their current majors (DEPS-1, 2026-11-16)
 
 For whoever reads the workflows: `actions/checkout` v7.0.1, `actions/setup-node` v7.1.0 and `actions/cache` v6.1.0, pinned by SHA in every workflow. All run on node24; the inputs used here are unchanged (setup-node v6 limits automatic caching to npm, which this pnpm repo had already turned off).
