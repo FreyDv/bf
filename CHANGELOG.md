@@ -6,6 +6,10 @@ All notable changes to this project, in [Keep a Changelog](https://keepachangelo
 
 <!-- A PR describes its change here, one entry per change - never a version heading, never VERSION itself (R18). The maintainer alone promotes this section into a release: https://github.com/repository-standards/core/blob/main/docs/method/changelog-process.md -->
 
+### Migrations that cannot run in a transaction (ADR-075, MIGR-1, 2026-11-16)
+
+For whoever writes a migration that builds an index on a live table: put the one `CREATE INDEX CONCURRENTLY` (or `DROP INDEX` / `REINDEX ... CONCURRENTLY`) statement alone in a file named `<number>_<name>.no-transaction.sql`. It is applied without `--single-transaction`; every other file still runs in one transaction. The migration check refuses `CONCURRENTLY` in an ordinary file and any other statement in a no-transaction file before it starts a database.
+
 ### Old images deleted from GHCR (ADR-074, GHCR-1, 2026-11-16)
 
 For whoever rolls back or looks for an old image: the workflow `ghcr-retention` deletes image versions of `bf-backend` and `bf-frontend` every Sunday. It keeps the tag in `image.yaml`, the last 20 tags of its history, everything younger than 30 days and the parts of kept images (platform image, SBOM and provenance), so a rollback by revert reaches at least 20 rollouts and 30 days back. A manual run only prints the plan unless `apply` is set.

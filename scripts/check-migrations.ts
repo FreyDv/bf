@@ -10,10 +10,13 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-// Where the migrations live and how one is applied: the only place that says so (ADR-036). The files are
-// forward-only SQL (ADR-013) run in name order; one file is one transaction, `psql` reads it from stdin.
+// Where the migrations live and how one is applied: the only place that says so (ADR-036, ADR-075). The files are
+// forward-only SQL (ADR-013) run in name order; one file is one transaction, `psql` reads it from stdin. A file named
+// `*.no-transaction.sql` runs without the transaction: it holds exactly one statement that Postgres refuses inside a
+// transaction block (`CREATE INDEX CONCURRENTLY` and its kin, ADR-075).
 export const CONTRACT = {
   dir: 'apps/backend/migrations',
+  noTransactionSuffix: '.no-transaction.sql',
   apply: [
     'psql',
     '-X',
@@ -30,14 +33,52 @@ export const CONTRACT = {
   ],
 };
 
+/** The `psql` command for one file: without `--single-transaction` for a `*.no-transaction.sql` file. */
+export function applyCommand(name: string): string[] {
+  return name.endsWith(CONTRACT.noTransactionSuffix)
+    ? CONTRACT.apply.filter((part) => part !== '--single-transaction')
+    : CONTRACT.apply;
+}
+
 export type Migrations = Map<string, string>;
 
 export type Plan = { errors: string[]; applyFirst: string[]; applyThen: string[] };
 
 const DOWN = /(^|[._-])down([._-]|$)/i;
+const CONCURRENTLY = /\bconcurrently\b/i;
+const NO_TRANSACTION_STATEMENT =
+  /^(create\s+(unique\s+)?index\s+concurrently|drop\s+index\s+concurrently|reindex\s+(index|table)\s+concurrently)\b/i;
 
-// What the pull request does to the history: no `down` file (ADR-013 item 4), and no change to a migration
-// that `main` already has, because every record in the history is a fact (ADR-013, Consequences).
+// The statements of a file, comments removed; enough for the index statements this rule is about.
+export function statements(sql: string): string[] {
+  return sql
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/--[^\n]*/g, ' ')
+    .split(';')
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+// ADR-075: what a file may hold, by its name.
+function transactionErrors(name: string, sql: string): string[] {
+  const parts = statements(sql);
+  if (name.endsWith(CONTRACT.noTransactionSuffix)) {
+    return parts.length === 1 && NO_TRANSACTION_STATEMENT.test(parts[0] ?? '')
+      ? []
+      : [
+          `${name}: a ${CONTRACT.noTransactionSuffix} file holds exactly one CREATE INDEX CONCURRENTLY, DROP INDEX CONCURRENTLY or REINDEX ... CONCURRENTLY statement (ADR-075)`,
+        ];
+  }
+  return parts.some((part) => CONCURRENTLY.test(part))
+    ? [
+        `${name}: CONCURRENTLY cannot run inside the transaction of a migration; put the statement alone in a file named *${CONTRACT.noTransactionSuffix} (ADR-075)`,
+      ]
+    : [];
+}
+
+// What the pull request does to the history: no `down` file (ADR-013 item 4), no change to a migration that `main`
+// already has, because every record in the history is a fact (ADR-013, Consequences), and every added file fits the
+// transaction its name implies (ADR-075).
 export function plan(base: Migrations, head: Migrations): Plan {
   const errors: string[] = [];
   for (const name of head.keys()) {
@@ -50,6 +91,7 @@ export function plan(base: Migrations, head: Migrations): Plan {
       errors.push(`${name}: a migration of the base branch was edited`);
   }
   const added = [...head.keys()].filter((name) => !base.has(name)).sort();
+  for (const name of added) errors.push(...transactionErrors(name, head.get(name) ?? ''));
   return { errors, applyFirst: [...base.keys()].sort(), applyThen: added };
 }
 
@@ -119,7 +161,10 @@ async function withDatabase<T>(image: string, use: (container: string) => Promis
 }
 
 function apply(container: string, name: string, sql: string): string | undefined {
-  const run = docker(['exec', '-i', '-e', 'PGPASSWORD=check', container, ...CONTRACT.apply], sql);
+  const run = docker(
+    ['exec', '-i', '-e', 'PGPASSWORD=check', container, ...applyCommand(name)],
+    sql,
+  );
   return run.status === 0
     ? undefined
     : `${name}: ${run.stderr.trim() || `psql exited with ${run.status}`}`;

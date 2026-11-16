@@ -6,7 +6,7 @@ import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { after, describe, it } from 'node:test';
-import { CONTRACT, plan } from './check-migrations.ts';
+import { applyCommand, CONTRACT, plan, statements } from './check-migrations.ts';
 
 const here = import.meta.dirname;
 const fixtures = join(here, 'fixtures/migrations');
@@ -87,6 +87,52 @@ describe('plan: what a pull request may do to the history', () => {
   });
 });
 
+describe('plan: a migration that cannot run in a transaction (ADR-075)', () => {
+  const base = new Map([['0000_a.sql', 'create table a (x int);']]);
+  const added = (name: string, sql: string) => plan(base, new Map([...base, [name, sql]])).errors;
+
+  it('accepts one CONCURRENTLY statement in a .no-transaction.sql file, comments aside', () => {
+    for (const sql of [
+      '-- why\nCREATE INDEX CONCURRENTLY a_x ON a (x);',
+      'create unique index concurrently if not exists a_x on a (x)',
+      'DROP INDEX CONCURRENTLY a_x;',
+      '/* rebuild */ REINDEX INDEX CONCURRENTLY a_x;',
+    ]) {
+      assert.deepEqual(added('0001_a_x.no-transaction.sql', sql), [], sql);
+    }
+  });
+
+  it('refuses a .no-transaction.sql file with more than one statement or another statement', () => {
+    for (const sql of [
+      'CREATE INDEX CONCURRENTLY a_x ON a (x); CREATE INDEX CONCURRENTLY a_y ON a (x);',
+      'CREATE INDEX a_x ON a (x);',
+      'alter table a add column y int;',
+    ]) {
+      assert.match(added('0001_a.no-transaction.sql', sql)[0] ?? '', /exactly one/, sql);
+    }
+  });
+
+  it('refuses CONCURRENTLY in an ordinary file and names the way out', () => {
+    assert.match(
+      added('0001_a_x.sql', 'CREATE INDEX CONCURRENTLY a_x ON a (x);')[0] ?? '',
+      /no-transaction\.sql/,
+    );
+  });
+
+  it('does not take CONCURRENTLY in a comment for a statement', () => {
+    assert.deepEqual(
+      added('0001_a_x.sql', '-- not concurrently, it is small\nCREATE INDEX a_x ON a (x);'),
+      [],
+    );
+  });
+
+  it('applies a .no-transaction.sql file without --single-transaction, and every other file with it', () => {
+    assert.ok(applyCommand('0001_a.sql').includes('--single-transaction'));
+    assert.ok(!applyCommand('0001_a.no-transaction.sql').includes('--single-transaction'));
+    assert.deepEqual(statements('a; -- b;\n /* c; */ d;'), ['a', 'd']);
+  });
+});
+
 describe('check-migrations: without a database', () => {
   it('skips when the pull request does not touch the migrations directory', () => {
     const root = make('no-change', (repo) =>
@@ -112,6 +158,12 @@ describe('check-migrations: without a database', () => {
 describe('check-migrations: on a clean Postgres', database, () => {
   it('applies the base and then a migration that depends on it', () => {
     const { status, output } = run(make('valid'));
+    assert.equal(status, 0, output);
+    assert.match(output, /OK \(1 of the base branch, then 1 of the pull request\)/);
+  });
+
+  it('builds an index CONCURRENTLY from a .no-transaction.sql file', () => {
+    const { status, output } = run(make('concurrent-index'));
     assert.equal(status, 0, output);
     assert.match(output, /OK \(1 of the base branch, then 1 of the pull request\)/);
   });
