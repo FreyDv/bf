@@ -6,6 +6,10 @@ All notable changes to this project, in [Keep a Changelog](https://keepachangelo
 
 <!-- A PR describes its change here, one entry per change - never a version heading, never VERSION itself (R18). The maintainer alone promotes this section into a release: https://github.com/repository-standards/core/blob/main/docs/method/changelog-process.md -->
 
+### Pre-commit on a fresh clone (HOOKS-2, 2026-11-16)
+
+For whoever clones the repository: `pnpm install` installs the lefthook pre-commit hook through the lefthook postinstall that `allowBuilds` in `pnpm-workspace.yaml` permits; checked on a fresh clone. A comment there now says why that permission must stay.
+
 ### Roles and grants of bfdb as two files for the owner (ADR-078, SCHEMA-1, 2026-11-16)
 
 For the owner, before the first deploy with a database (DBSEC-7): `database/roles/01-as-doadmin.sql` (as doadmin) and `database/roles/02-as-migrator.sql` (as migrator) set up the database `bf`: the schema `app` owned by migrator, app reading and writing every table migrator creates but never creating anything, nobody else connecting. Both files check their preconditions, are safe to run again and print what to write into the runbook. `pnpm db:roles:test` proves them on Postgres 18.6 set up like DigitalOcean. The R24 schema pair and the `bf_test` migration script come with the first table (SCHEMA-2).
