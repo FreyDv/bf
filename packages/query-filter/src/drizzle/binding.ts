@@ -70,7 +70,12 @@ export function defineBinding<S extends FilterSpec>(
   return Object.freeze({ spec, fields: Object.freeze({ ...fields }) });
 }
 
-/** The binding of a relation field: the related table, how it is correlated, and the binding of its own spec. */
+/**
+ * The binding of a relation field: the related table, how it is correlated, and the binding of its own spec.
+ * `table` may be an `alias()` of a table (ADR-069): a relation to the table of the node itself (a tree), or one
+ * table on two levels of a path, needs one alias per level. Write the same alias in `on` and in the binding of
+ * the related spec; do not reuse an alias between a node and its descendant, the inner one would shadow the outer.
+ */
 export function related<S extends FilterSpec>(
   table: Table,
   on: SQL,
