@@ -61,6 +61,7 @@ backups` (только чтение) и SELECT-запросы к `pg_catalog` ч
 ## Паритет с локальной средой
 
 `compose.yaml` и `deploy/local/postgres/init/` повторяют: версию 18.6, UTF8 и `en_US.UTF-8`, `wal_level`, слоты, WAL, `synchronous_commit`, память, планировщик, таймауты и роль `doadmin` с её членством. Сверено запросами к `pg_settings` и `pg_roles` на чистом томе 2026-11-11.
+Роли `migrator` и `app` и схема `app` локально те же (ADR-079): init создаёт роли с одним LOGIN, как DO, и применяет к `bf_dev` и `bf_test` те же `database/roles/01-as-doadmin.sql` (под `doadmin`) и `02-as-migrator.sql` (под `migrator`), что владелец применяет к `bf`; база остаётся за `doadmin`, у `migrator` `CREATE` на ней. Тесты (`pnpm test:e2e`) идут под `migrator` в схеме `app`, `pnpm migrations:check` строит ту же модель в контейнере и применяет миграции под `migrator`.
 Не повторяется: `aiven_extras` (Aiven-специфично), служебные роли DO (`_dodb*`, `_doadmin_monitor`), `pghoard`, SSL, один узел против лимитов CPU и памяти тарифа.
 
 ## Не проверено
