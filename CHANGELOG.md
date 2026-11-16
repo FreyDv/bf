@@ -6,6 +6,10 @@ All notable changes to this project, in [Keep a Changelog](https://keepachangelo
 
 <!-- A PR describes its change here, one entry per change - never a version heading, never VERSION itself (R18). The maintainer alone promotes this section into a release: https://github.com/repository-standards/core/blob/main/docs/method/changelog-process.md -->
 
+### nestjs-trpc start lines through pino (LOG-3, 2026-11-16)
+
+For whoever reads backend logs in Loki: the start lines of nestjs-trpc (`TRPC Server`, `Router Factory`) are now JSON records like every other line, with `context` and `correlationId: null`, instead of plain coloured text. `TRPCModule.forRoot` receives Nest's `Logger`, which forwards to the pino logger installed by `app.useLogger` (ADR-070). No new dependency.
+
 ### Test levels wired: `@bf/test-db`, the unit and e2e presets, the TST-3 guard in one place (ADR-071, TEST-2, 2026-11-16)
 
 For whoever writes the first tests that touch the database: import `openTestSchema({ schema, ddl })` (a schema per file, for a package without migrations) or `openSharedTestDatabase()` (the schema of `bf_test` filled by the real migrations, files one after another) from `@bf/test-db`, in a `*.test.ts` or `*.e2e.test.ts` file only; add the package as a `devDependency`, never as a dependency. Both modes check twice before any other statement that the database is a test one: `DB_NAME` contains the word `test`, and so does `select current_database()` once connected. It returns a `pg.Pool`; wrap Drizzle around it yourself. `@bf/query-filter` moved onto it and `packages/query-filter/test/db.ts` is gone. A new dependency-cruiser rule, `test-db-only-from-tests`, keeps the package out of production code and fixture modules, with fixtures in `pnpm deps:test`.
