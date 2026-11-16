@@ -75,6 +75,7 @@ Architecture Decision Records - технические причины. Тест 
 | [067](ADR-067-query-text-search-sort-and-pagination.md) | Поиск по подстроке (`contains`, `Op.Text`), сортировка и пагинация списочных query: вход `{ filter?, sort?, page? }`, лимиты, ответ `{ items, total? }`; код - с первым list-модулем (дополняет ADR-024) | Accepted |
 | [068](ADR-068-filter-spec-binding-public-and-dto-import-rules.md) | Слои `.filter-spec`, `.filter-binding` и `public/` в `.dependency-cruiser.mjs`: код компилятора в `infrastructure/`, реэкспорт в `public/`; правило на импорты DTO (дополняет ADR-024 п. 7 и 11, ADR-051, ADR-057 п. 6) | Accepted |
 | [069](ADR-069-query-filter-aliased-relation-tables.md) | Связь фильтра через алиас таблицы: дерево и одна таблица на двух уровнях пути (заменяет предложение ADR-051 п. 1, что они не поддержаны) | Accepted |
+| [070](ADR-070-logging-in-code-kernel-pino-request-context.md) | Логирование в коде: `@bf/kernel` (порты логгера и контекста, `Result`), технический модуль `logging` с адаптером pino, контекст запроса на AsyncLocalStorage (исполняет ADR-032 и ADR-043 п. 7; отступление от STR-1, STR-9, PRG-1 для модуля `logging`) | Accepted |
 
 Первая ячейка - номер-ссылка на файл; остальное - свободный текст. `scripts/decision-records-check.mjs` сверяет таблицу с файлами. Нумерация без пропусков, номера не переиспользуются. Шаблон: [`_template.md`](_template.md). Решения прототипа не переносятся (ADR-006).
 
@@ -96,7 +97,7 @@ Architecture Decision Records - технические причины. Тест 
 | Ветвление и релизы | ADR-003; откат деплоя - ADR-019 |
 | Зависимости и цепочка поставок | ADR-005; пины `drizzle-orm` и `pg` для пакета фильтров - ADR-050 |
 | Язык, рантайм, фреймворки, инструменты | ADR-007, ADR-010, ADR-011, ADR-016; UI-библиотека - ADR-031 |
-| Логи и наблюдаемость | ADR-032; срок хранения, потолок цены, сборщик, доступ к Grafana, правила схемы - ADR-043; метрики и алерты не по логам - открыто: backlog MON-1 |
+| Логи и наблюдаемость | ADR-032; код логирования (порт в `@bf/kernel`, адаптер pino, контекст запроса, поля, скрытие, `LOG_LEVEL`) - ADR-070; срок хранения, потолок цены, сборщик, доступ к Grafana, правила схемы - ADR-043; метрики и алерты не по логам - открыто: backlog MON-1 |
 | Топология репозитория и сборка | ADR-008, ADR-009; пакет shared kernel - ADR-048 |
 | Стиль API и контракта | ADR-012; тип роутера во frontend - ADR-035; фильтр query - ADR-024, поиск, сортировка и пагинация - ADR-067, пакет и его границы - ADR-050, entry `drizzle` - ADR-051, связь через алиас таблицы (дерево) - ADR-069 вместо предложения его п. 1; слои файлов `.filter-spec`, `.filter-binding`, `public/` и импорты DTO в `.dependency-cruiser.mjs` - ADR-068; проверки frontend на файлы контракта backend - ADR-057; входы задач с файлами DTO вместо `--force` - ADR-058 вместо пункта 2 ADR-057 в части кеша; pre-commit на правке DTO - ADR-064; кеш `build` frontend - ADR-065 |
 | Хранилище данных | ADR-013; размещение - ADR-017; надёжность записи (`synchronous_commit`) - ADR-044, оговорка его п. 4 про счётчик входа снята и пункт подтверждён в ADR-054; роли, база и SSL клиента - ADR-053 (п. 3 ADR-033 заменён в части роли приложения); поля подключения `DB_*`, пакет `@bf/db-utils`, CA в чарте - ADR-061 (заменяет `DATABASE_URL` в ADR-036, ADR-051) |
