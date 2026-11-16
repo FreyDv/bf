@@ -36,6 +36,8 @@ describe('configureApp logging', () => {
   let app: INestApplication;
   let origin: string;
   const lines: string[] = [];
+  // What the start of the application wrote, before the first test clears `lines`.
+  let startup: Record<string, unknown>[] = [];
   // The access record is written when the response finishes, which can be after the client has read it.
   const completedRecord = (correlationId: string) =>
     vi.waitFor(() => {
@@ -60,6 +62,7 @@ describe('configureApp logging', () => {
     configureApp(app);
     await app.listen(0, '127.0.0.1');
     origin = await app.getUrl();
+    startup = records();
   });
 
   afterEach(() => {
@@ -69,6 +72,20 @@ describe('configureApp logging', () => {
   afterAll(async () => {
     await app.close();
     vi.unstubAllEnvs();
+  });
+
+  // LOG-3: nestjs-trpc logs its start through the logger given to TRPCModule.forRoot, so these lines are pino JSON
+  // too; every line written so far parsed as JSON in `startup`, the plain-text ConsoleLogger would have thrown.
+  it('writes the start lines of nestjs-trpc as JSON records with their context', () => {
+    const server = startup.find((r) => r['context'] === 'TRPC Server');
+    expect(server?.['msg']).toMatch(/^Server has been initialized/);
+    expect(server?.['correlationId']).toBeNull();
+    expect(startup).toContainEqual(
+      expect.objectContaining({
+        context: 'Router Factory',
+        msg: 'Mapped {Query, probe.ping} route.',
+      }),
+    );
   });
 
   it('runs a tRPC call inside the request context: a record logged there carries the incoming id', async () => {
