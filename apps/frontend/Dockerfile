@@ -1,5 +1,6 @@
 # ADR-027: context is the monorepo root (`docker build -f apps/frontend/Dockerfile .`).
-# The tag matches .nvmrc; the digest is what pins it. Bump both in one PR after the 7-day cooldown (ADR-005).
+# The tag matches .nvmrc; the digest is what pins it. `pnpm image:pins bump` refreshes the digest after the 7-day
+# cooldown (ADR-005, ADR-076); `pnpm image:pins check` in CI keeps the tag equal to .nvmrc.
 FROM node:26.13.0-slim@sha256:5adad64f9a1fca2d51972caa65983634c8a774eb300d72b20f7f2a0f60368072 AS base
 WORKDIR /repo
 # Tool versions come from package.json so that they have one home (R4). Node 26 does not bundle corepack, so the

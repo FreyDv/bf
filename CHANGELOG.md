@@ -6,6 +6,10 @@ All notable changes to this project, in [Keep a Changelog](https://keepachangelo
 
 <!-- A PR describes its change here, one entry per change - never a version heading, never VERSION itself (R18). The maintainer alone promotes this section into a release: https://github.com/repository-standards/core/blob/main/docs/method/changelog-process.md -->
 
+### Image digests: check in CI, weekly due check, one-command bump (ADR-076, IMG-1, 2026-11-16)
+
+For whoever maintains the images: `pnpm image:pins check` (in `ci`) keeps the node tag of both Dockerfiles equal to `.nvmrc` and pinned by one digest; `pnpm image:pins bump` writes the newer digest of the same tag for node, hadolint and Trivy once the image is at least 7 days old. The weekly workflow `image-pins` fails when a bump is due, which mails the owner; the bump is then a pull request.
+
 ### Migrations that cannot run in a transaction (ADR-075, MIGR-1, 2026-11-16)
 
 For whoever writes a migration that builds an index on a live table: put the one `CREATE INDEX CONCURRENTLY` (or `DROP INDEX` / `REINDEX ... CONCURRENTLY`) statement alone in a file named `<number>_<name>.no-transaction.sql`. It is applied without `--single-transaction`; every other file still runs in one transaction. The migration check refuses `CONCURRENTLY` in an ordinary file and any other statement in a no-transaction file before it starts a database.
