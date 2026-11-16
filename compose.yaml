@@ -2,6 +2,14 @@
 # The application role is `doadmin`, as on the managed database: no superuser, REPLICATION; the superuser
 # `postgres` only bootstraps the cluster. Postgres 18.6 is the version running on DO, taken without the
 # cooldown under ADR-034; the other tags pass the 7-day cooldown (ADR-005).
+#
+# Fixed on purpose (LOCAL-2): the database names bf_dev and bf_test and the doadmin password bf_local_only live in
+# deploy/local/postgres/init/ and are read by Debezium below and by the tests (AGENTS.md, Commands), so neither is
+# taken from the environment. The init files run only on an empty volume: after changing them, `pnpm local:reset`
+# (drops the volumes) and `pnpm local:up`.
+# The postgres settings mirror bfdb. wal_keep_size and max_wal_size are disk in the volume (up to about 3 GB of WAL),
+# not memory; memory is shared_buffers (780 MB) plus the work memory of each connection. On a Docker with less memory
+# lower them in a compose.override.yaml next to this file (git-ignored, read by `docker compose` on its own).
 name: bf
 
 services:
@@ -40,7 +48,8 @@ services:
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres_local_only}
-      POSTGRES_DB: ${POSTGRES_DB:-bf_dev}
+      # Fixed, not ${POSTGRES_DB}: the init files and Debezium name bf_dev (see the top of this file).
+      POSTGRES_DB: bf_dev
     ports:
       - '127.0.0.1:${POSTGRES_PORT:-5432}:5432'
     volumes:

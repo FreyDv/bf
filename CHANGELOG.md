@@ -6,6 +6,10 @@ All notable changes to this project, in [Keep a Changelog](https://keepachangelo
 
 <!-- A PR describes its change here, one entry per change - never a version heading, never VERSION itself (R18). The maintainer alone promotes this section into a release: https://github.com/repository-standards/core/blob/main/docs/method/changelog-process.md -->
 
+### Local environment: fixed database name, init and WAL explained (LOCAL-2, 2026-11-16)
+
+For developers running `pnpm local:up`: the database name `bf_dev` is no longer taken from the environment, because the init files, Debezium and the tests name it. The top of `compose.yaml` now says that init runs only on an empty volume (`pnpm local:reset`), that the WAL settings cost disk (up to about 3 GB) rather than memory, and how to lower memory and WAL on a smaller machine with a git-ignored `compose.override.yaml`.
+
 ### Pre-commit on a fresh clone (HOOKS-2, 2026-11-16)
 
 For whoever clones the repository: `pnpm install` installs the lefthook pre-commit hook through the lefthook postinstall that `allowBuilds` in `pnpm-workspace.yaml` permits; checked on a fresh clone. A comment there now says why that permission must stay.
