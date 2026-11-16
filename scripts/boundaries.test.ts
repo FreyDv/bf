@@ -266,6 +266,31 @@ const files: Record<string, string> = {
     exports: { '.': './dist/index.js' },
   }),
   'packages/db-utils/dist/index.js': 'export const readDbConfig = 1;',
+  // The test database helper (ADR-071): a test file may import it, nothing else may. The tree simulates a package
+  // built to dist/, like a real install.
+  'packages/test-db/package.json': JSON.stringify({
+    name: '@bf/test-db',
+    type: 'module',
+    exports: { '.': './dist/index.js' },
+  }),
+  'packages/test-db/dist/index.js': 'export const openTestSchema = 1;',
+  'packages/test-db/src/index.ts': 'export const openTestSchema = 1;',
+  'packages/test-db/src/uses-own-index.ts':
+    "import { openTestSchema } from './index.js';\nexport const a = openTestSchema;",
+  [`${S}/orders/infrastructure/order.repository.e2e.test.ts`]:
+    "import { openTestSchema } from '@bf/test-db';\nexport const t = openTestSchema;",
+  'packages/contracts/src/uses-test-db.e2e.test.ts':
+    "import { openTestSchema } from '@bf/test-db';\nexport const t = openTestSchema;",
+  [`${S}/orders/infrastructure/bad-test-db.adapter.ts`]:
+    "import { openTestSchema } from '@bf/test-db';\nexport const a = openTestSchema;",
+  [`${S}/orders/application/bad-test-db.service.ts`]:
+    "import { openTestSchema } from '@bf/test-db';\nexport const a = openTestSchema;",
+  [`${S}/bad-test-db-root.ts`]:
+    "import { openTestSchema } from '@bf/test-db';\nexport const a = openTestSchema;",
+  'packages/contracts/src/bad-test-db-fixture.ts':
+    "import { openTestSchema } from '@bf/test-db';\nexport const a = openTestSchema;",
+  'packages/query-filter/src/bad-test-db-relative.ts':
+    "import { openTestSchema } from '../../test-db/dist/index.js';\nexport const a = openTestSchema;",
   [`${S}/orders/infrastructure/db.config.ts`]:
     "import { readDbConfig } from '@bf/db-utils';\nexport const a = readDbConfig;",
   [`${S}/db-root.config.ts`]:
@@ -452,6 +477,11 @@ const expected: Array<[rule: string, from: string]> = [
     'db-utils-not-in-domain-or-application',
     `${S}/orders/queries/find/bad-db-utils.query-handler.ts`,
   ],
+  ['test-db-only-from-tests', `${S}/orders/infrastructure/bad-test-db.adapter.ts`],
+  ['test-db-only-from-tests', `${S}/orders/application/bad-test-db.service.ts`],
+  ['test-db-only-from-tests', `${S}/bad-test-db-root.ts`],
+  ['test-db-only-from-tests', 'packages/contracts/src/bad-test-db-fixture.ts'],
+  ['test-db-only-from-tests', 'packages/query-filter/src/bad-test-db-relative.ts'],
   ['qry-7-domain-no-toolkit', `${S}/orders/domain/bad-toolkit-core.ts`],
   ['qry-7-domain-no-toolkit', `${S}/orders/domain/bad-toolkit-zod.test.ts`],
   ['domain-packages-only-kernel', `${S}/orders/domain/bad-toolkit-core.ts`],
@@ -689,7 +719,7 @@ describe('dependency-cruiser boundaries', () => {
     let cruise: Cruise;
     [cruise, tmp] = cruiseTree(
       files,
-      ['kernel', 'contracts', 'query-filter', 'db-utils'],
+      ['kernel', 'contracts', 'query-filter', 'db-utils', 'test-db'],
       ['neverthrow', 'openai'],
     );
     ({ violations, modules } = cruise);
@@ -801,6 +831,21 @@ describe('dependency-cruiser boundaries', () => {
     assert.ok(config?.dependencies.some((d) => d.resolved === 'packages/db-utils/dist/index.js'));
   });
 
+  it('sees the test file imports of @bf/test-db in dist/ and finds them legal', () => {
+    for (const source of [
+      `${S}/orders/infrastructure/order.repository.e2e.test.ts`,
+      'packages/contracts/src/uses-test-db.e2e.test.ts',
+    ]) {
+      const testFile = modules.find((m) => m.source === source);
+      assert.ok(
+        testFile?.dependencies.some((d) => d.resolved === 'packages/test-db/dist/index.js'),
+        source,
+      );
+    }
+    const own = modules.find((m) => m.source === 'packages/test-db/src/uses-own-index.ts');
+    assert.ok(own?.dependencies.some((d) => d.resolved === 'packages/test-db/src/index.ts'));
+  });
+
   it('reports nothing on the legal imports', () => {
     const legal = new Set(Object.keys(files).filter((p) => !expected.some(([, f]) => f === p)));
     const falsePositives = violations.filter(
@@ -875,6 +920,10 @@ describe('dependency-cruiser boundaries with the toolkit not installed', () => {
       "import { readDbConfig } from '@bf/db-utils';\nexport const a = readDbConfig;",
     [`${S}/orders/application/bad-db-utils.service.ts`]:
       "import { readDbConfig } from '@bf/db-utils';\nexport const a = readDbConfig;",
+    [`${S}/orders/application/bad-test-db.service.ts`]:
+      "import { openTestSchema } from '@bf/test-db';\nexport const a = openTestSchema;",
+    [`${S}/orders/infrastructure/legal-test-db.e2e.test.ts`]:
+      "import { openTestSchema } from '@bf/test-db';\nexport const t = openTestSchema;",
     [`${S}/orders/domain/bad-toolkit-core.ts`]:
       "import { Op } from '@bf/query-filter/core';\nexport const a = Op;",
     [`${S}/orders/application/bad-toolkit-zod.service.ts`]:
@@ -911,6 +960,13 @@ describe('dependency-cruiser boundaries with the toolkit not installed', () => {
         'db-utils-not-in-domain-or-application',
         `${S}/orders/application/bad-db-utils.service.ts`,
       ),
+    );
+  });
+
+  it('rejects @bf/test-db outside a test file by name and lets a test file import it', () => {
+    assert.ok(fires('test-db-only-from-tests', `${S}/orders/application/bad-test-db.service.ts`));
+    assert.ok(
+      !fires('test-db-only-from-tests', `${S}/orders/infrastructure/legal-test-db.e2e.test.ts`),
     );
   });
 

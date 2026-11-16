@@ -38,6 +38,9 @@ const TOOLKIT_SRC = '^packages/query-filter/src/';
 // ADR-061: the connection settings and URL builder read process configuration and build a connection string, so
 // they belong to infrastructure and the composition root. The pattern reads the package name as well as the path.
 const DB_UTILS = '^@bf/db-utils(/|$)|^packages/db-utils/';
+// ADR-071: the test database helper reaches a real Postgres, so only a test file may import it (and the package
+// itself). It is a devDependency of its consumers and never part of an image. The pattern reads the name as well.
+const TEST_DB = '^@bf/test-db(/|$)|^packages/test-db/';
 const TOOLKIT_CORE = '^@bf/query-filter/core(/|$)|^packages/query-filter/dist/core/';
 const ZOD = '(^|/)node_modules/zod/|^zod(/|$)';
 // ADR-068: the suffixes .filter-spec, .filter-binding, .filter-compiler and the folder public/ are defined in
@@ -234,6 +237,14 @@ export default {
       severity: 'error',
       from: { path: [...DOMAIN_ANY, DOMAIN, APPLICATION, `${SLICE}.*${APPLICATION_IN_SLICE}`] },
       to: { path: DB_UTILS },
+    },
+    {
+      name: 'test-db-only-from-tests',
+      comment:
+        'ENF-1, TST-3, ADR-071: @bf/test-db (the guarded connection to bf_test) is imported by test files and by its own package only, so no production file, fixture module or config reaches a database through it. A fixture that needs a schema name builds the name itself.',
+      severity: 'error',
+      from: { pathNot: [TEST, '^packages/test-db/'] },
+      to: { path: TEST_DB },
     },
     {
       name: 'qry-7-domain-no-toolkit',

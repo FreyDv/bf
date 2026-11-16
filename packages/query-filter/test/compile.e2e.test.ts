@@ -1,11 +1,12 @@
 // QRY-18: NULL, the quantifiers and the limits on a real Postgres. The tables are made by the test in a schema of
-// its own and dropped afterwards (ADR-050 item 12).
+// its own and dropped afterwards (ADR-071).
 import { and, eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { FilterOf } from '../src/core/index.js';
 import { OrderStatus, type userFilter } from '../src/core/fixtures.js';
 import { compile } from '../src/drizzle/index.js';
-import { type TestDatabase, openTestDatabase } from './db.js';
+import { drizzle } from 'drizzle-orm/node-postgres';
+import { type TestDatabase, openTestSchema } from '@bf/test-db';
 import { SCHEMA, ddl, groups, orders, userBinding, users } from './schema.js';
 
 type UserFilter = FilterOf<typeof userFilter>;
@@ -20,10 +21,11 @@ const CAT = 3;
 const DAN = 4;
 
 let database: TestDatabase;
+let db: ReturnType<typeof drizzle>;
 
 beforeAll(async () => {
-  database = await openTestDatabase(SCHEMA, ddl);
-  const { db } = database;
+  database = await openTestSchema({ schema: SCHEMA, ddl });
+  db = drizzle(database.pool);
   await db.insert(groups).values([
     { id: 1, title: 'g1', legalEntityId: 123 },
     { id: 2, title: 'g2', legalEntityId: 456 },
@@ -47,7 +49,7 @@ afterAll(async () => {
 });
 
 const find = async (filter: UserFilter): Promise<number[]> => {
-  const rows = await database.db
+  const rows = await db
     .select({ id: users.id })
     .from(users)
     .where(compile(userBinding, filter))
@@ -135,7 +137,7 @@ describe('relations compile to EXISTS (QRY-11, QRY-13)', () => {
       ANN,
       BOB,
     ]);
-    const rows = await database.db
+    const rows = await db
       .select({ id: users.id })
       .from(users)
       .where(compile(userBinding, { orders: { some: { total: { operator: 'gte', value: '0' } } } }))
@@ -162,7 +164,7 @@ describe('scope stays outside the filter (QRY-17)', () => {
     const filter = compile(userBinding, {
       OR: [{ name: { operator: 'eq', value: 'Ann' } }, { name: { operator: 'eq', value: 'Dan' } }],
     });
-    const rows = await database.db
+    const rows = await db
       .select({ id: users.id })
       .from(users)
       .where(and(scope, filter))

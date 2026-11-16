@@ -3,7 +3,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { FilterOf } from '../src/core/index.js';
 import { compile } from '../src/drizzle/index.js';
-import { type TestDatabase, openTestDatabase } from './db.js';
+import { drizzle } from 'drizzle-orm/node-postgres';
+import { type TestDatabase, openTestSchema } from '@bf/test-db';
 import { TREE_SCHEMA, categories, categoryBinding, categoryFilter, treeDdl } from './tree.js';
 
 type CategoryFilter = FilterOf<typeof categoryFilter>;
@@ -24,10 +25,12 @@ const F = 6;
 const G = 7;
 
 let database: TestDatabase;
+let db: ReturnType<typeof drizzle>;
 
 beforeAll(async () => {
-  database = await openTestDatabase(TREE_SCHEMA, treeDdl);
-  await database.db.insert(categories).values([
+  database = await openTestSchema({ schema: TREE_SCHEMA, ddl: treeDdl });
+  db = drizzle(database.pool);
+  await db.insert(categories).values([
     { id: A, name: 'A', parentId: null },
     { id: B, name: 'B', parentId: A },
     { id: C, name: 'C', parentId: A },
@@ -43,7 +46,7 @@ afterAll(async () => {
 });
 
 const find = async (filter: CategoryFilter): Promise<number[]> => {
-  const rows = await database.db
+  const rows = await db
     .select({ id: categories.id })
     .from(categories)
     .where(compile(categoryBinding, filter))
@@ -81,7 +84,7 @@ describe('a relation to the table of the node (parent, children)', () => {
   });
 
   it('never multiplies the root', async () => {
-    const rows = await database.db
+    const rows = await db
       .select({ id: categories.id })
       .from(categories)
       .where(

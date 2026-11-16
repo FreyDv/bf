@@ -4,13 +4,16 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { userFilter } from '../src/core/fixtures.js';
 import { compile } from '../src/drizzle/index.js';
 import { toZod } from '../src/zod/index.js';
-import { type TestDatabase, openTestDatabase } from './db.js';
+import { drizzle } from 'drizzle-orm/node-postgres';
+import { type TestDatabase, openTestSchema } from '@bf/test-db';
 import { SCHEMA, ddl, users, userBinding } from './schema.js';
 
 let database: TestDatabase;
+let db: ReturnType<typeof drizzle>;
 
 beforeAll(async () => {
-  database = await openTestDatabase(SCHEMA, ddl);
+  database = await openTestSchema({ schema: SCHEMA, ddl });
+  db = drizzle(database.pool);
 });
 
 afterAll(async () => {
@@ -49,7 +52,7 @@ describe('toZod and compile agree', () => {
       const parsed = schema.safeParse(filter);
       expect(parsed.success).toBe(true);
       if (!parsed.success) return;
-      const rows = await database.db
+      const rows = await db
         .select({ id: users.id })
         .from(users)
         .where(compile(userBinding, parsed.data));
