@@ -23,7 +23,7 @@ const docker = (args: string[], input?: string) =>
   spawnSync('docker', args, { encoding: 'utf8', input });
 
 /** Runs SQL as a role against a database; returns the exit status and the combined output. */
-function psql(role: string, sql: string, database = 'bf') {
+function psql(role: string, sql: string, database = 'bf', variables: string[] = []) {
   const result = docker(
     [
       'exec',
@@ -44,6 +44,7 @@ function psql(role: string, sql: string, database = 'bf') {
       database,
       '-v',
       'ON_ERROR_STOP=1',
+      ...variables.flatMap((variable) => ['-v', variable]),
       '-f',
       '-',
     ],
@@ -52,13 +53,19 @@ function psql(role: string, sql: string, database = 'bf') {
   return { status: result.status, out: `${result.stdout}${result.stderr}` };
 }
 
-const ok = (role: string, sql: string, database?: string) => {
-  const result = psql(role, sql, database);
+const ok = (role: string, sql: string, database?: string, variables?: string[]) => {
+  const result = psql(role, sql, database, variables);
   assert.equal(result.status, 0, result.out);
   return result.out.trim();
 };
-const refused = (role: string, sql: string, pattern: RegExp) => {
-  const result = psql(role, sql);
+const refused = (
+  role: string,
+  sql: string,
+  pattern: RegExp,
+  database?: string,
+  variables?: string[],
+) => {
+  const result = psql(role, sql, database, variables);
   assert.notEqual(result.status, 0, `${role} was allowed: ${sql}`);
   assert.match(result.out, pattern);
 };
@@ -160,7 +167,42 @@ describe(
     });
 
     it('refuses the second file under another login', () => {
-      refused('doadmin', migratorFile, /connect as migrator to bf/);
+      refused('doadmin', migratorFile, /connect as migrator to bf, not as doadmin to bf/);
+    });
+
+    // The local environment applies the same two files to bf_dev and bf_test with -v db=<name> (ADR-079).
+    it('applies both files to a database named bf_test with -v db=bf_test, and refuses them without it', () => {
+      ok('postgres', 'CREATE DATABASE bf_test OWNER doadmin;', 'postgres');
+      const variables = ['db=bf_test'];
+      refused('doadmin', doadminFile, /connect to the database bf, not bf_test/, 'bf_test');
+      refused(
+        'migrator',
+        migratorFile,
+        /connect as migrator to bf, not as migrator to bf_test/,
+        'bf_test',
+      );
+      refused('doadmin', doadminFile, /connect to the database bf_test, not bf\b/, 'bf', variables);
+      for (let run = 0; run < 2; run += 1) {
+        assert.match(ok('doadmin', doadminFile, 'bf_test', variables), /bf_test\|doadmin\|/);
+        ok('migrator', migratorFile, 'bf_test', variables);
+      }
+      ok('migrator', 'CREATE TABLE IF NOT EXISTS notes (id bigserial PRIMARY KEY);', 'bf_test');
+      assert.equal(ok('migrator', "SELECT to_regclass('app.notes') IS NOT NULL;", 'bf_test'), 't');
+      assert.equal(
+        ok(
+          'app',
+          'SET search_path = app; INSERT INTO notes DEFAULT VALUES; SELECT count(*) FROM notes;',
+          'bf_test',
+        ),
+        '1',
+      );
+      assert.notEqual(
+        psql('app', 'CREATE TABLE app.x (i int);', 'bf_test').status,
+        0,
+        'app created a table in bf_test',
+      );
+      ok('postgres', `CREATE ROLE stranger_test LOGIN PASSWORD '${PASSWORD}';`, 'postgres');
+      assert.notEqual(psql('stranger_test', 'SELECT 1;', 'bf_test').status, 0);
     });
   },
 );
