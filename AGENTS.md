@@ -57,7 +57,7 @@ checks them ([self-verify.md](docs/standards/vendor/repository-standards-core/me
 
 | Path | Purpose |
 |------|---------|
-| `apps/`, `packages/` | backend (NestJS), frontend (Next.js), shared config package (ADR-008, ADR-009); `packages/db-utils` reads the `DB_*` settings and builds the connection URL (ADR-061); `packages/kernel` (`@bf/kernel`) holds the Logger and RequestContext ports and `Result` (ADR-070) |
+| `apps/`, `packages/` | backend (NestJS), frontend (Next.js), shared config package (ADR-008, ADR-009); `packages/db-utils` reads the `DB_*` settings and builds the connection URL (ADR-061); `packages/kernel` (`@bf/kernel`) holds the Logger and RequestContext ports and `Result` (ADR-070); `packages/test-db` (`@bf/test-db`, devDependency only, test files only) is the guarded connection to `bf_test` for tests (ADR-071) |
 | `compose.yaml`, `deploy/` | local environment (ADR-033), ArgoCD bootstrap values; Helm charts and manifests arrive with CHART-1 |
 | `docs/PRODUCT.md`, `docs/personas.md` | what we build and for whom; personas confirmed by the owner (BDR-001), success defined in the owner's words, metrics deferred (METRICS-1) |
 | `docs/decision-records/` | ADR (technical why) and BDR (business why), MADR form |
@@ -91,7 +91,7 @@ pnpm contracts:check                    # fails when that file is out of date (C
 pnpm local:up | local:cdc | local:down | local:reset   # docker compose: Postgres, NATS (+ Debezium with local:cdc), ADR-033
 pnpm charts                             # helm lint + helm template for the shared chart and every app under deploy/apps (ADR-019); also `seal-secret --check` (secrets.yaml holds ciphertext only)
 pnpm charts:test                        # chart behaviour: what it renders and refuses; needs `helm` on PATH
-pnpm test:e2e                           # turbo run test:e2e against bf_test and NATS; start them with `pnpm local:up` first (ADR-036); the database comes from `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_SCHEMA`, `DB_SSL_MODE`, `DB_USER`, `DB_PASSWORD` (`@bf/db-utils`, ADR-061, no single connection-string variable), CI sets them; locally 127.0.0.1, 5432, bf_test, public, disable, doadmin, bf_local_only
+pnpm test:e2e                           # turbo run test:e2e --concurrency=1 (one package at a time on the shared bf_test, ADR-071) against bf_test and NATS; start them with `pnpm local:up` first (ADR-036); the database comes from `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_SCHEMA`, `DB_SSL_MODE`, `DB_USER`, `DB_PASSWORD` (`@bf/db-utils`, ADR-061, no single connection-string variable), CI sets them; locally 127.0.0.1, 5432, bf_test, public, disable, doadmin, bf_local_only
 pnpm migrations:check                   # applies the migrations of main, then of this branch, to a clean Postgres; skips when none changed (ADR-036); needs Docker
 pnpm migrations:test                    # the migration check on fixtures; needs Docker
 pnpm secrets:seal                       # from the root: each app's `.env.production` -> deploy/apps/<app>/secrets.yaml (kubeseal on PATH; ADR-060); fails when an app has none
