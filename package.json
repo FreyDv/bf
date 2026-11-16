@@ -2,7 +2,7 @@
   "name": "bf",
   "private": true,
   "type": "module",
-  "packageManager": "pnpm@11.28.10",
+  "packageManager": "pnpm@11.28.10+sha512.672216f06e15c109b85471d49d3fbed17e6f03ead258df08c2bf5b4a5c33321ebfbf59476bce81325efada16ace0ac78548fd0bfcd7a51369e939182a3dd50e4",
   "engines": {
     "node": ">=26.13.0 <27",
     "pnpm": ">=11.28.10"
@@ -13,8 +13,8 @@
     "lint": "turbo run lint",
     "test": "turbo run test",
     "test:e2e": "turbo run test:e2e --concurrency=1",
-    "format": "prettier --write apps packages package.json turbo.json .dependency-cruiser.mjs scripts/boundaries.test.ts scripts/charts-check.ts scripts/charts.test.ts scripts/lib/argocd-application.ts scripts/contracts-generate.ts scripts/contracts-typecheck.ts scripts/contracts-typecheck.test.ts scripts/lib/backend-contract-files.ts scripts/check-migrations.ts scripts/check-migrations.test.ts scripts/image-check.ts scripts/seal-secret.ts scripts/seal-secret.test.ts scripts/commit-image-tag.ts scripts/commit-image-tag.test.ts",
-    "format:check": "prettier --check apps packages package.json turbo.json .dependency-cruiser.mjs scripts/boundaries.test.ts scripts/charts-check.ts scripts/charts.test.ts scripts/lib/argocd-application.ts scripts/contracts-generate.ts scripts/contracts-typecheck.ts scripts/contracts-typecheck.test.ts scripts/lib/backend-contract-files.ts scripts/check-migrations.ts scripts/check-migrations.test.ts scripts/image-check.ts scripts/seal-secret.ts scripts/seal-secret.test.ts scripts/commit-image-tag.ts scripts/commit-image-tag.test.ts",
+    "format": "prettier --write apps packages package.json turbo.json .dependency-cruiser.mjs scripts/boundaries.test.ts scripts/charts-check.ts scripts/charts.test.ts scripts/lib/argocd-application.ts scripts/contracts-generate.ts scripts/contracts-typecheck.ts scripts/contracts-typecheck.test.ts scripts/lib/backend-contract-files.ts scripts/check-migrations.ts scripts/check-migrations.test.ts scripts/image-check.ts scripts/seal-secret.ts scripts/seal-secret.test.ts scripts/commit-image-tag.ts scripts/commit-image-tag.test.ts scripts/install-pnpm.ts scripts/install-pnpm.test.ts",
+    "format:check": "prettier --check apps packages package.json turbo.json .dependency-cruiser.mjs scripts/boundaries.test.ts scripts/charts-check.ts scripts/charts.test.ts scripts/lib/argocd-application.ts scripts/contracts-generate.ts scripts/contracts-typecheck.ts scripts/contracts-typecheck.test.ts scripts/lib/backend-contract-files.ts scripts/check-migrations.ts scripts/check-migrations.test.ts scripts/image-check.ts scripts/seal-secret.ts scripts/seal-secret.test.ts scripts/commit-image-tag.ts scripts/commit-image-tag.test.ts scripts/install-pnpm.ts scripts/install-pnpm.test.ts",
     "contracts:generate": "node scripts/contracts-generate.ts",
     "contracts:check": "node scripts/contracts-generate.ts --check",
     "contracts:typecheck": "node scripts/contracts-typecheck.ts",
@@ -29,6 +29,7 @@
     "secrets:seal": "turbo run secrets:seal",
     "secrets:seal:test": "node --test scripts/seal-secret.test.ts",
     "image:tag:test": "node --test scripts/commit-image-tag.test.ts",
+    "pnpm:install:test": "node --test scripts/install-pnpm.test.ts",
     "local:up": "docker compose up -d --wait",
     "local:cdc": "docker compose --profile cdc up -d --wait",
     "local:down": "docker compose --profile cdc down",

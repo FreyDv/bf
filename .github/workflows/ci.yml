@@ -40,8 +40,9 @@ jobs:
           node-version-file: .nvmrc
           package-manager-cache: false
       - name: Install pnpm
-        # Node 26 does not bundle corepack; the version is the one pinned in package.json.
-        run: npm install --global pnpm@11.28.10
+        # Node 26 does not bundle corepack: the script installs the version and checks the hash pinned in
+        # `packageManager` of package.json (CI-3, ADR-072).
+        run: node scripts/install-pnpm.ts
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
@@ -91,6 +92,9 @@ jobs:
       - name: Image tag script
         # The tag job's script against real git repositories (DEPLOY-1, ADR-030); helm is faked, git is real.
         run: pnpm image:tag:test
+      - name: pnpm install script
+        # The hash check refuses a tarball that differs from the pin (CI-3, ADR-072); npm is faked.
+        run: pnpm pnpm:install:test
       - name: Unit tests
         run: pnpm turbo run test ${{ github.event_name == 'pull_request' && '--affected' || '' }}
       - name: Is there an e2e task
@@ -145,7 +149,7 @@ jobs:
           node-version-file: .nvmrc
           package-manager-cache: false
       - name: Install pnpm
-        run: npm install --global pnpm@11.28.10
+        run: node scripts/install-pnpm.ts
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Which images
