@@ -12,6 +12,7 @@ const here = import.meta.dirname;
 const fixtures = join(here, 'fixtures/migrations');
 const script = join(here, 'check-migrations.ts');
 const compose = resolve(here, '../compose.yaml');
+const roles = resolve(here, '../database/roles');
 
 const hasDocker = spawnSync('docker', ['info'], { stdio: 'ignore' }).status === 0;
 const database = { skip: hasDocker ? false : 'docker is not available' };
@@ -28,6 +29,7 @@ function repository(name: string, edit?: (root: string) => void): string {
   const dir = join(root, CONTRACT.dir);
   git(root, 'init', '-q', '-b', 'main');
   cpSync(compose, join(root, 'compose.yaml'));
+  cpSync(roles, join(root, 'database/roles'), { recursive: true });
   mkdirSync(dir, { recursive: true });
   cpSync(join(fixtures, name, 'base'), dir, { recursive: true });
   git(root, 'add', '-A');
@@ -166,6 +168,17 @@ describe('check-migrations: on a clean Postgres', database, () => {
     const { status, output } = run(make('concurrent-index'));
     assert.equal(status, 0, output);
     assert.match(output, /OK \(1 of the base branch, then 1 of the pull request\)/);
+  });
+
+  it('runs as migrator, so a table without a schema lands in app (ADR-079)', () => {
+    const { status, output } = run(make('lands-in-app'));
+    assert.equal(status, 0, output);
+  });
+
+  it('fails on a migration that needs more than migrator has, as on DigitalOcean', () => {
+    const { status, output } = run(make('beyond-migrator'));
+    assert.equal(status, 1);
+    assert.match(output, /pull request: 0001_role\.sql: .*permission denied to create role/);
   });
 
   it('fails on a migration that errors, and names the file and the error', () => {

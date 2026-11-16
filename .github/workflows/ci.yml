@@ -120,13 +120,15 @@ jobs:
       - name: End-to-end tests
         if: steps.e2e.outputs.count != '0'
         env:
-          # The local role stays doadmin until LOCAL-3 brings the two roles of ADR-053; the password is the dummy of compose.yaml.
+          # migrator, as the migration step does (ADR-079): it owns the objects and may create the per-file schemas of
+          # @bf/test-db; the password is the dummy of compose.yaml. Tests of the app's behaviour run as `app` with the
+          # first module (SCHEMA-2).
           DB_HOST: 127.0.0.1
           DB_PORT: '5432'
           DB_NAME: bf_test
-          DB_SCHEMA: public
+          DB_SCHEMA: app
           DB_SSL_MODE: disable
-          DB_USER: doadmin
+          DB_USER: migrator
           DB_PASSWORD: bf_local_only
           NATS_URL: nats://127.0.0.1:4222
         run: pnpm turbo run test:e2e --concurrency=1 ${{ github.event_name == 'pull_request' && '--affected' || '' }}

@@ -1,7 +1,8 @@
 # Local environment (ADR-033). Defaults are for this machine only (ports bind to 127.0.0.1).
-# The application role is `doadmin`, as on the managed database: no superuser, REPLICATION; the superuser
-# `postgres` only bootstraps the cluster. Postgres 18.6 is the version running on DO, taken without the
-# cooldown under ADR-034; the other tags pass the 7-day cooldown (ADR-005).
+# Roles as on the managed database (ADR-053): `doadmin` (no superuser, REPLICATION; Debezium and the owner's manual
+# work), `migrator` (owns the objects, runs DDL) and `app` (DML only, schema `app`, ADR-078); the superuser
+# `postgres` only bootstraps the cluster. The init applies database/roles/*.sql to bf_dev and bf_test (ADR-079).
+# Postgres 18.6 is the version running on DO, taken without the cooldown under ADR-034; the other tags pass the 7-day cooldown (ADR-005).
 #
 # Fixed on purpose (LOCAL-2): the database names bf_dev and bf_test and the doadmin password bf_local_only live in
 # deploy/local/postgres/init/ and are read by Debezium below and by the tests (AGENTS.md, Commands), so neither is
@@ -55,6 +56,8 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql
       - ./deploy/local/postgres/init:/docker-entrypoint-initdb.d:ro
+      # The files the owner applies to bf, read by the init to set up bf_dev and bf_test the same way (ADR-079).
+      - ./database/roles:/database/roles:ro
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
       interval: 5s
