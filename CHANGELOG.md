@@ -6,6 +6,10 @@ All notable changes to this project, in [Keep a Changelog](https://keepachangelo
 
 <!-- A PR describes its change here, one entry per change - never a version heading, never VERSION itself (R18). The maintainer alone promotes this section into a release: https://github.com/repository-standards/core/blob/main/docs/method/changelog-process.md -->
 
+### Old images deleted from GHCR (ADR-074, GHCR-1, 2026-11-16)
+
+For whoever rolls back or looks for an old image: the workflow `ghcr-retention` deletes image versions of `bf-backend` and `bf-frontend` every Sunday. It keeps the tag in `image.yaml`, the last 20 tags of its history, everything younger than 30 days and the parts of kept images (platform image, SBOM and provenance), so a rollback by revert reaches at least 20 rollouts and 30 days back. A manual run only prints the plan unless `apply` is set.
+
 ### Weekly forced Turborepo run (ADR-073, CI-4, 2026-11-16)
 
 For whoever maintains CI: the new workflow `cache-check` runs typecheck, lint and unit tests of every package with `--force` and no restored cache every Monday at 06:00 UTC and on demand. A failure there while `ci` is green means a task's `inputs` miss a file (ADR-058); fix the inputs, not the run.

@@ -95,6 +95,9 @@ jobs:
       - name: pnpm install script
         # The hash check refuses a tarball that differs from the pin (CI-3, ADR-072); npm is faked.
         run: pnpm pnpm:install:test
+      - name: GHCR retention plan
+        # What the weekly cleanup keeps: the tag of image.yaml, rollback tags, kept index children (GHCR-1, ADR-074).
+        run: pnpm ghcr:retention:test
       - name: Unit tests
         run: pnpm turbo run test ${{ github.event_name == 'pull_request' && '--affected' || '' }}
       - name: Is there an e2e task
