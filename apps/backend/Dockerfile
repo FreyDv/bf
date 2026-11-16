@@ -3,10 +3,11 @@
 # The tag matches .nvmrc; the digest is what pins it. Bump both in one PR after the 7-day cooldown (ADR-005).
 FROM node:26.13.0-slim@sha256:5adad64f9a1fca2d51972caa65983634c8a774eb300d72b20f7f2a0f60368072 AS base
 WORKDIR /repo
-# Tool versions come from package.json so that they have one home (R4). Node 26 does not bundle corepack.
-COPY package.json ./
-RUN npm install --global "pnpm@$(node -p "require('./package.json').packageManager.split('@')[1]")" \
-      "turbo@$(node -p "require('./package.json').devDependencies.turbo")"
+# Tool versions come from package.json so that they have one home (R4). Node 26 does not bundle corepack, so the
+# script installs pnpm and checks the hash pinned in `packageManager` (CI-3, ADR-072).
+COPY package.json scripts/install-pnpm.ts ./
+RUN node install-pnpm.ts \
+ && npm install --global "turbo@$(node -p "require('./package.json').devDependencies.turbo")"
 
 FROM base AS prune
 COPY . .

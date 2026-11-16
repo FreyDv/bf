@@ -6,6 +6,10 @@ All notable changes to this project, in [Keep a Changelog](https://keepachangelo
 
 <!-- A PR describes its change here, one entry per change - never a version heading, never VERSION itself (R18). The maintainer alone promotes this section into a release: https://github.com/repository-standards/core/blob/main/docs/method/changelog-process.md -->
 
+### pnpm installed only when its hash matches package.json (ADR-072, CI-3, 2026-11-16)
+
+For whoever bumps pnpm or reads a failed CI install: `packageManager` now carries the tarball hash (`pnpm@11.28.10+sha512.<hex>`), and `node scripts/install-pnpm.ts` downloads the tarball, checks its sha512 and only then installs it. Both CI jobs and both Dockerfiles use it, so the pnpm version lives in one place. To bump pnpm, change version and hash together after the 7-day cooldown.
+
 ### nestjs-trpc start lines through pino (LOG-3, 2026-11-16)
 
 For whoever reads backend logs in Loki: the start lines of nestjs-trpc (`TRPC Server`, `Router Factory`) are now JSON records like every other line, with `context` and `correlationId: null`, instead of plain coloured text. `TRPCModule.forRoot` receives Nest's `Logger`, which forwards to the pino logger installed by `app.useLogger` (ADR-070). No new dependency.
