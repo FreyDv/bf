@@ -1,4 +1,5 @@
 import type { INestApplication } from '@nestjs/common';
+import { configureLogging } from './logging/infrastructure/logging.setup.js';
 
 // Backend and frontend share one host, and Traefik forwards /api without stripping it (ADR-038 item 2): the prefix is
 // part of every route. tRPC is not covered by it - nestjs-trpc mounts with `app.use(basePath)`, so its path is set in
@@ -6,5 +7,7 @@ import type { INestApplication } from '@nestjs/common';
 export const API_PREFIX = 'api';
 
 export function configureApp(app: INestApplication): void {
+  // First: the request context has to be open before anything that handles a request.
+  configureLogging(app);
   app.setGlobalPrefix(API_PREFIX);
 }
