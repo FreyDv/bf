@@ -2,6 +2,11 @@
 // pull request to a clean Postgres, and fails on any error. It runs only when the pull request touches the
 // migrations directory, and it never needs a credential: the database is a throwaway container.
 //
+// The container is set up like DigitalOcean and the owner leave bfdb (ADR-053, ADR-078, ADR-079): doadmin, migrator and
+// app as the platform creates them, the database bf owned by doadmin, database/roles/01-as-doadmin.sql as doadmin and
+// 02-as-migrator.sql as migrator, and the migrations then run as migrator with the search_path app that file sets. A
+// migration that needs more than migrator has fails here, not on the cluster.
+//
 //   node scripts/check-migrations.ts [--base <ref>] [--root <repo>]
 //
 // The base is the merge base of `--base` (default `$BASE_REF`, then `origin/main`) and HEAD, so the check sees what the
@@ -24,7 +29,9 @@ export const CONTRACT = {
     '-h',
     '127.0.0.1',
     '-U',
-    'postgres',
+    'migrator',
+    '-d',
+    'bf',
     '-v',
     'ON_ERROR_STOP=1',
     '--single-transaction',
@@ -126,15 +133,74 @@ function postgresImage(root: string): string {
   return match[1];
 }
 
+const PASSWORD = 'check';
+// What DigitalOcean provides: doadmin is not a superuser (docs/runbooks/bfdb-postgres.md); the two roles come from
+// `doctl databases user create` with LOGIN and nothing else, so doadmin has no admin option on them.
+const PLATFORM_SQL = `CREATE ROLE doadmin LOGIN CREATEROLE CREATEDB REPLICATION BYPASSRLS PASSWORD '${PASSWORD}';
+CREATE ROLE migrator LOGIN PASSWORD '${PASSWORD}';
+CREATE ROLE app LOGIN PASSWORD '${PASSWORD}';
+CREATE DATABASE bf OWNER doadmin;`;
+
 const sleep = (ms: number) => new Promise((done) => setTimeout(done, ms));
 
 function docker(args: string[], input?: string) {
   return spawnSync('docker', args, { encoding: 'utf8', input });
 }
 
-async function withDatabase<T>(image: string, use: (container: string) => Promise<T>): Promise<T> {
+// One file of the setup as a role against a database; throws with psql's own message when it fails.
+function runAs(container: string, role: string, database: string, sql: string): void {
+  const run = docker(
+    [
+      'exec',
+      '-i',
+      '-e',
+      `PGPASSWORD=${PASSWORD}`,
+      container,
+      'psql',
+      '-X',
+      '-q',
+      '-h',
+      '127.0.0.1',
+      '-U',
+      role,
+      '-d',
+      database,
+      '-v',
+      'ON_ERROR_STOP=1',
+      '-f',
+      '-',
+    ],
+    sql,
+  );
+  if (run.status !== 0) {
+    throw new Error(`setup as ${role} in ${database} failed\n${run.stderr.trim()}`);
+  }
+}
+
+function setUpDigitalOceanModel(container: string, root: string): void {
+  runAs(container, 'postgres', 'postgres', PLATFORM_SQL);
+  runAs(
+    container,
+    'doadmin',
+    'bf',
+    readFileSync(`${root}/database/roles/01-as-doadmin.sql`, 'utf8'),
+  );
+  runAs(
+    container,
+    'migrator',
+    'bf',
+    readFileSync(`${root}/database/roles/02-as-migrator.sql`, 'utf8'),
+  );
+}
+
+async function withDatabase<T>(
+  image: string,
+  root: string,
+  use: (container: string) => Promise<T>,
+): Promise<T> {
   const container = `bf-migrations-${process.pid}`;
-  // No init scripts are mounted: the database is as clean as the image makes it. Nothing is published to the host.
+  // No init scripts are mounted: the platform model is set up below by the same files the owner applies. Nothing is
+  // published to the host.
   const started = docker([
     'run',
     '-d',
@@ -142,7 +208,7 @@ async function withDatabase<T>(image: string, use: (container: string) => Promis
     '--name',
     container,
     '-e',
-    'POSTGRES_PASSWORD=check',
+    `POSTGRES_PASSWORD=${PASSWORD}`,
     image,
   ]);
   if (started.status !== 0) throw new Error(`cannot start ${image}\n${started.stderr}`);
@@ -154,6 +220,7 @@ async function withDatabase<T>(image: string, use: (container: string) => Promis
       if (attempt >= 60) throw new Error(`${image} did not become ready in 60 s`);
       await sleep(1000);
     }
+    setUpDigitalOceanModel(container, root);
     return await use(container);
   } finally {
     docker(['rm', '-f', container]);
@@ -162,7 +229,7 @@ async function withDatabase<T>(image: string, use: (container: string) => Promis
 
 function apply(container: string, name: string, sql: string): string | undefined {
   const run = docker(
-    ['exec', '-i', '-e', 'PGPASSWORD=check', container, ...applyCommand(name)],
+    ['exec', '-i', '-e', `PGPASSWORD=${PASSWORD}`, container, ...applyCommand(name)],
     sql,
   );
   return run.status === 0
@@ -188,7 +255,7 @@ export async function check(root: string, baseRef: string): Promise<number> {
     );
     return 1;
   }
-  const failures = await withDatabase(postgresImage(root), async (container) => {
+  const failures = await withDatabase(postgresImage(root), root, async (container) => {
     const found: string[] = [];
     for (const [stage, names, source] of [
       ['base', result.applyFirst, base],
