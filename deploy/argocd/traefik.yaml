@@ -5,10 +5,10 @@
 # its balancer deleted BEFORE this file is merged, and the merge creates the new balancer. Steps and order:
 # docs/runbooks/malinina-kubernetes.md, section "Миграция ingress".
 #
-# Chart 42.3.0 (appVersion v3.7.17) was published 2026-11-03. ADR-005 needs 7 full days, so it was usable from
-# 2026-11-10. 42.3.1 (2026-11-06) has passed the window too (as of 2026-11-13); the move to it belongs to
-# TRAEFIK-3, this file stays on 42.3.0. The ADR-034 exception does not cover this chart. `pnpm charts` renders
-# exactly this chart with exactly these values (scripts/charts-check.ts).
+# Chart 42.3.1 (appVersion v3.7.17) was published 2026-11-06 and passed the 7 full days of ADR-005 on 2026-11-13; on
+# 2026-11-16 it was the newest version past the window (42.3.2 passes it 2026-11-17). Its changes that reach this file:
+# a removed `service.type` value is refused (not set here) and CRD wording. The ADR-034 exception does not cover this
+# chart. `pnpm charts` renders exactly this chart with exactly these values (scripts/charts-check.ts).
 #
 # Namespace `traefik`, not `bf`: the controller holds rights over Ingress objects of every namespace and must not sit
 # beside the application pods; the NetworkPolicy of CHART-3 admits ingress from this namespace, and the log collector
@@ -19,10 +19,10 @@
 # it speaks http to the nodes, so the `websecure` entrypoint (port 443 of the balancer) takes plain http and its own
 # TLS is off. The balancer redirects http to https, so `web` never serves a client directly.
 #
-# Not decided here and left at the chart defaults (see the backlog row TRAEFIK-3): Prometheus metrics, the version
-# check, the log format and level, the default IngressClass flag, a PodDisruptionBudget and spreading the two pods
-# over the nodes. The pod hardening needs no value: the chart already drops all capabilities, forbids privilege
-# escalation, mounts the root read-only, runs as non-root with seccomp RuntimeDefault (charts.test.ts pins it).
+# Set on purpose below rather than left at the chart defaults (TRAEFIK-3): metrics off, JSON log, a disruption budget
+# and spreading the two pods over the nodes. The pod hardening needs no value: the chart already drops all
+# capabilities, forbids privilege escalation, mounts the root read-only, runs as non-root with seccomp RuntimeDefault
+# (charts.test.ts pins it).
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -33,7 +33,7 @@ spec:
   source:
     repoURL: https://traefik.github.io/charts
     chart: traefik
-    targetRevision: 42.3.0
+    targetRevision: 42.3.1
     helm:
       valuesObject:
         global:
@@ -49,6 +49,29 @@ spec:
           # The same count as ingress-nginx had: one pod can be drained or restarted without an outage. Rate limits
           # are counted per replica (ADR-037), so two replicas double the effective limit (INGRESS-1).
           replicas: 2
+        # With two replicas, one pod at most is evicted at a time on a node drain or a cluster upgrade (TRAEFIK-3).
+        podDisruptionBudget:
+          enabled: true
+          maxUnavailable: 1
+        # The two pods go to different nodes when they can. Soft on purpose: on 3 nodes they normally separate, and a
+        # drain or a rolling update never leaves a pod Pending for want of a free node; the budget above is what keeps
+        # one pod serving through a drain. A hard rule would need spare nodes (money, the owner's).
+        topologySpreadConstraints:
+          - maxSkew: 1
+            topologyKey: kubernetes.io/hostname
+            whenUnsatisfiable: ScheduleAnyway
+            labelSelector:
+              matchLabels:
+                app.kubernetes.io/name: traefik
+                app.kubernetes.io/instance: traefik-traefik
+        # No metrics stack exists (MON-1 undecided), so nothing would scrape port 9100: off until MON-1 picks one.
+        metrics:
+          prometheus: null
+        # The controller's own log as JSON, which the log collector parses (ADR-043 item 7.2); the production level and
+        # filtering are OBS-2's. Access logs stay off until client IP and query string are hidden (ADR-043 item 4.1).
+        log:
+          format: json
+          level: INFO
         # An assumption, not a measurement: the cluster has no metrics-server. No limits on purpose, so the edge is
         # not throttled or OOM-killed at a guessed ceiling. Revisit after MON-1.
         resources:
@@ -56,6 +79,8 @@ spec:
             cpu: 100m
             memory: 128Mi
         ports:
+          # The entrypoint of the metrics above; without a metrics stack it only opens port 9100 in the pod (MON-1).
+          metrics: null
           web:
             # Only the load balancer's VPC (default-tor1) may set X-Forwarded-* (ADR-038 item 6). PROXY protocol
             # stays off. What the rate limit counts out of X-Forwarded-For is INGRESS-1.

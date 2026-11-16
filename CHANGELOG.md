@@ -6,6 +6,10 @@ All notable changes to this project, in [Keep a Changelog](https://keepachangelo
 
 <!-- A PR describes its change here, one entry per change - never a version heading, never VERSION itself (R18). The maintainer alone promotes this section into a release: https://github.com/repository-standards/core/blob/main/docs/method/changelog-process.md -->
 
+### Traefik: disruption budget, spread over nodes, JSON log, no metrics, chart 42.3.1 (TRAEFIK-3, 2026-11-16)
+
+For whoever drains a node or reads the edge logs: at most one of the two Traefik pods is evicted at a time, the two prefer different nodes, the controller logs JSON at INFO (access logs still off, ADR-043), and the unused Prometheus metrics and port 9100 are off until MON-1 picks a metrics stack. The chart moved from 42.3.0 to 42.3.1, the newest version past the 7-day cooldown.
+
 ### Local environment and CI under the two roles of bfdb (ADR-079, LOCAL-3, 2026-11-16)
 
 For developers: after `pnpm local:reset && pnpm local:up` the local Postgres has the roles `migrator` and `app` and the schema `app` in `bf_dev` and `bf_test`, set up by the same two files the owner applies to `bf` (`database/roles/*.sql`, now taking `-v db=<name>`, default `bf`). `pnpm test:e2e` runs as `migrator` with `DB_SCHEMA=app` (see `AGENTS.md`; CI the same), and `pnpm migrations:check` applies migrations as `migrator` in a container built like DigitalOcean, so a migration that needs more rights than `migrator` has fails in the pull request. Tests of the app's behaviour under `app` come with the first module (SCHEMA-2).
