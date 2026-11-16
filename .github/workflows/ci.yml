@@ -116,7 +116,7 @@ jobs:
           DB_USER: doadmin
           DB_PASSWORD: bf_local_only
           NATS_URL: nats://127.0.0.1:4222
-        run: pnpm turbo run test:e2e ${{ github.event_name == 'pull_request' && '--affected' || '' }}
+        run: pnpm turbo run test:e2e --concurrency=1 ${{ github.event_name == 'pull_request' && '--affected' || '' }}
       - name: Migrations
         # Only a pull request, and the script itself skips when no migration file changed (ADR-018).
         if: github.event_name == 'pull_request'
