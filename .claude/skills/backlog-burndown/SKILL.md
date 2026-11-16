@@ -135,7 +135,16 @@ Sonnet `Agent` with the failing log, then you review its commit, push again, wai
 
 ## Step 9 - Merge
 
-Every required check green -> merge it yourself: `gh pr merge <n> --squash` (ADR-003, ADR-063).
+Right before merging, check what failed - the owner asked for this in place of the GitHub failure mails
+(2026-11-16):
+
+1. `gh pr checks <n>`: every check of the pull request, not only the required ones, passed or was skipped.
+2. `gh run list --status failure --limit 15`: no failed run on `main` or of a scheduled workflow
+   (`cache-check`, `image-pins`, `ghcr-retention`) since the last merge. Read each with
+   `gh run view <id> --log-failed` and fix it first, in this branch when it is caused here, otherwise as
+   its own pull request (`image-pins` failing means a digest bump is due: `pnpm image:pins bump`).
+
+Then, every check green -> merge it yourself: `gh pr merge <n> --squash` (ADR-003, ADR-063).
 Never on a red or unfinished check, never `--delete-branch`, never `--admin` (AGENTS.md red
 flag 7). Then
 `git switch main && git pull --ff-only`.
