@@ -146,6 +146,16 @@ export default {
       to: { path: '(^|/)node_modules/openai/|^openai(/|$)' },
     },
     {
+      name: 'dep-4-pino-only-in-infrastructure-and-module-wiring',
+      comment:
+        'DEP-4, DEP-3, ADR-032 items 1 and 2, ADR-070: pino, nestjs-pino and pino-http are imported only by an adapter in infrastructure/ and by the wiring file of a module (<module>/<module>.module.ts); application code writes through the Logger port of @bf/kernel. The pattern also matches the bare name, so the rule holds before the package is installed.',
+      severity: 'error',
+      from: { pathNot: [INFRASTRUCTURE, `${SRC}/[^/]+/[^/]+\\.module\\.ts$`] },
+      to: {
+        path: '(^|/)node_modules/(pino|nestjs-pino|pino-http)/|^(pino|nestjs-pino|pino-http)(/|$)',
+      },
+    },
+    {
       name: 'dep-5-modules-only-through-public',
       comment: 'DEP-5, QRY-12: another module is reachable only through its public/ folder.',
       severity: 'error',

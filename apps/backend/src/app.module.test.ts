@@ -29,6 +29,11 @@ describe('AppModule', () => {
     expect(body.error?.data?.code).toBe('NOT_FOUND');
   });
 
+  it('echoes a correlation id on every response, tRPC included', async () => {
+    const response = await fetch(`${origin}/api/trpc/x`);
+    expect(response.headers.get('x-request-id')).toMatch(/^[0-9a-f-]{36}$/);
+  });
+
   it('does not serve tRPC under /trpc', async () => {
     const response = await fetch(`${origin}/trpc/x`);
     expect(response.status).toBe(404);

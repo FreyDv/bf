@@ -85,6 +85,29 @@ const files: Record<string, string> = {
   [`${S}/orders/infrastructure/legal-openai.adapter.ts`]:
     "import { ok } from 'openai';\nexport const a = ok;",
 
+  // pino and its Nest and HTTP companions (ADR-032, ADR-070): an adapter in infrastructure/ and the wiring file of a
+  // module may import them, nothing else may
+  [`${S}/orders/infrastructure/pino-logger.adapter.ts`]:
+    "import { pino } from 'pino';\nexport const a = pino;",
+  [`${S}/orders/infrastructure/http-logging.config.ts`]:
+    "import { pinoHttp } from 'pino-http';\nexport const a = pinoHttp;",
+  [`${S}/orders/infrastructure/pino-logger.adapter.test.ts`]:
+    "import { pino } from 'pino';\nexport const t = pino;",
+  [`${S}/orders/orders.module.ts`]:
+    "import { LoggerModule } from 'nestjs-pino';\nexport const a = LoggerModule;",
+  [`${S}/orders/application/bad-pino.service.ts`]:
+    "import { pino } from 'pino';\nexport const a = pino;",
+  [`${S}/orders/application/bad-nestjs-pino.service.ts`]:
+    "import { Logger } from 'nestjs-pino';\nexport const a = Logger;",
+  [`${S}/orders/commands/place/bad-pino-http.router.ts`]:
+    "import { pinoHttp } from 'pino-http';\nexport const a = pinoHttp;",
+  [`${S}/orders/public/bad-pino.facade.ts`]: "import { pino } from 'pino';\nexport const a = pino;",
+  [`${S}/orders/domain/bad-pino-logger.ts`]: "import { pino } from 'pino';\nexport const a = pino;",
+  [`${S}/bad-pino-root.ts`]: "import { pino } from 'pino';\nexport const a = pino;",
+  [`${S}/bad-pino-http-main.ts`]:
+    "import { pinoHttp } from 'pino-http';\nexport const a = pinoHttp;",
+  'packages/kernel/src/bad-pino.ts': "import { pino } from 'pino';\nexport const a = pino;",
+
   // Shared kernel (ENF-4, ADR-048). The package does not exist in the repository yet; the tree
   // simulates its path, name and source entry so the rules are proven before the first consumer.
   'packages/kernel/package.json': JSON.stringify({
@@ -395,6 +418,23 @@ const expected: Array<[rule: string, from: string]> = [
   ['dep-9-no-circular', `${S}/orders/domain/cycle-c.test.ts`],
   ['dep-4-openai-only-in-infrastructure', `${S}/orders/application/bad-openai.service.ts`],
   ['dep-4-openai-only-in-infrastructure', `${S}/bad-openai-root.ts`],
+  [
+    'dep-4-pino-only-in-infrastructure-and-module-wiring',
+    `${S}/orders/application/bad-pino.service.ts`,
+  ],
+  [
+    'dep-4-pino-only-in-infrastructure-and-module-wiring',
+    `${S}/orders/application/bad-nestjs-pino.service.ts`,
+  ],
+  [
+    'dep-4-pino-only-in-infrastructure-and-module-wiring',
+    `${S}/orders/commands/place/bad-pino-http.router.ts`,
+  ],
+  ['dep-4-pino-only-in-infrastructure-and-module-wiring', `${S}/orders/public/bad-pino.facade.ts`],
+  ['dep-4-pino-only-in-infrastructure-and-module-wiring', `${S}/orders/domain/bad-pino-logger.ts`],
+  ['dep-4-pino-only-in-infrastructure-and-module-wiring', `${S}/bad-pino-root.ts`],
+  ['dep-4-pino-only-in-infrastructure-and-module-wiring', `${S}/bad-pino-http-main.ts`],
+  ['dep-4-pino-only-in-infrastructure-and-module-wiring', 'packages/kernel/src/bad-pino.ts'],
   ['kernel-is-domain-free', 'packages/kernel/src/bad-backend.ts'],
   ['kernel-is-domain-free', 'packages/kernel/src/bad-contracts.ts'],
   ['kernel-npm-only-neverthrow', 'packages/kernel/src/bad-library.ts'],
@@ -546,6 +586,8 @@ function linkNodeModules(real: string, into: string, extra: Record<string, strin
     if (scopes.has(entry)) {
       mkdirSync(join(into, entry), { recursive: true });
       for (const inner of readdirSync(join(real, entry))) {
+        // a package the tree simulates replaces the real one of the same name (the workspace links of apps/backend)
+        if (`${entry}/${inner}` in extra) continue;
         symlinkSync(join(real, entry, inner), join(into, entry, inner));
       }
     } else {
@@ -604,7 +646,11 @@ function cruiseTree(
   }
   linkNodeModules(join(root, 'node_modules'), join(tmp, 'node_modules'), extra);
   const appNodeModules = join(root, 'apps/backend/node_modules');
-  linkNodeModules(appNodeModules, join(tmp, 'apps/backend/node_modules'), {});
+  // the real backend links the real @bf/kernel; the tree must resolve it to its own simulated package instead
+  const workspaceExtra = Object.fromEntries(
+    Object.entries(extra).filter(([n]) => n.startsWith('@bf/')),
+  );
+  linkNodeModules(appNodeModules, join(tmp, 'apps/backend/node_modules'), workspaceExtra);
   // a pnpm package carries its own node_modules; the kernel needs vitest and zod to resolve, the toolkit its own libraries
   linkNodeModules(appNodeModules, join(tmp, 'packages/kernel/node_modules'), {});
   linkNodeModules(
