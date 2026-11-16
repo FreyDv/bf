@@ -1,7 +1,7 @@
 // compile(binding, filter): the SQL fragment of a filter (ADR-024, ADR-050 item 7). Built with the `sql` template
 // and `exists()`/`notExists()`: a value is always a parameter (QRY-15), a column and a table come only from the
-// binding, and `sql.raw` is not used. Scope is the caller's: `and(scope, compile(...))` (QRY-17).
-import { type Column, type SQL, exists, notExists, sql } from 'drizzle-orm';
+// binding, and `sql.raw` is not used (`sql.identifier` only for the names of an aliased table, ADR-069). Scope is the caller's: `and(scope, compile(...))` (QRY-17).
+import { type Column, type SQL, Table, exists, notExists, sql } from 'drizzle-orm';
 import {
   type FilterLimits,
   type FilterOf,
@@ -153,9 +153,32 @@ const compileNode = (binding: FilterBinding, value: unknown, path: Path): SQL =>
   return paren(sql.join(parts, sql` and `));
 };
 
+// The `sql` template renders an aliased table (`alias()` of drizzle-orm) as its alias alone, which names no table
+// in a `from`. An alias is therefore written as `from <schema>.<original> <alias>` (ADR-069); every name comes from
+// the table of the binding and goes through `sql.identifier`. A plain table renders as before.
+// `Table.Symbol` is internal to drizzle-orm and missing from its typings; the four keys are what the dialect's own
+// renderer reads (0.45.4, sql/sql.js), so the shape is stated here once.
+interface TableInternals {
+  readonly [key: symbol]: unknown;
+}
+const SYMBOLS = (
+  Table as unknown as { Symbol: Record<'IsAlias' | 'OriginalName' | 'Name' | 'Schema', symbol> }
+).Symbol;
+
+const fromItem = (table: Table): SQL => {
+  const internals = table as unknown as TableInternals;
+  if (internals[SYMBOLS.IsAlias] !== true) return sql`${table}`;
+  const schema = internals[SYMBOLS.Schema] as string | undefined;
+  const original = sql.identifier(internals[SYMBOLS.OriginalName] as string);
+  const alias = sql.identifier(internals[SYMBOLS.Name] as string);
+  return schema === undefined
+    ? sql`${original} ${alias}`
+    : sql`${sql.identifier(schema)}.${original} ${alias}`;
+};
+
 /** `select 1 from <related> where <on> and <inner>`; the inner condition is already parenthesised. */
 const subquery = (relation: RelationBinding, inner: SQL): SQL =>
-  sql`(select 1 from ${relation.table} where ${paren(relation.on)} and ${inner})`;
+  sql`(select 1 from ${fromItem(relation.table)} where ${paren(relation.on)} and ${inner})`;
 
 const compileQuantifier = (relation: RelationBinding, entry: unknown, path: Path): SQL => {
   const keys = isObject(entry) ? Object.keys(entry).filter((key) => entry[key] !== undefined) : [];

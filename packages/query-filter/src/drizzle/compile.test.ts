@@ -1,11 +1,13 @@
-import { PgDialect } from 'drizzle-orm/pg-core';
+import { eq } from 'drizzle-orm';
+import { PgDialect, alias, integer, pgTable, text } from 'drizzle-orm/pg-core';
 import { describe, expect, it } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import type { FilterOf } from '../core/index.js';
+import { Op, defineFilter, relation, str, type FilterOf } from '../core/index.js';
 import type { userFilter } from '../core/fixtures.js';
 import { SCHEMA, userBinding } from '../../test/schema.js';
-import { compile } from './index.js';
+import { TREE_SCHEMA, categoryBinding } from '../../test/tree.js';
+import { compile, defineBinding, related } from './index.js';
 
 type UserFilter = FilterOf<typeof userFilter>;
 
@@ -140,6 +142,76 @@ describe('compile: a filter that does not fit', () => {
   });
 });
 
+describe('compile: an aliased table (ADR-069)', () => {
+  const c = TREE_SCHEMA;
+
+  it('writes the table of the schema and then the alias, and the columns with the alias', () => {
+    expect(
+      new PgDialect().sqlToQuery(
+        compile(categoryBinding, { parent: { name: { operator: 'eq', value: 'A' } } }),
+      ),
+    ).toMatchObject({
+      sql:
+        `(exists (select 1 from "${c}"."categories" "parent" ` +
+        `where ("parent"."id" = "${c}"."categories"."parent_id") and (("parent"."name" = $1))))`,
+      params: ['A'],
+    });
+  });
+
+  it('keeps the aliases apart on two levels of one path', () => {
+    const { sql: text } = new PgDialect().sqlToQuery(
+      compile(categoryBinding, { parent: { parent: { name: { operator: 'eq', value: 'A' } } } }),
+    );
+    expect(text).toBe(
+      `(exists (select 1 from "${c}"."categories" "parent" ` +
+        `where ("parent"."id" = "${c}"."categories"."parent_id") and ` +
+        `(exists (select 1 from "${c}"."categories" "grandparent" ` +
+        `where ("grandparent"."id" = "parent"."parent_id") and (("grandparent"."name" = $1))))))`,
+    );
+  });
+
+  it('every over an aliased relation is NOT EXISTS (... IS NOT TRUE)', () => {
+    const { sql: text } = new PgDialect().sqlToQuery(
+      compile(categoryBinding, { children: { every: { name: { operator: 'neq', value: 'B' } } } }),
+    );
+    expect(text).toBe(
+      `(not exists (select 1 from "${c}"."categories" "child" ` +
+        `where ("child"."parent_id" = "${c}"."categories"."id") and (("child"."name" <> $1)) is not true))`,
+    );
+  });
+
+  it('writes the bare table name when the table has no schema', () => {
+    const items = pgTable('items', {
+      id: integer('id').primaryKey(),
+      name: text('name'),
+      parentId: integer('parent_id'),
+    });
+    const parent = alias(items, 'p');
+    const parentSpec = defineFilter({ name: str(Op.String) });
+    const itemSpec = defineFilter({ parent: relation.one(parentSpec) });
+    const binding = defineBinding(itemSpec, {
+      parent: related(
+        parent,
+        eq(parent.id, items.parentId),
+        defineBinding(parentSpec, { name: parent.name }),
+      ),
+    });
+    expect(
+      new PgDialect().sqlToQuery(
+        compile(binding, { parent: { name: { operator: 'eq', value: 'x' } } }),
+      ).sql,
+    ).toBe(
+      `(exists (select 1 from "items" "p" where ("p"."id" = "items"."parent_id") and (("p"."name" = $1))))`,
+    );
+  });
+
+  it('renders a table that is not an alias as before', () => {
+    expect(render({ orders: { some: { paid: { operator: 'eq', value: true } } } }).sql).toContain(
+      `from ${`"${SCHEMA}"."orders"`} where`,
+    );
+  });
+});
+
 describe('compile: limits (QRY-16)', () => {
   const nested = (depth: number): UserFilter => {
     let node: UserFilter = { age: { operator: 'eq', value: 1 } };
@@ -164,7 +236,8 @@ describe('compile: limits (QRY-16)', () => {
 });
 
 describe('QRY-15: no raw SQL', () => {
-  it('does not use sql.raw or sql.identifier in the entry', () => {
+  // `sql.identifier` is used for the names of an aliased table only, and they come from the binding (ADR-069).
+  it('does not use sql.raw in the entry', () => {
     const dir = join(import.meta.dirname);
     const sources = readdirSync(dir).filter(
       (name) => name.endsWith('.ts') && !name.endsWith('.test.ts'),
@@ -173,7 +246,7 @@ describe('QRY-15: no raw SQL', () => {
     for (const name of sources) {
       // comments may name what is forbidden
       const text = readFileSync(join(dir, name), 'utf8').replace(/^\s*(\/\/|\*|\/\*).*$/gm, '');
-      expect(text, name).not.toMatch(/\.raw\(|\.identifier\(|\bsql\.raw\b/);
+      expect(text, name).not.toMatch(/\.raw\(|\bsql\.raw\b/);
     }
   });
 });
