@@ -1,0 +1,9 @@
+import { defineConfig } from 'vitest/config';
+
+// `*.e2e.test.ts` needs Postgres and runs under `test:e2e` (vitest.e2e.config.ts), never here (ADR-039 item 1.1).
+export default defineConfig({
+  test: {
+    include: ['src/**/*.test.ts'],
+    exclude: ['**/node_modules/**', '**/dist/**', '**/*.e2e.test.ts'],
+  },
+});

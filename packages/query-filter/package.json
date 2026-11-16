@@ -34,7 +34,7 @@
   },
   "devDependencies": {
     "@bf/config": "workspace:*",
-    "@bf/db-utils": "workspace:*",
+    "@bf/test-db": "workspace:*",
     "@types/pg": "8.23.1",
     "drizzle-orm": "0.45.4",
     "eslint": "10.14.0",

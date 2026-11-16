@@ -1,4 +1,4 @@
-// The tables of the toolkit tests, in a schema of their own (ADR-050 item 12), and the bindings of the shared
+// The tables of the toolkit tests, in a schema of their own (ADR-071), and the bindings of the shared
 // specs. The foreign keys a relation filter uses are indexed (QRY-11).
 import { eq } from 'drizzle-orm';
 import {
@@ -13,7 +13,7 @@ import {
 } from 'drizzle-orm/pg-core';
 import { groupFilter, orderFilter, userFilter } from '../src/core/fixtures.js';
 import { defineBinding, related } from '../src/drizzle/index.js';
-import { newSchemaName } from './db.js';
+import { newSchemaName } from './schema-name.js';
 
 export const SCHEMA = newSchemaName();
 const schema = pgSchema(SCHEMA);

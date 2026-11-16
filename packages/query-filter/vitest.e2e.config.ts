@@ -1,11 +1,12 @@
 import { defineConfig } from 'vitest/config';
 
-// Tests on a real Postgres (QRY-18). The database comes from the DB_* variables (@bf/db-utils) and DB_NAME must be a test database (TST-3).
+// Tests on a real Postgres (QRY-18). The database comes from the DB_* variables (@bf/db-utils) and DB_NAME must be a
+// test database (TST-3, @bf/test-db). Plain Vitest and not the Nest preset: the toolkit has no decorators.
 export default defineConfig({
   test: {
     include: ['src/**/*.e2e.test.ts', 'test/**/*.e2e.test.ts'],
     exclude: ['**/node_modules/**', '**/dist/**'],
-    // One schema per test file, so files may run side by side.
+    // One schema per test file (@bf/test-db, ADR-071), so files may run side by side.
     testTimeout: 20_000,
     hookTimeout: 20_000,
   },

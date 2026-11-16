@@ -5,7 +5,7 @@ import { eq } from 'drizzle-orm';
 import { alias, integer, pgSchema, text } from 'drizzle-orm/pg-core';
 import { Op, defineFilter, relation, str } from '../src/core/index.js';
 import { defineBinding, related } from '../src/drizzle/index.js';
-import { newSchemaName } from './db.js';
+import { newSchemaName } from './schema-name.js';
 
 export const TREE_SCHEMA = newSchemaName();
 const schema = pgSchema(TREE_SCHEMA);

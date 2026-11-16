@@ -1,0 +1,34 @@
+{
+  "name": "@bf/test-db",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:e2e": "vitest run --config vitest.e2e.config.ts"
+  },
+  "prettier": "@bf/config/prettier",
+  "dependencies": {
+    "@bf/db-utils": "workspace:*",
+    "pg": "8.23.1"
+  },
+  "devDependencies": {
+    "@bf/config": "workspace:*",
+    "@types/pg": "8.23.1",
+    "eslint": "10.14.0",
+    "typescript": "6.0.3",
+    "vitest": "5.1.0"
+  }
+}

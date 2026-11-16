@@ -211,9 +211,9 @@ importers:
       '@bf/config':
         specifier: workspace:*
         version: link:../config
-      '@bf/db-utils':
+      '@bf/test-db':
         specifier: workspace:*
-        version: link:../db-utils
+        version: link:../test-db
       '@types/pg':
         specifier: 8.23.1
         version: 8.23.1
@@ -235,6 +235,31 @@ importers:
       zod:
         specifier: 4.6.7
         version: 4.6.7
+
+  packages/test-db:
+    dependencies:
+      '@bf/db-utils':
+        specifier: workspace:*
+        version: link:../db-utils
+      pg:
+        specifier: 8.23.1
+        version: 8.23.1
+    devDependencies:
+      '@bf/config':
+        specifier: workspace:*
+        version: link:../config
+      '@types/pg':
+        specifier: 8.23.1
+        version: 8.23.1
+      eslint:
+        specifier: 10.14.0
+        version: 10.14.0(supports-color@7.2.0)
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
+      vitest:
+        specifier: 5.1.0
+        version: 5.1.0(@types/node@26.6.6)(vite@8.3.5(@types/node@26.6.6))
 
 packages:
 
