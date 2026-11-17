@@ -1,4 +1,4 @@
 # Written by the tag job of the ci workflow after every publish (bf-tag-bot, ADR-030); never edit by hand except to
 # roll back (docs/runbooks/argocd.md). The tag is the commit SHA of the published image.
 image:
-  tag: b0826552ff8f5339754739a78a20d76c2a25ea1d
+  tag: 2548bc10a59c90d56bb2c9771c64a67a193382b1
