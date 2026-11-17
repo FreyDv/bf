@@ -222,6 +222,8 @@ Chart берётся командами `helm repo add argo https://argoproj.git
    (или `kubectl -n bf exec deploy/nats-box -- nats stream ls`).
 4. `nats-0` остаётся `Ready` (`2/2`): `kubectl -n bf get pod nats-0`.
 
+Проверено 2026-11-16 (политика применена `kubectl apply` до мержа, ADR-059, затем её принял ArgoCD): `busybox` вне списка не подключился ни к `nats:4222`, ни к `nats-headless:8222`, при этом DNS у него работал; `nats-box` прошёл `server check connection`; под `backend` открыл TCP на `nats:4222`; `nats-0` `Ready` без перезапусков через минуту после применения; `cilium-dbg endpoint list` показывает у `nats-0` `POLICY (ingress) Enabled`; `kubectl port-forward pod/nats-0 18222:8222` отдал `/healthz` 200.
+
 ### Стрим `BF`
 
 Один стрим на события и задачи воркеров (ADR-022 п. 2), отдельного стрима для задач пока нет. Subjects: `BF.>` (формат ADR-025 п. 10: `BF.<AGG>.<LIFECYCLE>.<EVENT>`) и `bf.>` (локальный Debezium без роутинга пишет в `bf.<схема>.<таблица>`, ADR-033). Узкий набор и то, как строка outbox попадает в нужный subject, определяет CDC-2: тогда стрим сужается до одного случая.
