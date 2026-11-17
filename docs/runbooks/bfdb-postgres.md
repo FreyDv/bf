@@ -103,7 +103,7 @@ backups` (только чтение) и SELECT-запросы к `pg_catalog` ч
 | `02-as-migrator.sql` | схема `app`, владелец `migrator`, ACL `{migrator=UC/migrator,app=U/migrator}`; `public` без изменений |
 | Права по умолчанию `migrator` в `app` | таблицы `{app=arwd/migrator}` (SELECT, INSERT, UPDATE, DELETE), sequences `{app=rU/migrator}` (SELECT, USAGE) |
 | `search_path` | `ALTER ROLE migrator IN DATABASE bf SET search_path = app` |
-| `doctl databases user list` сразу после создания | `app`, `doadmin`; `migrator` в ответе не было, хотя роль в `pg_roles` есть - перепроверить (см. «Не проверено») |
+| `doctl databases user list` | сразу после создания - только `app` и `doadmin`; через несколько минут - `app`, `doadmin`, `migrator` (все `normal`, кроме `doadmin`): API догоняет с задержкой |
 
 Пароли лежат только на ноутбуке владельца, в `apps/backend/.env.migrator.production` (`migrator`) и `apps/backend/.env.production` (`app`), права файла 600, оба файла в `.gitignore`; в каждом семь полей `DB_*` (ADR-061): приватный хост, порт 25060, `bf`, схема `app`, `verify-full`. Запечатываются в DEPLOY-2 вместе с CA и Job миграции: до этого backend выкатывается без базы. Если файл потерян - новый пароль `doctl databases user reset <id> <роль>`, файл пишется заново. `CONNECTION LIMIT` ролей не задан, решается в DEPLOY-2 (ADR-053 п. 9).
 
@@ -115,7 +115,6 @@ backups` (только чтение) и SELECT-запросы к `pg_catalog` ч
 
 ## Не проверено
 
-- Видит ли DO API роль `migrator`: `doctl databases user list f74f65e6-0691-4550-bdad-a9fa5e108bc1` сразу после создания вернул только `app` и `doadmin`. Без записи в API сброс пароля `migrator` через `doctl databases user reset` может не работать.
 - Поведение Debezium и слота при потерянной `off`-транзакции: мог ли консьюмер увидеть событие без состояния (ADR-044 п. 6). Debezium на `bfdb` ещё нет; проверка вместе с CDC-3.
 - `shared_preload_libraries` (параметр не вернулся запросом).
 - Нижняя версия TLS на сервере (`ssl_min_protocol_version`): `doadmin` не может прочитать параметр, DO его не показывает (раздел «Проверки ролей и SSL»).
