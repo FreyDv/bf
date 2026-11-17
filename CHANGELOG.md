@@ -6,6 +6,10 @@ All notable changes to this project, in [Keep a Changelog](https://keepachangelo
 
 <!-- A PR describes its change here, one entry per change - never a version heading, never VERSION itself (R18). The maintainer alone promotes this section into a release: https://github.com/repository-standards/core/blob/main/docs/method/changelog-process.md -->
 
+### SET LOCAL synchronous_commit verified on bfdb (DBSEC-5, 2026-11-17)
+
+For the owner and whoever implements DBSEC-4: you ran the check on `bfdb` as `doadmin`. Inside a transaction `SET LOCAL synchronous_commit = on` turns the mode on, and after `ROLLBACK` the connection is back at the cluster value `off`; `wal_writer_delay` is `200ms`, so the loss window under `off` is up to about 600 ms. ADR-044 item 2 works on DigitalOcean as written and needs no new record. Results are in `docs/runbooks/bfdb-postgres.md`. Not verified: how Debezium and its slot behave after a lost `off` transaction (there is no Debezium on `bfdb` yet); that check moved into the definition of done of CDC-3.
+
 ### CHART-4 and NATS-3 dropped: no egress policy, NATS without passwords (ADR-082, 2026-11-16)
 
 For the owner: CHART-4 and NATS-3 are dropped by your decision (ADR-082). Pods get no egress policy, and NATS stays without passwords: who may connect is decided only by the NetworkPolicy `nats` (ADR-081). NATS-5 no longer waits for NATS-3. The backlog now runs DBSEC-5, then DBSEC-7, then BOT-2, then INGRESS-1 and MON-1; MON-1 carries your direction: an in-cluster stack with data on a persistent volume.
