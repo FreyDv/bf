@@ -6,6 +6,10 @@ All notable changes to this project, in [Keep a Changelog](https://keepachangelo
 
 <!-- A PR describes its change here, one entry per change - never a version heading, never VERSION itself (R18). The maintainer alone promotes this section into a release: https://github.com/repository-standards/core/blob/main/docs/method/changelog-process.md -->
 
+### Roles migrator and app and the database bf created on bfdb (DBSEC-7, 2026-11-17)
+
+For the owner and whoever does DEPLOY-2: you ran the read-only checks and then created the database `bf` and the roles `migrator` and `app` on `bfdb`. The server certificate lists the private host, so production connects with `verify-full` (ADR-053 item 5). DigitalOcean neither shows nor lets you change the server's minimum TLS version, so ADR-053 item 6 takes its accepted-risk branch: the client requires TLSv1.2 and the connection actually uses TLSv1.3. `database/roles/01-as-doadmin.sql` made `migrator` the owner of `bf` and left the other roles only CONNECT; `02-as-migrator.sql` created the schema `app` with default DML grants to `app`. Neither role has SUPERUSER, CREATEROLE, CREATEDB, REPLICATION or BYPASSRLS. The passwords exist only in your two local `.env` files and are sealed in DEPLOY-2, which is no longer blocked. Open: `doctl databases user list` did not show `migrator` right after it was created. Everything is in `docs/runbooks/bfdb-postgres.md`.
+
 ### SET LOCAL synchronous_commit verified on bfdb (DBSEC-5, 2026-11-17)
 
 For the owner and whoever implements DBSEC-4: you ran the check on `bfdb` as `doadmin`. Inside a transaction `SET LOCAL synchronous_commit = on` turns the mode on, and after `ROLLBACK` the connection is back at the cluster value `off`; `wal_writer_delay` is `200ms`, so the loss window under `off` is up to about 600 ms. ADR-044 item 2 works on DigitalOcean as written and needs no new record. Results are in `docs/runbooks/bfdb-postgres.md`. Not verified: how Debezium and its slot behave after a lost `off` transaction (there is no Debezium on `bfdb` yet); that check moved into the definition of done of CDC-3.
