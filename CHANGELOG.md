@@ -12,7 +12,7 @@ For whoever runs the site: Traefik now answers `429` to a client that sends too 
 
 ### Tag bot authenticates by Client ID (BOT-2, 2026-11-17)
 
-For whoever runs the deploy: the `tag` job now gets its GitHub App token with `client-id` from the new secret `BOT_CLIENT_ID` instead of the deprecated `app-id`, so the deprecation warning of `actions/create-github-app-token` v3.3.0 is gone. The secret `BOT_APP_ID` is no longer read and can be deleted by the owner.
+For whoever runs the deploy: the `tag` job now gets its GitHub App token with `client-id` from the new secret `BOT_CLIENT_ID` instead of the deprecated `app-id`, so the deprecation warning of `actions/create-github-app-token` v3.3.0 is gone. The owner deleted the secret `BOT_APP_ID` the same day.
 
 ### Roles migrator and app and the database bf created on bfdb (DBSEC-7, 2026-11-17)
 
