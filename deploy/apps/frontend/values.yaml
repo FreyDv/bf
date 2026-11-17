@@ -8,3 +8,7 @@ ingress:
   host: malinina.ca
   path: /
   pathType: Prefix
+
+# Outside /api: /api on the host belongs to the backend (ADR-038, ADR-080).
+probes:
+  path: /healthz

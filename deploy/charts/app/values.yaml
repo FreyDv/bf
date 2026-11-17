@@ -64,7 +64,7 @@ networkPolicy:
   # namespaceSelector a peer means pods of the release namespace. A non-list or an empty peer is refused.
   allowFrom: []
 
-# Empty `path` probes the TCP port; set it once the application serves a health endpoint.
+# Empty `path` probes the TCP port; an application that serves a health endpoint sets it (ADR-080).
 probes:
   path: ''
   initialDelaySeconds: 5

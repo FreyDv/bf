@@ -284,6 +284,44 @@ describe('app chart: ingress', () => {
   });
 });
 
+describe('app chart: probes (ADR-080, backlog PROBE-1)', () => {
+  const probes = (output: string) => {
+    const deployment = find(output, 'Deployment');
+    const probe = (name: string) =>
+      new RegExp(`${name}:\\n\\s+httpGet:\\n\\s+path: (\\S+)\\n\\s+port: (\\S+)\\n`).exec(
+        deployment,
+      );
+    return {
+      readiness: probe('readinessProbe')?.slice(1),
+      liveness: probe('livenessProbe')?.slice(1),
+      containerPort: /containerPort: (\d+)/.exec(deployment)?.[1],
+    };
+  };
+
+  it('probes the TCP port when the application sets no path', () => {
+    const deployment = find(render([minimal]), 'Deployment');
+    assert.match(deployment, /readinessProbe:\n\s+tcpSocket:\n\s+port: http\n/);
+    assert.match(deployment, /livenessProbe:\n\s+tcpSocket:\n\s+port: http\n/);
+  });
+
+  for (const [app, path] of [
+    ['backend', '/api/health'],
+    ['frontend', '/healthz'],
+  ]) {
+    it(`gives ${app} HTTP probes on ${path}, on the named port that is 3000`, () => {
+      const output = render([
+        `${deploy}/apps/${app}/values.yaml`,
+        `${deploy}/apps/${app}/image.yaml`,
+      ]);
+      const found = probes(output);
+      assert.deepEqual(found.readiness, [path, 'http']);
+      assert.deepEqual(found.liveness, [path, 'http']);
+      assert.equal(found.containerPort, '3000');
+      assert.doesNotMatch(find(output, 'Deployment'), /tcpSocket/);
+    });
+  }
+});
+
 describe('app chart: network policy (ADR-037 item 4, backlog CHART-3)', () => {
   const policy = (values: string[], set: string[] = []) =>
     find(render(values, set), 'NetworkPolicy');
