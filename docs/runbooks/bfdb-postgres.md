@@ -14,10 +14,10 @@ backups` (только чтение) и SELECT-запросы к `pg_catalog` ч
 | Тариф | `db-s-2vcpu-4gb`, диск 61440 MiB, 1 узел, регион `tor1` |
 | Версия | PostgreSQL 18.6, x86_64, `server_encoding=UTF8`, `TimeZone=UTC`, `en_US.UTF-8`, провайдер локали libc, контрольные суммы данных включены |
 | Подключение | порт 25060 (прямое, без пула), SSL включён, `listen_addresses=*`; приватный хост `private-bfdb-...`, VPC `default-tor1` (10.118.0.0/20) |
-| Базы | только `defaultdb` (владелец `doadmin`, 8,5 МБ); служебная `_dodb` |
+| Базы | `bf` (приложение, владелец `migrator`, с 2026-11-17) и `defaultdb` (владелец `doadmin`, 8,5 МБ, приложением не используется); служебная `_dodb` |
 | Таблицы пользователя | 0: схема приложения ещё не применялась |
 | Расширения | установлены `plpgsql`, `aiven_extras 1.1.22` (схема `aiven_extras`, владелец `postgres`); доступны ещё 73 (`pgcrypto`, `pg_trgm`, `uuid-ossp`, `vector`, `pg_stat_statements`, `pg_cron`, `postgis`, `timescaledb` и др.) |
-| Пулы, реплики | нет; пользователей через API - только `doadmin` |
+| Пулы, реплики | нет |
 | Доверенные источники | `k8s` (кластер `malinina`) и один `ip_addr` (адрес владельца); задаются командой `doctl databases firewalls replace`, правило адреса обновляет скрипт ниже |
 | Бэкапы | ежедневно в 18:01 UTC (`backup_hour=18`), на 2026-11-10 - 6 копий; срок хранения и PITR не проверены |
 | Окно обслуживания | суббота 08:49:31 UTC, `pending=true` (есть ожидающее обслуживание, содержимое неизвестно) |
@@ -28,6 +28,8 @@ backups` (только чтение) и SELECT-запросы к `pg_catalog` ч
 | Роль | Суперпользователь | Прочее |
 |---|---|---|
 | `doadmin` (мы) | нет | LOGIN, CREATEROLE, CREATEDB, REPLICATION, BYPASSRLS; член `doadmin_group` -> `_doadmin_managed` -> `_doadmin_auditing`, `pg_create_subscription`, `pg_read_all_stats`, `pg_signal_autovacuum_worker`, `pg_signal_backend`, `pg_stat_scan_tables` |
+| `migrator` | нет | только LOGIN; владелец базы `bf` и схемы `app`, выполняет миграции (ADR-053, ADR-078) |
+| `app` | нет | только LOGIN; CONNECT на `bf`, USAGE на схему `app`, DML на её таблицы и sequences через права по умолчанию `migrator` |
 | `postgres`, `_dodb` | да | управляющие роли DO |
 | `_dodb_repl`, `_dodb_rewind`, `_doadmin_monitor` | нет | репликация, перемотка, мониторинг DO |
 
@@ -56,7 +58,7 @@ backups` (только чтение) и SELECT-запросы к `pg_catalog` ч
 | 5 | `aiven_extras` установлено | это способ DO давать не-суперпользователю операции с публикациями и подписками; локально расширения нет, поэтому SQL, который его вызывает, локально не заработает | CDC-1 |
 | 6 | Ожидающее обслуживание (`pending=true`) | в окно субботы возможен рестарт узла | проверка владельца (RUNBOOK-2), «Не проверено» |
 | 7 | В кластере база `defaultdb`, локально `bf_dev` | имя базы в строке подключения расходится; на поведение не влияет | ADR-033; приложение будет в отдельной базе `bf`, `defaultdb` не используется (ADR-053) |
-| 8 | Приложение и миграции возможны только под `doadmin` (CREATEROLE, REPLICATION, BYPASSRLS) | утечка секрета приложения давала бы роли, репликацию и обход RLS | решено: ADR-053 (`migrator`, `app`, SSL `verify-full`); роли и база ещё не созданы, живые проверки и создание - DBSEC-7 |
+| 8 | Приложение и миграции возможны только под `doadmin` (CREATEROLE, REPLICATION, BYPASSRLS) | утечка секрета приложения давала бы роли, репликацию и обход RLS | решено: ADR-053 (`migrator`, `app`, SSL `verify-full`); роли и база созданы 2026-11-17 (раздел «Роли и база `bf`»); подключение backend - DEPLOY-2 |
 
 ## Проверка `SET LOCAL synchronous_commit` (2026-11-17)
 
@@ -71,6 +73,40 @@ backups` (только чтение) и SELECT-запросы к `pg_catalog` ч
 
 Вывод: ADR-044 п. 2 работает на DO как записано; новая запись не нужна. Повторить, если DO сменит версию или параметры кластера.
 
+## Проверки ролей и SSL (2026-11-17)
+
+Выполнил владелец под `doadmin` в `defaultdb` и через `doctl`, только чтение (ADR-053 п. 5 и 6, backlog DBSEC-7).
+
+| Проверка | Результат | Вывод |
+|---|---|---|
+| `SHOW ssl` | `on` | |
+| `SHOW ssl_min_protocol_version` | `permission denied`: нужна роль `pg_read_all_settings`, у `doadmin` её нет | значение сервера неизвестно |
+| `doctl databases configuration get ... --engine pg`, параметры SSL | нет ни одного | DO не даёт менять версию TLS: ADR-053 п. 6, ветка «принятый риск» - клиент требует не ниже TLSv1.2 (минимум Node по умолчанию), сервер при настройке DO, доступ ограничен доверенными источниками |
+| `pg_stat_ssl` текущего подключения | `TLSv1.3`, `TLS_AES_256_GCM_SHA384` | |
+| ACL схемы `public` | владелец `pg_database_owner`, `{pg_database_owner=UC/pg_database_owner,=U/pg_database_owner}` | у PUBLIC только USAGE (умолчание PostgreSQL 15+) |
+| `has_schema_privilege('public', 'public', 'CREATE')` | `false` | `REVOKE CREATE ON SCHEMA public FROM PUBLIC` в `database/roles/01-as-doadmin.sql` ничего не меняет, но остаётся на случай другой базы |
+| `pg_default_acl` | 0 строк | |
+| Роли (`pg_roles`, без `pg_*`) | `postgres`, `doadmin`, `doadmin_group`, `_doadmin_managed`, `_doadmin_auditing`, `_doadmin_monitor`, `_dodb`, `_dodb_repl`, `_dodb_rewind`; `migrator` и `app` нет | как в снимке выше |
+| Базы (`pg_database`) | `defaultdb` (владелец `doadmin`, ACL `{=Tc/doadmin,doadmin=CTc/doadmin,_doadmin_monitor=Tc/doadmin}`), `_dodb`, `template0`, `template1` | у PUBLIC `CONNECT` и `TEMP` - умолчание новой базы; для `bf` их снимает `01-as-doadmin.sql` |
+| `doctl databases user list` | только `doadmin` (`primary`) | |
+| Сертификат сервера (`openssl s_client -starttls postgres` на публичный хост) | субъект `CN=bfdb-1`, издатель `<uuid> Project CA` (CA проекта DO), действует до 2029-02-03; в SAN есть `private-bfdb-do-user-48015624-0.i.db.ondigitalocean.com`, публичный хост, `*.i.db.ondigitalocean.com` и `10.118.0.6` | приватный хост покрыт: production подключается с `DB_SSL_MODE=verify-full` (ADR-053 п. 5), CA - `doctl databases get-ca` (DEPLOY-2) |
+
+## Роли и база `bf` (2026-11-17)
+
+Выполнил владелец скриптом с ноутбука (ADR-053 п. 4, ADR-078): `doctl databases db create <id> bf`, `doctl databases user create <id> migrator` и `... app` (пароль из ответа API сразу в файл, на экран не выводился), затем `psql` по публичному хосту с `sslmode=require`: `database/roles/01-as-doadmin.sql` под `doadmin`, `database/roles/02-as-migrator.sql` под `migrator`, оба с `ON_ERROR_STOP`.
+
+| Что | Результат |
+|---|---|
+| `01-as-doadmin.sql` | `NOTICE: bf is now owned by migrator` (у `doadmin` есть право действовать за `migrator`, ветка смены владельца ADR-078) |
+| База `bf` | владелец `migrator`, ACL `{migrator=CTc/migrator,app=c/migrator,doadmin=c/migrator}`: у PUBLIC ничего, `app` и `doadmin` только CONNECT |
+| `migrator`, `app` | LOGIN; `rolsuper`, `rolcreaterole`, `rolcreatedb`, `rolreplication`, `rolbypassrls` - все `f` |
+| `02-as-migrator.sql` | схема `app`, владелец `migrator`, ACL `{migrator=UC/migrator,app=U/migrator}`; `public` без изменений |
+| Права по умолчанию `migrator` в `app` | таблицы `{app=arwd/migrator}` (SELECT, INSERT, UPDATE, DELETE), sequences `{app=rU/migrator}` (SELECT, USAGE) |
+| `search_path` | `ALTER ROLE migrator IN DATABASE bf SET search_path = app` |
+| `doctl databases user list` сразу после создания | `app`, `doadmin`; `migrator` в ответе не было, хотя роль в `pg_roles` есть - перепроверить (см. «Не проверено») |
+
+Пароли лежат только на ноутбуке владельца, в `apps/backend/.env.migrator.production` (`migrator`) и `apps/backend/.env.production` (`app`), права файла 600, оба файла в `.gitignore`; в каждом семь полей `DB_*` (ADR-061): приватный хост, порт 25060, `bf`, схема `app`, `verify-full`. Запечатываются в DEPLOY-2 вместе с CA и Job миграции: до этого backend выкатывается без базы. Если файл потерян - новый пароль `doctl databases user reset <id> <роль>`, файл пишется заново. `CONNECTION LIMIT` ролей не задан, решается в DEPLOY-2 (ADR-053 п. 9).
+
 ## Паритет с локальной средой
 
 `compose.yaml` и `deploy/local/postgres/init/` повторяют: версию 18.6, UTF8 и `en_US.UTF-8`, `wal_level`, слоты, WAL, `synchronous_commit`, память, планировщик, таймауты и роль `doadmin` с её членством. Сверено запросами к `pg_settings` и `pg_roles` на чистом томе 2026-11-11.
@@ -79,9 +115,10 @@ backups` (только чтение) и SELECT-запросы к `pg_catalog` ч
 
 ## Не проверено
 
+- Видит ли DO API роль `migrator`: `doctl databases user list f74f65e6-0691-4550-bdad-a9fa5e108bc1` сразу после создания вернул только `app` и `doadmin`. Без записи в API сброс пароля `migrator` через `doctl databases user reset` может не работать.
 - Поведение Debezium и слота при потерянной `off`-транзакции: мог ли консьюмер увидеть событие без состояния (ADR-044 п. 6). Debezium на `bfdb` ещё нет; проверка вместе с CDC-3.
 - `shared_preload_libraries` (параметр не вернулся запросом).
-- `ssl_min_protocol_version`, права по умолчанию на схему `public`, покрывает ли сертификат DO приватный хост (от этого зависит `verify-full` или `verify-ca`, ADR-053 п. 5 и 6): проверка владельца, DBSEC-7; результат записать сюда.
+- Нижняя версия TLS на сервере (`ssl_min_protocol_version`): `doadmin` не может прочитать параметр, DO его не показывает (раздел «Проверки ролей и SSL»).
 - Срок хранения бэкапов и возможность PITR.
 - Что содержит ожидающее обслуживание. Проверка владельца (RUNBOOK-2), только чтение: `doctl databases maintenance-window get f74f65e6-0691-4550-bdad-a9fa5e108bc1` (флаги и поля сверить с `--help`); результат записать сюда и решить, переносить ли окно.
 - Лимит подключений тарифа и поведение при превышении.
