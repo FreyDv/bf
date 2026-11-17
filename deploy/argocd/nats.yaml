@@ -11,7 +11,7 @@
 # these values (scripts/charts-check.ts).
 #
 # Namespace `bf`, not a separate one: the log collector of ADR-043 watches `bf`, and ADR-038 has one environment.
-# ClusterIP only, no authentication: an accepted risk until NATS-3 (auth), see the runbook. Who may reach the client
+# ClusterIP only, no authentication by owner decision (ADR-082), see the runbook. Who may reach the client
 # port is the NetworkPolicy in `extraResources` below (NATS-4, ADR-081).
 # The stream is not created here: the owner creates it with nats-box (runbook), GitOps creation is NATS-5.
 apiVersion: argoproj.io/v1alpha1
@@ -94,7 +94,7 @@ spec:
         promExporter:
           enabled: false
         # The chart has no networkPolicy value, so the policy goes through extraResources (ADR-081). Ingress only:
-        # egress is CHART-4, and an Egress type here would cut DNS. The selector names the component, because
+        # egress stays open (ADR-082), and an Egress type here would cut DNS. The selector names the component, because
         # name and instance alone also match nats-box and the helm test pod. Only 4222 has a rule: the monitor
         # port 8222 (also on Service nats-headless), 6222 and 7777 stay closed to other pods; kubelet probes are
         # host traffic, which Cilium admits. prune is false on this Application, so deleting the policy from these
