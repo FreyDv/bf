@@ -191,13 +191,13 @@ Chart берётся командами `helm repo add argo https://argoproj.git
 | Образы | `nats:2.15.2-alpine`; `natsio/nats-server-config-reloader` и `natsio/nats-box` - теги, которые несёт чарт 2.15.2; при смене чарта меняются вместе |
 | Том | PVC `nats-js-nats-0`, 10Gi, StorageClass `do-block-storage-retain`, без снимков и бэкапа |
 | Стрим | `BF` создан владельцем 2026-11-13 (шаг 5); создание из git - NATS-5 |
-| Вход | NetworkPolicy `nats` (NATS-4, ADR-081): на 4222/TCP пускает поды `backend`, `debezium` и `nats-box`; аутентификации нет до NATS-3 |
+| Вход | NetworkPolicy `nats` (NATS-4, ADR-081): на 4222/TCP пускает поды `backend`, `debezium` и `nats-box`; аутентификации нет (ADR-082) |
 
 ### Что принято
 
 - **Данные.** Стрим - транзитный буфер между Debezium и потребителями. Бэкапа нет; потеря тома - потеря ещё не прочитанных событий (ADR-022, «Revisit when»). Строки `domain_event_outbox` остаются в `bfdb` (ADR-025), но повторная выдача их в стрим не описана ни в одной записи; в NATS-2 это не проверяется.
 - **Шифрование тома.** В ответ на строку «Data at rest» ADR-037 (там сказано, что ответ даёт запись, которая ставит NATS): шифрование блочных томов DO в найденной документации не заявлено, считается непроверенным; проверка - BACKUP-1. Класс `-retain` защищает от удаления тома вместе с PVC, а не от чтения данных.
-- **Нет аутентификации.** Любой, кто дошёл до порта 4222, может публиковать, читать и удалять стрим. Service только ClusterIP, наружу порт не выставлен. Риск принят на время до NATS-3 (аутентификация через Sealed Secret). Кто до порта доходит - ниже, «Кто может подключаться».
+- **Нет аутентификации.** Любой, кто дошёл до порта 4222, может публиковать, читать и удалять стрим. Service только ClusterIP, наружу порт не выставлен. Риск принят владельцем: сервис внутренний, паролей не будет (ADR-082). Кто до порта доходит - ниже, «Кто может подключаться».
 - **Namespace `bf`.** Логи NATS входят в охват сборщика ADR-043 (`bf`), окружение одно (ADR-038).
 - **Requests** 100m / 256Mi без limits и 10Gi тома - допущения: metrics-server нет. Пересмотр после MON-1.
 - **Жёсткость пода.** У чарта нет значения `securityContext`, поэтому `allowPrivilegeEscalation: false`, `drop: [ALL]`, `seccompProfile: RuntimeDefault` и отказ от токена ServiceAccount заданы через `merge` чарта. `runAsNonRoot` и read-only root не заданы: пользователь образа и владелец тома без кластера не проверены.
@@ -206,7 +206,7 @@ Chart берётся командами `helm repo add argo https://argoproj.git
 
 Политика лежит в `extraResources` файла `deploy/argocd/nats.yaml`, объект `NetworkPolicy` `nats` в `bf`. Cilium применяет её (проверено на NetworkPolicy чарта `app`, `argocd.md`, «Проверки владельца на первом выкате», п. 5).
 
-- Ограничен только вход (`Ingress`); выход пода NATS не ограничен (CHART-4).
+- Ограничен только вход (`Ingress`); выход пода NATS не ограничен (ADR-082).
 - Порт 4222/TCP принимает поды `bf` с меткой `app.kubernetes.io/name` из списка `backend`, `debezium` и под `nats-box` (`name=nats`, `component=nats-box`). Поды релиза `backend` (миграции и CronJob несут те же метки) тоже входят.
 - Остальные порты пода (монитор 8222, 6222, 7777) для других подов закрыты; пробы kubelet идут с узла и проходят.
 - Новый клиент: добавить имя его релиза (метка `app.kubernetes.io/name` его подов) в список `values` у `matchExpressions` политики в `deploy/argocd/nats.yaml`, слить в `main`; ArgoCD применит. Debezium (CDC-2) обязан работать в `bf` с меткой `app.kubernetes.io/name=debezium`.
