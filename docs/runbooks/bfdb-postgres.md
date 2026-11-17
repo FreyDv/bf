@@ -36,7 +36,7 @@ backups` (только чтение) и SELECT-запросы к `pg_catalog` ч
 | Группа | Параметры |
 |---|---|
 | Репликация и WAL | `wal_level=logical`, `max_replication_slots=20`, `max_wal_senders=20`, `max_slot_wal_keep_size=-1` (без предела), `wal_keep_size=2920MB`, `max_wal_size=2921MB`, `checkpoint_timeout=900s`, `wal_sender_timeout=60000ms`, `wal_compression=off`, `archive_mode=off` |
-| Надёжность записи | `synchronous_commit=off`, `fsync=on`, `full_page_writes=on` |
+| Надёжность записи | `synchronous_commit=off`, `fsync=on`, `full_page_writes=on`, `wal_writer_delay=200ms` (окно потери при `off` - до 600 мс) |
 | Память | `shared_buffers=780MB`, `effective_cache_size=2341MB`, `work_mem=4MB`, `maintenance_work_mem=266MB` |
 | Диск и планировщик | `random_page_cost=1`, `effective_io_concurrency=13`, `io_method=worker`, `jit=on` |
 | Соединения и таймауты | `max_connections=100`, `superuser_reserved_connections=3`, `statement_timeout=0`, `lock_timeout=0`, `idle_in_transaction_session_timeout=24h` |
@@ -50,13 +50,26 @@ backups` (только чтение) и SELECT-запросы к `pg_catalog` ч
 | # | Находка | Почему важно | Куда |
 |---|---|---|---|
 | 1 | Доверенные источники были пусты (доступ с любого адреса); исправлено 2026-11-11: остались кластер `malinina` (`k8s`) и адрес владельца (`ip_addr`) | пароль и SSL больше не единственная защита; домашний адрес динамический, при его смене доступ с ноутбука пропадает, пока правило не обновлено (скрипт ниже) | DBSEC-1 закрыт |
-| 2 | `synchronous_commit=off` | после сбоя узла последние подтверждённые транзакции (порядка сотен миллисекунд) могут пропасть: команда ответила «успех», а строки с outbox нет (ADR-025). Целостность агрегата и outbox сохраняется: они в одной транзакции | решено: ADR-044 (критичные команды включают `on` через `SET LOCAL`); проверка на DO - DBSEC-5 |
+| 2 | `synchronous_commit=off` | после сбоя узла последние подтверждённые транзакции (порядка сотен миллисекунд) могут пропасть: команда ответила «успех», а строки с outbox нет (ADR-025). Целостность агрегата и outbox сохраняется: они в одной транзакции | решено: ADR-044 (критичные команды включают `on` через `SET LOCAL`); на DO работает, раздел «Проверка `SET LOCAL synchronous_commit`» |
 | 3 | `max_slot_wal_keep_size=-1` при диске 60 ГБ | остановленный Debezium копит WAL без предела до заполнения диска (ADR-021) | CDC-3 |
 | 4 | Один узел, без реплики | сбой или обслуживание узла - простой; слот Debezium при пересоздании узла может потеряться (ADR-021: поведение при failover отложено) | ADR-021 |
 | 5 | `aiven_extras` установлено | это способ DO давать не-суперпользователю операции с публикациями и подписками; локально расширения нет, поэтому SQL, который его вызывает, локально не заработает | CDC-1 |
 | 6 | Ожидающее обслуживание (`pending=true`) | в окно субботы возможен рестарт узла | проверка владельца (RUNBOOK-2), «Не проверено» |
 | 7 | В кластере база `defaultdb`, локально `bf_dev` | имя базы в строке подключения расходится; на поведение не влияет | ADR-033; приложение будет в отдельной базе `bf`, `defaultdb` не используется (ADR-053) |
 | 8 | Приложение и миграции возможны только под `doadmin` (CREATEROLE, REPLICATION, BYPASSRLS) | утечка секрета приложения давала бы роли, репликацию и обход RLS | решено: ADR-053 (`migrator`, `app`, SSL `verify-full`); роли и база ещё не созданы, живые проверки и создание - DBSEC-7 |
+
+## Проверка `SET LOCAL synchronous_commit` (2026-11-17)
+
+Выполнил владелец под `doadmin` в базе `defaultdb` (WebStorm), PostgreSQL 18.6; одна транзакция с `ROLLBACK`, без записи (ADR-044 п. 6, backlog DBSEC-5).
+
+| Шаг | Результат |
+|---|---|
+| `BEGIN; SHOW synchronous_commit;` | `off` - значение кластера |
+| `SET LOCAL synchronous_commit = on; SHOW synchronous_commit;` | `on` - `doadmin` может включить режим на свою транзакцию |
+| `ROLLBACK; SHOW synchronous_commit;` | `off` - на соединение не просочилось |
+| `SHOW wal_writer_delay;` | `200ms` - значение по умолчанию, окно потери при `off` до 3 x 200 мс |
+
+Вывод: ADR-044 п. 2 работает на DO как записано; новая запись не нужна. Повторить, если DO сменит версию или параметры кластера.
 
 ## Паритет с локальной средой
 
@@ -66,7 +79,7 @@ backups` (только чтение) и SELECT-запросы к `pg_catalog` ч
 
 ## Не проверено
 
-- Работает ли `SET LOCAL synchronous_commit = on` под `doadmin` на DO, и значение `wal_writer_delay` (ADR-044, DBSEC-5).
+- Поведение Debezium и слота при потерянной `off`-транзакции: мог ли консьюмер увидеть событие без состояния (ADR-044 п. 6). Debezium на `bfdb` ещё нет; проверка вместе с CDC-3.
 - `shared_preload_libraries` (параметр не вернулся запросом).
 - `ssl_min_protocol_version`, права по умолчанию на схему `public`, покрывает ли сертификат DO приватный хост (от этого зависит `verify-full` или `verify-ca`, ADR-053 п. 5 и 6): проверка владельца, DBSEC-7; результат записать сюда.
 - Срок хранения бэкапов и возможность PITR.
