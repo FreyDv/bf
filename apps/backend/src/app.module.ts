@@ -1,6 +1,7 @@
 import { Logger, Module } from '@nestjs/common';
 import { TRPCModule } from 'nestjs-trpc';
 import { API_PREFIX } from './configure-app.js';
+import { HealthModule } from './health/health.module.js';
 import { LoggingModule } from './logging/logging.module.js';
 
 @Module({
@@ -9,6 +10,7 @@ import { LoggingModule } from './logging/logging.module.js';
   // the logger installed by `app.useLogger`, which is pino (ADR-070, LOG-3), and buffers until then.
   imports: [
     LoggingModule,
+    HealthModule,
     TRPCModule.forRoot({ basePath: `/${API_PREFIX}/trpc`, logger: new Logger() }),
   ],
 })

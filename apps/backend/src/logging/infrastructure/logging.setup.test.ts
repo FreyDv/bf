@@ -15,6 +15,8 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const CLIENT_ID = '3f2b8c1e-9d4a-4e6b-8a1c-0b7d5e2f9a34';
 const OTHER_ID = '7a1d9e40-2b53-4c8f-9e61-5d3a8b0c4f12';
 const QUERY_ID = '0a9c4d6e-1f27-4b83-a5d0-6e8f3c1b2a47';
+const PROBE_ID = '5c8e2a71-3d09-4f64-b1a8-9e7c0d4a6b23';
+const AFTER_PROBE_ID = 'b4d6f0a2-8c35-4e17-9a52-1f3e7c9d0b86';
 const SECRET_INPUT = 'secret-input-value-1234';
 
 // A throwaway tRPC procedure that logs through the port, to see a record written during a tRPC call.
@@ -141,6 +143,26 @@ describe('configureApp logging', () => {
     expect(completed?.['req']).toEqual({ method: 'GET', path: '/api/trpc/probe.ping' });
     expect(lines.join('')).not.toContain(SECRET_INPUT);
     expect(lines.join('')).not.toContain('input=');
+  });
+
+  // ADR-080: the probe path writes no access record, any other path still does.
+  it('writes no access record for the health probe, and still writes one for another path', async () => {
+    const probe = await fetch(`${origin}/api/health`, { headers: { 'x-request-id': PROBE_ID } });
+    expect(probe.status).toBe(200);
+    // Written after the response has finished; a later request that is logged proves the wait was long enough.
+    await fetch(`${origin}/api/trpc/probe.ping`, { headers: { 'x-request-id': AFTER_PROBE_ID } });
+    await completedRecord(AFTER_PROBE_ID);
+
+    expect(records().filter((r) => r['correlationId'] === PROBE_ID)).toEqual([]);
+    expect(lines.join('')).not.toContain('/api/health');
+  });
+
+  it('writes no access record for the probe path with a query string, and keeps the exact path only', async () => {
+    await fetch(`${origin}/api/health?x=1`, { headers: { 'x-request-id': PROBE_ID } });
+    await fetch(`${origin}/api/health/other`, { headers: { 'x-request-id': OTHER_ID } });
+    await completedRecord(OTHER_ID);
+
+    expect(records().filter((r) => r['correlationId'] === PROBE_ID)).toEqual([]);
   });
 });
 
