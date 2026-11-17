@@ -10,6 +10,14 @@ ingress:
   host: malinina.ca
   path: /api
   pathType: Prefix
+  # Per client IP, per Traefik pod (two pods, so a client gets up to about twice this). 10 requests a second with 30 at
+  # once is far above one person clicking through the admin, and still makes a scan of phone numbers through /api slow
+  # (ADR-037). Operators behind one office NAT share it: raise it here if they ever hit 429. Kubelet probes go to the
+  # pod directly and are not counted.
+  rateLimit:
+    enabled: true
+    average: 10
+    burst: 30
 
 # The liveness endpoint of the backend, under the /api prefix the app serves itself (ADR-080).
 probes:

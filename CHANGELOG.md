@@ -6,6 +6,10 @@ All notable changes to this project, in [Keep a Changelog](https://keepachangelo
 
 <!-- A PR describes its change here, one entry per change - never a version heading, never VERSION itself (R18). The maintainer alone promotes this section into a release: https://github.com/repository-standards/core/blob/main/docs/method/changelog-process.md -->
 
+### Rate limit per client IP on malinina.ca (INGRESS-1, 2026-11-17)
+
+For whoever runs the site: Traefik now answers `429` to a client that sends too many requests. The shared chart `app` renders a Traefik `rateLimit` Middleware when an application sets `ingress.rateLimit` and attaches it to the application's Ingress. The backend (`/api`) gets 10 requests a second with bursts of 30, and the frontend gets 30 a second with bursts of 100; both are counted per client IP and per Traefik pod, so with two pods a client gets about twice that. The reasons are next to the values in `deploy/apps/<app>/values.yaml`. The client is the rightmost `X-Forwarded-For` entry, the one the DigitalOcean balancer appends. On the cluster that entry is the client's address, not a node's, and a forged `X-Forwarded-For` does not change it (`docs/runbooks/malinina-kubernetes.md`). For the backend later: `X-Real-Ip` holds the node, not the client, so the client IP is the second entry from the right of `X-Forwarded-For`.
+
 ### Tag bot authenticates by Client ID (BOT-2, 2026-11-17)
 
 For whoever runs the deploy: the `tag` job now gets its GitHub App token with `client-id` from the new secret `BOT_CLIENT_ID` instead of the deprecated `app-id`, so the deprecation warning of `actions/create-github-app-token` v3.3.0 is gone. The secret `BOT_APP_ID` is no longer read and can be deleted by the owner.

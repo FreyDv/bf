@@ -8,6 +8,13 @@ ingress:
   host: malinina.ca
   path: /
   pathType: Prefix
+  # Per client IP, per Traefik pod. Higher than the backend: one page load fetches dozens of scripts, styles and images
+  # at once, so the burst covers a cold load with room to spare; the average stops a script from hammering
+  # server-rendered pages (ADR-037). Requests to /api count against the backend's limit, not this one.
+  rateLimit:
+    enabled: true
+    average: 30
+    burst: 100
 
 # Outside /api: /api on the host belongs to the backend (ADR-038, ADR-080).
 probes:

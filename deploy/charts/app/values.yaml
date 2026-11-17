@@ -53,6 +53,12 @@ ingress:
   path: /
   pathType: Prefix
   annotations: {}
+  # Traefik rateLimit Middleware on this Ingress, per client IP and per controller replica (ADR-037, INGRESS-1):
+  # `average` requests per second, `burst` at once. An application sets both, with the reason, in its own values.
+  rateLimit:
+    enabled: false
+    average: 0
+    burst: 0
 
 # Ingress-only NetworkPolicy on the pods of this release, on by default (ADR-037 item 4): the application port is
 # reachable from the ingress controller (only when `ingress.enabled`) and from `allowFrom`, nothing else. Egress is not
