@@ -167,3 +167,7 @@ A database secret and the migration both need the CA (ADR-053 item 5, ADR-061).
 {{- fail "dbCa.pem is required when the application has database secrets or the migration is on: the PEM text of the DigitalOcean CA (ADR-053 item 5, ADR-061)" -}}
 {{- end -}}
 {{- end -}}
+
+{{- define "app.rateLimitName" -}}
+{{- printf "%s-rate-limit" (include "app.fullname" .) -}}
+{{- end -}}

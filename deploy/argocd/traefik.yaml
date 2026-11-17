@@ -83,7 +83,8 @@ spec:
           metrics: null
           web:
             # Only the load balancer's VPC (default-tor1) may set X-Forwarded-* (ADR-038 item 6). PROXY protocol
-            # stays off. What the rate limit counts out of X-Forwarded-For is INGRESS-1.
+            # stays off. The rate limit counts the rightmost X-Forwarded-For entry, the client (INGRESS-1, checked:
+            # docs/runbooks/malinina-kubernetes.md, "Лимит частоты и IP клиента").
             forwardedHeaders:
               trustedIPs:
                 - 10.118.0.0/20

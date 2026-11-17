@@ -1,0 +1,29 @@
+{{- if and .Values.ingress.enabled .Values.ingress.rateLimit.enabled }}
+{{- $rl := .Values.ingress.rateLimit }}
+{{- if not (and (gt (int $rl.average) 0) (gt (int $rl.burst) 0)) }}
+{{- fail "ingress.rateLimit needs average and burst above 0" }}
+{{- end }}
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: {{ include "app.rateLimitName" . }}
+  labels:
+    {{- include "app.labels" . | nindent 4 }}
+  annotations:
+    # Before the Ingress that names it: a router pointing at a missing middleware answers with an error (INGRESS-1).
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  # Per client IP and per Traefik replica: in memory of each pod, so N replicas let a client through about N times the
+  # rate (ADR-037).
+  rateLimit:
+    average: {{ int $rl.average }}
+    burst: {{ int $rl.burst }}
+    period: 1s
+    sourceCriterion:
+      ipStrategy:
+        # The rightmost X-Forwarded-For entry: the one the DigitalOcean balancer appended. Traefik takes the header
+        # only from the balancer's VPC (forwardedHeaders.trustedIPs, ADR-038 item 6), so a client cannot choose it by
+        # sending its own X-Forwarded-For; whatever it sends stands to the left. The check on the cluster: runbook
+        # malinina-kubernetes.md, "Лимит частоты".
+        depth: 1
+{{- end }}

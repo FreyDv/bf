@@ -82,6 +82,7 @@ describe('app chart: what it renders', () => {
       'Deployment',
       'Ingress',
       'Job',
+      'Middleware',
       'NetworkPolicy',
       'SealedSecret',
       'SealedSecret',
@@ -284,6 +285,55 @@ describe('app chart: ingress', () => {
   });
 });
 
+describe('app chart: rate limit (ADR-037, ADR-038 item 6, backlog INGRESS-1)', () => {
+  const MIDDLEWARES = 'traefik.ingress.kubernetes.io/router.middlewares';
+
+  it('renders a Traefik rateLimit Middleware before the Ingress and attaches it to the Ingress', () => {
+    const output = render([full]);
+    const middleware = named(output, 'Middleware', 'web-rate-limit');
+    assert.match(middleware, /^apiVersion: traefik\.io\/v1alpha1$/m);
+    assert.equal(wave(middleware), -1);
+    assert.match(middleware, /rateLimit:\n\s+average: 10\n\s+burst: 30\n\s+period: 1s\n/);
+    assert.match(
+      find(output, 'Ingress'),
+      new RegExp(`${MIDDLEWARES}: apps-web-rate-limit@kubernetescrd\n`),
+    );
+  });
+
+  it('counts the client by the rightmost X-Forwarded-For entry, the one the balancer appended', () => {
+    const middleware = find(render([full]), 'Middleware');
+    assert.match(middleware, /sourceCriterion:\n\s+ipStrategy:\n(\s+#.*\n)*\s+depth: 1\n/);
+  });
+
+  it('renders no Middleware and no annotation when off or without an ingress', () => {
+    assert.equal(find(render([minimal]), 'Middleware'), '');
+    const off = render([full], ['ingress.rateLimit.enabled=false']);
+    assert.equal(find(off, 'Middleware'), '');
+    assert.doesNotMatch(find(off, 'Ingress'), new RegExp(MIDDLEWARES));
+    assert.equal(find(render([full], ['ingress.enabled=false']), 'Middleware'), '');
+  });
+
+  it('keeps the other ingress annotations next to the one it writes', () => {
+    const ingress = find(render([full], ['ingress.annotations.example=kept']), 'Ingress');
+    assert.match(ingress, /example: kept\n/);
+    assert.match(ingress, new RegExp(`${MIDDLEWARES}: apps-web-rate-limit@kubernetescrd`));
+  });
+
+  for (const app of ['backend', 'frontend']) {
+    it(`limits ${app}, the public application on malinina.ca`, () => {
+      const output = render([
+        `${deploy}/apps/${app}/values.yaml`,
+        `${deploy}/apps/${app}/image.yaml`,
+      ]);
+      assert.match(find(output, 'Middleware'), /average: [1-9]\d*\n\s+burst: [1-9]\d*\n/);
+      assert.match(
+        find(output, 'Ingress'),
+        new RegExp(`${MIDDLEWARES}: apps-web-rate-limit@kubernetescrd`),
+      );
+    });
+  }
+});
+
 describe('app chart: probes (ADR-080, backlog PROBE-1)', () => {
   const probes = (output: string) => {
     const deployment = find(output, 'Deployment');
@@ -469,6 +519,23 @@ describe('app chart: what it refuses (ADR-061)', () => {
 
   it('refuses the latest tag', () => {
     assert.match(renderFails([minimal], ['image.tag=latest']), /not latest/);
+  });
+
+  it('refuses a rate limit without a positive average and burst', () => {
+    assert.match(
+      renderFails([full], ['ingress.rateLimit.burst=0']),
+      /ingress\.rateLimit needs average and burst above 0/,
+    );
+  });
+
+  it('refuses a middlewares annotation of its own while the rate limit is on', () => {
+    assert.match(
+      renderFails(
+        [full],
+        ['ingress.annotations.traefik\\.ingress\\.kubernetes\\.io/router\\.middlewares=x'],
+      ),
+      /sets traefik\.ingress\.kubernetes\.io\/router\.middlewares while ingress\.rateLimit is on/,
+    );
   });
 
   it('refuses an enabled ingress without a host', () => {
@@ -873,7 +940,7 @@ describe('app Applications of deploy/argocd (DEPLOY-1, ADR-019, ADR-030, ADR-038
     }
   });
 
-  it('renders each app with the files its Application lists: no database objects, the ingress of ADR-038, a SHA tag', () => {
+  it('renders each app with the files its Application lists: no database objects, the ingress of ADR-038 with its rate limit, a SHA tag', () => {
     const paths: Record<string, string> = { backend: '/api', frontend: '/' };
     for (const { source } of own) {
       const app = nameOf(source) as string;
@@ -888,6 +955,7 @@ describe('app Applications of deploy/argocd (DEPLOY-1, ADR-019, ADR-030, ADR-038
       assert.deepEqual(kinds(output), [
         'Deployment',
         'Ingress',
+        'Middleware',
         'NetworkPolicy',
         'Service',
         'ServiceAccount',
@@ -895,6 +963,14 @@ describe('app Applications of deploy/argocd (DEPLOY-1, ADR-019, ADR-030, ADR-038
       assert.doesNotMatch(output, /DB_|db-ca|migrate/, 'DEPLOY-2 owns the database');
       const ingress = find(output, 'Ingress');
       assert.match(ingress, /ingressClassName: traefik\n/);
+      // The name Traefik resolves: <namespace>-<Middleware name>@kubernetescrd (INGRESS-1).
+      assert.match(
+        ingress,
+        new RegExp(
+          `traefik\\.ingress\\.kubernetes\\.io/router\\.middlewares: bf-${app}-rate-limit@kubernetescrd\\n`,
+        ),
+      );
+      assert.match(find(output, 'Middleware'), new RegExp(`^ {2}name: ${app}-rate-limit$`, 'm'));
       assert.match(ingress, /- host: malinina\.ca\n/);
       assert.match(ingress, new RegExp(`- path: ${paths[app]}\\n\\s+pathType: Prefix\\n`));
       assert.match(output, new RegExp(`image: ghcr\\.io/freydv/bf-${app}:[0-9a-f]{40}\\n`));
