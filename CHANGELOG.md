@@ -6,6 +6,10 @@ All notable changes to this project, in [Keep a Changelog](https://keepachangelo
 
 <!-- A PR describes its change here, one entry per change - never a version heading, never VERSION itself (R18). The maintainer alone promotes this section into a release: https://github.com/repository-standards/core/blob/main/docs/method/changelog-process.md -->
 
+### Tag bot authenticates by Client ID (BOT-2, 2026-11-17)
+
+For whoever runs the deploy: the `tag` job now gets its GitHub App token with `client-id` from the new secret `BOT_CLIENT_ID` instead of the deprecated `app-id`, so the deprecation warning of `actions/create-github-app-token` v3.3.0 is gone. The secret `BOT_APP_ID` is no longer read and can be deleted by the owner.
+
 ### Roles migrator and app and the database bf created on bfdb (DBSEC-7, 2026-11-17)
 
 For the owner and whoever does DEPLOY-2: you ran the read-only checks and then created the database `bf` and the roles `migrator` and `app` on `bfdb`. The server certificate lists the private host, so production connects with `verify-full` (ADR-053 item 5). DigitalOcean neither shows nor lets you change the server's minimum TLS version, so ADR-053 item 6 takes its accepted-risk branch: the client requires TLSv1.2 and the connection actually uses TLSv1.3. `database/roles/01-as-doadmin.sql` made `migrator` the owner of `bf` and left the other roles only CONNECT; `02-as-migrator.sql` created the schema `app` with default DML grants to `app`. Neither role has SUPERUSER, CREATEROLE, CREATEDB, REPLICATION or BYPASSRLS. The passwords exist only in your two local `.env` files and are sealed in DEPLOY-2, which is no longer blocked. `doctl databases user list` showed `migrator` a few minutes after it was created. Everything is in `docs/runbooks/bfdb-postgres.md`.

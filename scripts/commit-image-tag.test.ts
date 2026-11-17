@@ -219,7 +219,8 @@ describe('tag job in ci.yml', () => {
       tag,
       /uses: actions\/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3\.3\.0\n/,
     );
-    assert.match(tag, /app-id: \$\{\{ secrets\.BOT_APP_ID \}\}/);
+    assert.match(tag, /client-id: \$\{\{ secrets\.BOT_CLIENT_ID \}\}/);
+    assert.doesNotMatch(tag, /app-id:/);
     assert.match(tag, /private-key: \$\{\{ secrets\.BOT_APP_PRIVATE_KEY \}\}/);
     assert.match(tag, /repositories: \$\{\{ github\.event\.repository\.name \}\}/);
     assert.match(tag, /ref: main\n/);
