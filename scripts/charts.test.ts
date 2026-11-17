@@ -568,6 +568,55 @@ describe('nats Application (ADR-022, backlog NATS-1)', () => {
     assert.match(spec, /seccompProfile:\n\s+type: RuntimeDefault/);
     assert.match(spec, /allowPrivilegeEscalation: false/);
   });
+
+  describe('NetworkPolicy (ADR-081, backlog NATS-4)', () => {
+    const output = renderApplication(app);
+    const policies = all(output, 'NetworkPolicy');
+    const policy = policies[0] ?? '';
+    // The keys render sorted, so `ingress:` is followed by the pod selector.
+    const ingress = /^ {2}ingress:\n([\s\S]*?)^ {2}podSelector:/m.exec(policy)?.[1] ?? '';
+
+    it('renders exactly one policy, named nats, in the application namespace', () => {
+      assert.equal(policies.length, 1);
+      assert.match(policy, /^ {2}name: nats$/m);
+      assert.match(policy, /^ {2}namespace: bf$/m);
+    });
+
+    it('selects the server pod by component, so nats-box and the test pod stay out', () => {
+      assert.match(
+        policy,
+        /podSelector:\n\s+matchLabels:\n\s+app\.kubernetes\.io\/component: nats\n\s+app\.kubernetes\.io\/instance: nats\n\s+app\.kubernetes\.io\/name: nats\n/,
+      );
+    });
+
+    it('restricts ingress only: no Egress type, no egress rules', () => {
+      assert.match(policy, /policyTypes:\n\s+- Ingress\n(?!\s+- )/);
+      assert.doesNotMatch(policy, /Egress|egress/);
+    });
+
+    it('has one ingress rule that opens 4222/TCP and nothing else', () => {
+      assert.equal(ingress.match(/^ {2}- /gm)?.length, 1, 'one ingress rule');
+      assert.deepEqual(
+        [...ingress.matchAll(/- port: (\d+)\n\s+protocol: (\w+)/g)].map((m) => [m[1], m[2]]),
+        [['4222', 'TCP']],
+      );
+      assert.equal(ingress.match(/port:/g)?.length, 1);
+    });
+
+    it('admits exactly the backend and Debezium by label, and nats-box, with no empty peer', () => {
+      const from = ingress.slice(ingress.indexOf('from:'));
+      assert.equal(from.match(/- podSelector:/g)?.length, 2, 'two peers');
+      assert.doesNotMatch(from, /namespaceSelector|ipBlock|podSelector: ?\{\}/);
+      assert.match(
+        from,
+        /- podSelector:\n\s+matchExpressions:\n\s+- key: app\.kubernetes\.io\/name\n\s+operator: In\n\s+values:\n\s+- backend\n\s+- debezium\n/,
+      );
+      assert.match(
+        from,
+        /- podSelector:\n\s+matchLabels:\n\s+app\.kubernetes\.io\/component: nats-box\n\s+app\.kubernetes\.io\/name: nats\n/,
+      );
+    });
+  });
 });
 
 describe('traefik Application (ADR-038, backlog TRAEFIK-1)', () => {

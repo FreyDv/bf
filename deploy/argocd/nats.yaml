@@ -11,8 +11,8 @@
 # these values (scripts/charts-check.ts).
 #
 # Namespace `bf`, not a separate one: the log collector of ADR-043 watches `bf`, and ADR-038 has one environment.
-# ClusterIP only, no authentication and no NetworkPolicy: an accepted risk until NATS-3 (auth) and NATS-4
-# (NetworkPolicy), see the runbook.
+# ClusterIP only, no authentication: an accepted risk until NATS-3 (auth), see the runbook. Who may reach the client
+# port is the NetworkPolicy in `extraResources` below (NATS-4, ADR-081).
 # The stream is not created here: the owner creates it with nats-box (runbook), GitOps creation is NATS-5.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -93,6 +93,44 @@ spec:
         # Metrics wait for MON-1 (ADR-043 item 6): there is no collector to scrape the exporter yet.
         promExporter:
           enabled: false
+        # The chart has no networkPolicy value, so the policy goes through extraResources (ADR-081). Ingress only:
+        # egress is CHART-4, and an Egress type here would cut DNS. The selector names the component, because
+        # name and instance alone also match nats-box and the helm test pod. Only 4222 has a rule: the monitor
+        # port 8222 (also on Service nats-headless), 6222 and 7777 stay closed to other pods; kubelet probes are
+        # host traffic, which Cilium admits. prune is false on this Application, so deleting the policy from these
+        # values leaves it in the cluster until someone deletes it by hand.
+        extraResources:
+          - apiVersion: networking.k8s.io/v1
+            kind: NetworkPolicy
+            metadata:
+              name: nats
+              namespace: bf
+            spec:
+              podSelector:
+                matchLabels:
+                  app.kubernetes.io/name: nats
+                  app.kubernetes.io/instance: nats
+                  app.kubernetes.io/component: nats
+              policyTypes:
+                - Ingress
+              ingress:
+                - ports:
+                    - protocol: TCP
+                      port: 4222
+                  from:
+                    # A release that needs NATS adds its name to this list (a worker release later). Debezium
+                    # (CDC-2) must run in `bf` with this label: the label is a contract of ADR-081.
+                    - podSelector:
+                        matchExpressions:
+                          - key: app.kubernetes.io/name
+                            operator: In
+                            values:
+                              - backend
+                              - debezium
+                    - podSelector:
+                        matchLabels:
+                          app.kubernetes.io/name: nats
+                          app.kubernetes.io/component: nats-box
   destination:
     server: https://kubernetes.default.svc
     namespace: bf

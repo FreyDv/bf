@@ -191,15 +191,38 @@ Chart берётся командами `helm repo add argo https://argoproj.git
 | Образы | `nats:2.15.2-alpine`; `natsio/nats-server-config-reloader` и `natsio/nats-box` - теги, которые несёт чарт 2.15.2; при смене чарта меняются вместе |
 | Том | PVC `nats-js-nats-0`, 10Gi, StorageClass `do-block-storage-retain`, без снимков и бэкапа |
 | Стрим | `BF` создан владельцем 2026-11-13 (шаг 5); создание из git - NATS-5 |
+| Вход | NetworkPolicy `nats` (NATS-4, ADR-081): на 4222/TCP пускает поды `backend`, `debezium` и `nats-box`; аутентификации нет до NATS-3 |
 
 ### Что принято
 
 - **Данные.** Стрим - транзитный буфер между Debezium и потребителями. Бэкапа нет; потеря тома - потеря ещё не прочитанных событий (ADR-022, «Revisit when»). Строки `domain_event_outbox` остаются в `bfdb` (ADR-025), но повторная выдача их в стрим не описана ни в одной записи; в NATS-2 это не проверяется.
 - **Шифрование тома.** В ответ на строку «Data at rest» ADR-037 (там сказано, что ответ даёт запись, которая ставит NATS): шифрование блочных томов DO в найденной документации не заявлено, считается непроверенным; проверка - BACKUP-1. Класс `-retain` защищает от удаления тома вместе с PVC, а не от чтения данных.
-- **Нет аутентификации и NetworkPolicy.** Любой под кластера может публиковать, читать и удалять стрим. Service только ClusterIP, наружу порт не выставлен. Риск принят на время до NATS-3 (аутентификация через Sealed Secret) и NATS-4 (NetworkPolicy). Для приложений политика входа уже в чарте `app` (CHART-3); действует ли она под Cilium, проверяется на первом выкате по `argocd.md`, «Проверки владельца на первом выкате», п. 5, и касается NATS-4 так же.
+- **Нет аутентификации.** Любой, кто дошёл до порта 4222, может публиковать, читать и удалять стрим. Service только ClusterIP, наружу порт не выставлен. Риск принят на время до NATS-3 (аутентификация через Sealed Secret). Кто до порта доходит - ниже, «Кто может подключаться».
 - **Namespace `bf`.** Логи NATS входят в охват сборщика ADR-043 (`bf`), окружение одно (ADR-038).
 - **Requests** 100m / 256Mi без limits и 10Gi тома - допущения: metrics-server нет. Пересмотр после MON-1.
 - **Жёсткость пода.** У чарта нет значения `securityContext`, поэтому `allowPrivilegeEscalation: false`, `drop: [ALL]`, `seccompProfile: RuntimeDefault` и отказ от токена ServiceAccount заданы через `merge` чарта. `runAsNonRoot` и read-only root не заданы: пользователь образа и владелец тома без кластера не проверены.
+
+### Кто может подключаться (NATS-4, ADR-081)
+
+Политика лежит в `extraResources` файла `deploy/argocd/nats.yaml`, объект `NetworkPolicy` `nats` в `bf`. Cilium применяет её (проверено на NetworkPolicy чарта `app`, `argocd.md`, «Проверки владельца на первом выкате», п. 5).
+
+- Ограничен только вход (`Ingress`); выход пода NATS не ограничен (CHART-4).
+- Порт 4222/TCP принимает поды `bf` с меткой `app.kubernetes.io/name` из списка `backend`, `debezium` и под `nats-box` (`name=nats`, `component=nats-box`). Поды релиза `backend` (миграции и CronJob несут те же метки) тоже входят.
+- Остальные порты пода (монитор 8222, 6222, 7777) для других подов закрыты; пробы kubelet идут с узла и проходят.
+- Новый клиент: добавить имя его релиза (метка `app.kubernetes.io/name` его подов) в список `values` у `matchExpressions` политики в `deploy/argocd/nats.yaml`, слить в `main`; ArgoCD применит. Debezium (CDC-2) обязан работать в `bf` с меткой `app.kubernetes.io/name=debezium`.
+- Удаление политики из значений не удаляет её в кластере (`prune: false` у Application): убрать вручную, `kubectl -n bf delete networkpolicy nats`.
+
+#### Проверка (NATS-4)
+
+1. Политика на месте: `kubectl -n bf get networkpolicy nats`.
+2. Под вне списка не подключается (должно завершиться ошибкой, код выхода не 0):
+   `kubectl -n bf run np-probe --rm -i --restart=Never --image=busybox:1.37 -- nc -z -w 3 nats 4222`
+3. `nats-box` подключается (должно пройти):
+   `kubectl -n bf exec deploy/nats-box -- nats server check connection --server nats://nats:4222`
+   (или `kubectl -n bf exec deploy/nats-box -- nats stream ls`).
+4. `nats-0` остаётся `Ready` (`2/2`): `kubectl -n bf get pod nats-0`.
+
+Проверено 2026-11-16 (политика применена `kubectl apply` до мержа, ADR-059, затем её принял ArgoCD): `busybox` вне списка не подключился ни к `nats:4222`, ни к `nats-headless:8222`, при этом DNS у него работал; `nats-box` прошёл `server check connection`; под `backend` открыл TCP на `nats:4222`; `nats-0` `Ready` без перезапусков через минуту после применения; `cilium-dbg endpoint list` показывает у `nats-0` `POLICY (ingress) Enabled`; `kubectl port-forward pod/nats-0 18222:8222` отдал `/healthz` 200.
 
 ### Стрим `BF`
 
