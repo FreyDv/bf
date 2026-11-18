@@ -47,7 +47,7 @@ spec:
             repository: nats
             tag: 2.15.2-alpine
           # An assumption, not a measurement: the cluster has no metrics-server. No limits on purpose, so the broker
-          # is not throttled or OOM-killed at a guessed ceiling. Revisit after MON-1.
+          # is not throttled or OOM-killed at a guessed ceiling. Replaced by the measured values in MON-2.
           resources:
             requests:
               cpu: 100m
@@ -90,15 +90,28 @@ spec:
                 securityContext:
                   seccompProfile:
                     type: RuntimeDefault
-        # Metrics wait for MON-1 (ADR-043 item 6): there is no collector to scrape the exporter yet.
+        # The metrics exporter, a sidecar of the server pod on port 7777 (container port named `prom-metrics`), scraped by the
+        # Prometheus of the `monitoring` namespace (ADR-083, MON-1). The NetworkPolicy below lets in that namespace alone.
+        # The exporter reads the monitor port 8222 inside the pod, so that port stays closed to everyone else.
         promExporter:
-          enabled: false
+          enabled: true
+          merge:
+            # An assumption, not a measurement; no limits, as for the server above (MON-2 replaces it).
+            resources:
+              requests:
+                cpu: 10m
+                memory: 32Mi
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop: [ALL]
         # The chart has no networkPolicy value, so the policy goes through extraResources (ADR-081). Ingress only:
         # egress stays open (ADR-082), and an Egress type here would cut DNS. The selector names the component, because
-        # name and instance alone also match nats-box and the helm test pod. Only 4222 has a rule: the monitor
-        # port 8222 (also on Service nats-headless), 6222 and 7777 stay closed to other pods; kubelet probes are
-        # host traffic, which Cilium admits. prune is false on this Application, so deleting the policy from these
-        # values leaves it in the cluster until someone deletes it by hand.
+        # name and instance alone also match nats-box and the helm test pod. 4222 has a rule for the apps and 7777
+        # (the exporter, ADR-083) one for the namespace `monitoring` alone; the monitor port 8222 (also on Service
+        # nats-headless) and 6222 stay closed to other pods; kubelet probes are host traffic, which Cilium admits. prune
+        # is false on this Application, so deleting the policy from these values leaves it in the cluster until someone
+        # deletes it by hand.
         extraResources:
           - apiVersion: networking.k8s.io/v1
             kind: NetworkPolicy
@@ -131,6 +144,15 @@ spec:
                         matchLabels:
                           app.kubernetes.io/name: nats
                           app.kubernetes.io/component: nats-box
+                # The metrics scrape (ADR-083): any pod of the namespace `monitoring`, none of `bf` or elsewhere. The namespace
+                # label is the one Kubernetes sets itself, so no pod can claim it.
+                - ports:
+                    - protocol: TCP
+                      port: 7777
+                  from:
+                    - namespaceSelector:
+                        matchLabels:
+                          kubernetes.io/metadata.name: monitoring
   destination:
     server: https://kubernetes.default.svc
     namespace: bf

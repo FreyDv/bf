@@ -1,0 +1,779 @@
+# Values of the grafana chart (grafana-community), read by deploy/argocd/grafana.yaml (ADR-083, backlog MON-1). This is a
+# values file, not a Kubernetes object: the root Application reads only deploy/argocd.
+#
+# One Grafana for metrics and, later, logs (OBS-2 adds a Loki datasource beside the Prometheus one). It is the window
+# and the alert engine, not a store: the data is in Prometheus. Its own state (users, alert state, silences) is a small
+# SQLite file on the 1Gi volume below, which survives a restart.
+#
+# Everything Grafana is told at start is a file in git: the datasource, the dashboard, the alert rules, the contact
+# point and the notification policy. Nothing is configured by hand in the UI, so a lost volume loses only history.
+#
+# The requests are estimates, not measurements, and there are no limits (see prometheus-values.yaml); MON-2 replaces them.
+
+# One volume, one pod: a new pod cannot start while the old one still holds the volume, so the old one is stopped first.
+deploymentStrategy:
+  type: Recreate
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 256Mi
+
+persistence:
+  enabled: true
+  size: 1Gi
+  # Retain: the volume outlives the PVC and the Application, and is billed until the owner deletes it by hand (runbook
+  # malinina-kubernetes.md, "Мониторинг"). The owner asked that alert state, silences and users be kept (2026-11-18).
+  storageClassName: do-block-storage-retain
+
+# Grafana never calls the Kubernetes API (no sidecar, no discovery): no token in the pod, no ClusterRole (the chart's own
+# one is empty), and no helm test pod with its bats image.
+automountServiceAccountToken: false
+rbac:
+  create: false
+testFramework:
+  enabled: false
+
+# The pod's fsGroup already makes the volume writable for Grafana (472), so the root init container that chowns it, and
+# the busybox image it pulls, are not needed.
+initChownData:
+  enabled: false
+
+# The sealed secret holds the five values of this stack (source file deploy/monitoring/.env.grafana.production, the seal
+# command is in the runbook): GF_AUTH_GOOGLE_CLIENT_ID, GF_AUTH_GOOGLE_CLIENT_SECRET, GF_SECURITY_ADMIN_PASSWORD,
+# TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID. All become environment variables; Grafana reads the GF_* ones as settings, and the
+# provisioning file of the contact point expands the other two. The secret is a separate source of the Application
+# (deploy/monitoring/grafana-secret/), so the sync fails loudly while it does not exist.
+envFromSecret: grafana-env
+
+# The admin password comes from the same secret. The chart would otherwise generate a password of its own and set it
+# as an explicit variable, which wins over `envFromSecret`. The user name is a plain value, not a secret.
+admin:
+  existingSecret: grafana-env
+  passwordKey: GF_SECURITY_ADMIN_PASSWORD
+env:
+  GF_SECURITY_ADMIN_USER: admin
+
+grafana.ini:
+  server:
+    # The public address (ADR-083). Grafana builds the OAuth redirect from it: https://log.malinina.ca/login/google.
+    domain: log.malinina.ca
+    root_url: https://log.malinina.ca
+  analytics:
+    reporting_enabled: false
+    check_for_updates: false
+    check_for_plugin_updates: false
+  security:
+    cookie_secure: true
+    # Lax, not Strict: the redirect back from Google is a cross-site navigation, and Strict would drop the cookie.
+    cookie_samesite: lax
+    disable_gravatar: true
+    # Grafana's own policy against script injection, for a page that is public (the same reason as the separate origin).
+    content_security_policy: true
+  users:
+    allow_sign_up: false
+    viewers_can_edit: false
+  auth:
+    # No password form: Google is the only way in for a person. The admin password is a break-glass key for the API,
+    # used through `kubectl port-forward` by convention (the runbook); HTTP basic auth is not blocked, so it is valid on
+    # the public /api too, held only by its length, Grafana's brute-force lockout and the rate limit (ADR-083 item 9).
+    disable_login_form: true
+    # Since Grafana 10.1 an OAuth login finds a user by the provider's id alone, so the user created ahead of the first
+    # login (by e-mail, runbook) would not match and sign-up is off: the login would fail. The risk this flag guards
+    # against is a second provider claiming someone else's e-mail; Google is the only provider and verifies e-mails.
+    oauth_allow_insecure_email_lookup: true
+  auth.google:
+    enabled: true
+    # No new user is created by a login: the one allowed user exists before the first login, and any other Google
+    # account is refused. The client id and secret are in the sealed secret (GF_AUTH_GOOGLE_*).
+    allow_sign_up: false
+    scopes: openid email profile
+    use_pkce: true
+    # Google sends no role; without this every login would reset the owner's Admin role to the default Viewer.
+    skip_org_role_sync: true
+  # Rule evaluation and notification are Grafana's own (unified alerting); there is no Alertmanager.
+  unified_alerting:
+    enabled: true
+  snapshots:
+    external_enabled: false
+  dashboards:
+    default_home_dashboard_path: /var/lib/grafana/dashboards/default/consumption.json
+
+datasources:
+  datasources.yaml:
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        # The rules below name this uid.
+        uid: prometheus
+        type: prometheus
+        access: proxy
+        url: http://prometheus-server.monitoring.svc.cluster.local
+        isDefault: true
+        editable: false
+        jsonData:
+          timeInterval: 30s
+
+dashboardProviders:
+  dashboardproviders.yaml:
+    apiVersion: 1
+    providers:
+      - name: default
+        orgId: 1
+        type: file
+        disableDeletion: true
+        allowUiUpdates: false
+        options:
+          path: /var/lib/grafana/dashboards/default
+
+# The dashboard "Потребление" (CPU and memory by namespace, pod and node) is the ConfigMap `consumption-dashboard` under
+# extraObjects below; the chart mounts it into the provider `default`. A ConfigMap and not the chart's `dashboards`
+# value, because that value adds an init container with a curl image that fetches dashboards from the internet.
+dashboardsConfigMaps:
+  default: consumption-dashboard
+
+# The alert rules, the contact point and the policy as Grafana's provisioning files (the chart mounts each key of
+# `alerting` as a file). The text has no templates on purpose: the chart renders these values, and Grafana's own
+# double braces would have to be escaped twice; the message names the rule, and Grafana adds the labels (job, instance,
+# pod).
+#
+# The thresholds are choices recorded in ADR-083, not measurements. A rule that finds no data fires (NoData ->
+# Alerting) where silence would mean the thing is gone: the certificate probe, the scrape targets, Prometheus. The pod
+# restarts and the volumes only exist while there is something to count, so for them no data is no alert.
+#
+# Prometheus is not behind a second alarm: if Grafana itself is down, nothing is sent (Revisit when, ADR-083).
+alerting:
+  contactpoints.yaml:
+    apiVersion: 1
+    contactPoints:
+      - orgId: 1
+        name: telegram-owner
+        receivers:
+          - uid: telegram-owner
+            type: telegram
+            disableResolveMessage: false
+            settings:
+              # Expanded from the environment by Grafana when it reads this file (sealed secret), never written here.
+              bottoken: ${TELEGRAM_BOT_TOKEN}
+              chatid: ${TELEGRAM_CHAT_ID}
+  policies.yaml:
+    apiVersion: 1
+    policies:
+      - orgId: 1
+        receiver: telegram-owner
+        group_by: [alertname, grafana_folder]
+        group_wait: 30s
+        group_interval: 5m
+        repeat_interval: 12h
+        routes:
+          # The critical ones repeat every hour until someone acts.
+          - receiver: telegram-owner
+            object_matchers:
+              - [severity, "=", critical]
+            repeat_interval: 1h
+  rules.yaml:
+    apiVersion: 1
+    groups:
+      - orgId: 1
+        name: certificate
+        folder: Мониторинг
+        interval: 1m
+        rules:
+          - uid: cert-expiry-warning
+            title: Сертификат malinina.ca истекает менее чем через 30 дней
+            condition: C
+            for: 10m
+            noDataState: Alerting
+            execErrState: Error
+            labels:
+              severity: warning
+            annotations:
+              summary: Остаётся от 14 до 30 дней. Проверьте автопродление сертификата malinina-ca на балансировщике DigitalOcean (CERT-1, runbook malinina-kubernetes.md).
+            data:
+              - refId: A
+                relativeTimeRange: {from: 600, to: 0}
+                datasourceUid: prometheus
+                model:
+                  expr: (probe_ssl_earliest_cert_expiry{job="blackbox-tls"} - time()) / 86400
+                  instant: true
+                  range: false
+                  refId: A
+              - &reduce
+                refId: B
+                datasourceUid: __expr__
+                model:
+                  type: reduce
+                  expression: A
+                  reducer: last
+                  refId: B
+                  datasource: {type: __expr__, uid: __expr__}
+              - refId: C
+                datasourceUid: __expr__
+                model:
+                  type: threshold
+                  expression: B
+                  refId: C
+                  datasource: {type: __expr__, uid: __expr__}
+                  conditions:
+                    - evaluator: {type: within_range, params: [14, 30]}
+                      operator: {type: and}
+                      query: {params: [C]}
+                      reducer: {type: last, params: []}
+                      type: query
+          - uid: cert-expiry-critical
+            title: Сертификат malinina.ca истекает менее чем через 14 дней, либо проба не видит сертификат
+            condition: C
+            for: 5m
+            noDataState: Alerting
+            execErrState: Error
+            labels:
+              severity: critical
+            annotations:
+              summary: Менее 14 дней до конца срока, либо проба сертификата не вернула ничего (рукопожатие TLS не прошло, либо blackbox не опрошен). Сайт перестанет открываться после конца срока.
+            data:
+              - refId: A
+                relativeTimeRange: {from: 600, to: 0}
+                datasourceUid: prometheus
+                model:
+                  expr: (probe_ssl_earliest_cert_expiry{job="blackbox-tls"} - time()) / 86400
+                  instant: true
+                  range: false
+                  refId: A
+              - *reduce
+              - refId: C
+                datasourceUid: __expr__
+                model:
+                  type: threshold
+                  expression: B
+                  refId: C
+                  datasource: {type: __expr__, uid: __expr__}
+                  conditions:
+                    - evaluator: {type: lt, params: [14]}
+                      operator: {type: and}
+                      query: {params: [C]}
+                      reducer: {type: last, params: []}
+                      type: query
+      - orgId: 1
+        name: cluster
+        folder: Мониторинг
+        interval: 1m
+        rules:
+          - uid: scrape-target-down
+            title: Цель сбора метрик недоступна
+            condition: C
+            for: 5m
+            noDataState: Alerting
+            execErrState: Error
+            labels:
+              severity: warning
+            annotations:
+              summary: Prometheus не может опросить цель (метка job называет её). Проверьте под этой цели.
+            data:
+              - refId: A
+                relativeTimeRange: {from: 600, to: 0}
+                datasourceUid: prometheus
+                model:
+                  expr: up
+                  instant: true
+                  range: false
+                  refId: A
+              - *reduce
+              - refId: C
+                datasourceUid: __expr__
+                model:
+                  type: threshold
+                  expression: B
+                  refId: C
+                  datasource: {type: __expr__, uid: __expr__}
+                  conditions:
+                    - evaluator: {type: lt, params: [1]}
+                      operator: {type: and}
+                      query: {params: [C]}
+                      reducer: {type: last, params: []}
+                      type: query
+          - uid: pod-restarting
+            title: Под перезапускается снова и снова
+            condition: C
+            for: 0s
+            noDataState: OK
+            execErrState: Error
+            labels:
+              severity: warning
+            annotations:
+              summary: Контейнер перезапустился три раза и больше за 30 минут (метки namespace, pod и container называют его). Посмотрите логи пода и kubectl describe pod.
+            data:
+              - refId: A
+                relativeTimeRange: {from: 600, to: 0}
+                datasourceUid: prometheus
+                model:
+                  expr: increase(kube_pod_container_status_restarts_total[30m])
+                  instant: true
+                  range: false
+                  refId: A
+              - *reduce
+              - refId: C
+                datasourceUid: __expr__
+                model:
+                  type: threshold
+                  expression: B
+                  refId: C
+                  datasource: {type: __expr__, uid: __expr__}
+                  conditions:
+                    - evaluator: {type: gt, params: [2]}
+                      operator: {type: and}
+                      query: {params: [C]}
+                      reducer: {type: last, params: []}
+                      type: query
+          - uid: pvc-filling
+            title: Том почти заполнен
+            condition: C
+            for: 15m
+            noDataState: OK
+            execErrState: Error
+            labels:
+              severity: warning
+            annotations:
+              summary: На томе осталось меньше 10% (метки namespace и persistentvolumeclaim называют его). У тома Prometheus это значит, что предел размера не удержал данные; полный том останавливает Prometheus.
+            data:
+              - refId: A
+                relativeTimeRange: {from: 600, to: 0}
+                datasourceUid: prometheus
+                model:
+                  expr: kubelet_volume_stats_available_bytes / kubelet_volume_stats_capacity_bytes
+                  instant: true
+                  range: false
+                  refId: A
+              - *reduce
+              - refId: C
+                datasourceUid: __expr__
+                model:
+                  type: threshold
+                  expression: B
+                  refId: C
+                  datasource: {type: __expr__, uid: __expr__}
+                  conditions:
+                    - evaluator: {type: lt, params: [0.1]}
+                      operator: {type: and}
+                      query: {params: [C]}
+                      reducer: {type: last, params: []}
+                      type: query
+          - uid: prometheus-down
+            title: Prometheus не отвечает или не отдаёт данные
+            condition: C
+            for: 5m
+            noDataState: Alerting
+            # Prometheus unreachable is exactly the case this rule is for, so a failed query is an alert, not an "Error".
+            execErrState: Alerting
+            labels:
+              severity: critical
+            annotations:
+              summary: Запрос к Prometheus не удался или пуст. Остальные алерты в это время ничего не видят. Проверьте под prometheus-server и его том в namespace monitoring.
+            data:
+              - refId: A
+                relativeTimeRange: {from: 600, to: 0}
+                datasourceUid: prometheus
+                model:
+                  expr: up{job="prometheus"}
+                  instant: true
+                  range: false
+                  refId: A
+              - *reduce
+              - refId: C
+                datasourceUid: __expr__
+                model:
+                  type: threshold
+                  expression: B
+                  refId: C
+                  datasource: {type: __expr__, uid: __expr__}
+                  conditions:
+                    - evaluator: {type: lt, params: [1]}
+                      operator: {type: and}
+                      query: {params: [C]}
+                      reducer: {type: last, params: []}
+                      type: query
+
+# The public address, through Traefik (ADR-083 supersedes ADR-043 item 5): the TLS ends on the balancer with the
+# wildcard certificate *.malinina.ca, as for the site (ADR-038), and the security headers are those of the entrypoint.
+# A separate subdomain, not a path of malinina.ca, so Grafana's session cookie belongs to its own origin and a script
+# injected into the site cannot ride on it.
+ingress:
+  enabled: true
+  ingressClassName: traefik
+  hosts:
+    - log.malinina.ca
+  path: /
+  pathType: Prefix
+  annotations:
+    # <namespace>-<name>@kubernetescrd: the Middleware under extraObjects below.
+    traefik.ingress.kubernetes.io/router.middlewares: monitoring-grafana-rate-limit@kubernetescrd
+
+extraObjects:
+  - apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: consumption-dashboard
+      namespace: monitoring
+    data:
+      # The chart renders extraObjects as templates, so the double braces of Grafana's legend format are written as a
+      # Helm raw string and come out as plain `{{namespace}}`.
+      consumption.json: |
+          {
+           "uid": "consumption",
+           "title": "Потребление",
+           "tags": [
+            "monitoring"
+           ],
+           "timezone": "browser",
+           "schemaVersion": 39,
+           "version": 1,
+           "refresh": "1m",
+           "time": {
+            "from": "now-6h",
+            "to": "now"
+           },
+           "templating": {
+            "list": [
+             {
+              "name": "namespace",
+              "label": "Namespace",
+              "type": "query",
+              "datasource": {
+               "type": "prometheus",
+               "uid": "prometheus"
+              },
+              "query": {
+               "query": "label_values(container_memory_working_set_bytes, namespace)",
+               "refId": "ns"
+              },
+              "definition": "label_values(container_memory_working_set_bytes, namespace)",
+              "refresh": 2,
+              "multi": true,
+              "includeAll": true,
+              "allValue": ".+",
+              "current": {
+               "selected": true,
+               "text": "All",
+               "value": "$__all"
+              },
+              "sort": 1
+             }
+            ]
+           },
+           "panels": [
+            {
+             "id": 1,
+             "type": "timeseries",
+             "title": "CPU по namespace (ядра)",
+             "description": "Сумма использования процессора контейнерами; 1 = одно ядро.",
+             "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus"
+             },
+             "gridPos": {
+              "h": 8,
+              "w": 12,
+              "x": 0,
+              "y": 0
+             },
+             "fieldConfig": {
+              "defaults": {
+               "unit": "short",
+               "min": 0
+              },
+              "overrides": []
+             },
+             "options": {
+              "legend": {
+               "displayMode": "table",
+               "placement": "bottom",
+               "calcs": [
+                "lastNotNull",
+                "max"
+               ]
+              },
+              "tooltip": {
+               "mode": "multi",
+               "sort": "desc"
+              }
+             },
+             "targets": [
+              {
+               "refId": "A",
+               "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+               },
+               "expr": "sum by (namespace) (rate(container_cpu_usage_seconds_total{container!=\"\", container!=\"POD\"}[5m]))",
+               "legendFormat": "{{`{{namespace}}`}}",
+               "range": true
+              }
+             ]
+            },
+            {
+             "id": 2,
+             "type": "timeseries",
+             "title": "Память по namespace",
+             "description": "Рабочий набор памяти контейнеров (working set): то, что ядро не вытеснит.",
+             "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus"
+             },
+             "gridPos": {
+              "h": 8,
+              "w": 12,
+              "x": 12,
+              "y": 0
+             },
+             "fieldConfig": {
+              "defaults": {
+               "unit": "bytes",
+               "min": 0
+              },
+              "overrides": []
+             },
+             "options": {
+              "legend": {
+               "displayMode": "table",
+               "placement": "bottom",
+               "calcs": [
+                "lastNotNull",
+                "max"
+               ]
+              },
+              "tooltip": {
+               "mode": "multi",
+               "sort": "desc"
+              }
+             },
+             "targets": [
+              {
+               "refId": "A",
+               "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+               },
+               "expr": "sum by (namespace) (container_memory_working_set_bytes{container!=\"\", container!=\"POD\"})",
+               "legendFormat": "{{`{{namespace}}`}}",
+               "range": true
+              }
+             ]
+            },
+            {
+             "id": 3,
+             "type": "timeseries",
+             "title": "CPU по подам (ядра)",
+             "description": "Выбор namespace - переменная вверху.",
+             "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus"
+             },
+             "gridPos": {
+              "h": 8,
+              "w": 12,
+              "x": 0,
+              "y": 8
+             },
+             "fieldConfig": {
+              "defaults": {
+               "unit": "short",
+               "min": 0
+              },
+              "overrides": []
+             },
+             "options": {
+              "legend": {
+               "displayMode": "table",
+               "placement": "bottom",
+               "calcs": [
+                "lastNotNull",
+                "max"
+               ]
+              },
+              "tooltip": {
+               "mode": "multi",
+               "sort": "desc"
+              }
+             },
+             "targets": [
+              {
+               "refId": "A",
+               "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+               },
+               "expr": "sum by (namespace, pod) (rate(container_cpu_usage_seconds_total{container!=\"\", container!=\"POD\", namespace=~\"$namespace\"}[5m]))",
+               "legendFormat": "{{`{{namespace}}`}}/{{`{{pod}}`}}",
+               "range": true
+              }
+             ]
+            },
+            {
+             "id": 4,
+             "type": "timeseries",
+             "title": "Память по подам",
+             "description": "",
+             "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus"
+             },
+             "gridPos": {
+              "h": 8,
+              "w": 12,
+              "x": 12,
+              "y": 8
+             },
+             "fieldConfig": {
+              "defaults": {
+               "unit": "bytes",
+               "min": 0
+              },
+              "overrides": []
+             },
+             "options": {
+              "legend": {
+               "displayMode": "table",
+               "placement": "bottom",
+               "calcs": [
+                "lastNotNull",
+                "max"
+               ]
+              },
+              "tooltip": {
+               "mode": "multi",
+               "sort": "desc"
+              }
+             },
+             "targets": [
+              {
+               "refId": "A",
+               "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+               },
+               "expr": "sum by (namespace, pod) (container_memory_working_set_bytes{container!=\"\", container!=\"POD\", namespace=~\"$namespace\"})",
+               "legendFormat": "{{`{{namespace}}`}}/{{`{{pod}}`}}",
+               "range": true
+              }
+             ]
+            },
+            {
+             "id": 5,
+             "type": "timeseries",
+             "title": "CPU по узлам",
+             "description": "Доля занятого процессора узла; считает node-exporter.",
+             "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus"
+             },
+             "gridPos": {
+              "h": 8,
+              "w": 12,
+              "x": 0,
+              "y": 16
+             },
+             "fieldConfig": {
+              "defaults": {
+               "unit": "percentunit",
+               "min": 0
+              },
+              "overrides": []
+             },
+             "options": {
+              "legend": {
+               "displayMode": "table",
+               "placement": "bottom",
+               "calcs": [
+                "lastNotNull",
+                "max"
+               ]
+              },
+              "tooltip": {
+               "mode": "multi",
+               "sort": "desc"
+              }
+             },
+             "targets": [
+              {
+               "refId": "A",
+               "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+               },
+               "expr": "1 - avg by (node) (rate(node_cpu_seconds_total{mode=\"idle\"}[5m]))",
+               "legendFormat": "{{`{{node}}`}}",
+               "range": true
+              }
+             ]
+            },
+            {
+             "id": 6,
+             "type": "timeseries",
+             "title": "Память по узлам",
+             "description": "Доля занятой памяти узла: всё, кроме доступной (MemAvailable).",
+             "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus"
+             },
+             "gridPos": {
+              "h": 8,
+              "w": 12,
+              "x": 12,
+              "y": 16
+             },
+             "fieldConfig": {
+              "defaults": {
+               "unit": "percentunit",
+               "min": 0
+              },
+              "overrides": []
+             },
+             "options": {
+              "legend": {
+               "displayMode": "table",
+               "placement": "bottom",
+               "calcs": [
+                "lastNotNull",
+                "max"
+               ]
+              },
+              "tooltip": {
+               "mode": "multi",
+               "sort": "desc"
+              }
+             },
+             "targets": [
+              {
+               "refId": "A",
+               "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+               },
+               "expr": "1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes",
+               "legendFormat": "{{`{{node}}`}}",
+               "range": true
+              }
+             ]
+            }
+           ]
+          }
+  # The same limit as the application chart renders for the site (INGRESS-1): per client IP, the rightmost
+  # X-Forwarded-For entry, which the balancer appended and a client cannot forge (the check on the cluster: runbook
+  # malinina-kubernetes.md, "Лимит частоты и IP клиента"); per Traefik pod, so with two pods a client gets about twice
+  # this. One person uses the page and a dashboard sends a handful of queries at once, so the average is modest and the
+  # burst covers a cold load of the scripts.
+  - apiVersion: traefik.io/v1alpha1
+    kind: Middleware
+    metadata:
+      name: grafana-rate-limit
+      namespace: monitoring
+      annotations:
+        # Before the Ingress that names it: a router pointing at a missing middleware answers with an error.
+        argocd.argoproj.io/sync-wave: "-1"
+    spec:
+      rateLimit:
+        average: 20
+        burst: 60
+        period: 1s
+        sourceCriterion:
+          ipStrategy:
+            depth: 1
