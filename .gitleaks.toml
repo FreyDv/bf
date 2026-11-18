@@ -49,6 +49,25 @@ paths = ['''(.*/)?(standard|stack)\.manifest\.json$''']
 regexTarget = "line"
 regexes = ['''^\s*"[^"]+":\s*"[a-f0-9]{64}",?\s*$''']
 
+# Repo exception (standard.manifest.json `exceptions`, ADR-060; approved by the owner 2026-11-18):
+# a SealedSecret manifest holds kubeseal ciphertext under the plain key names
+# (`GF_AUTH_GOOGLE_CLIENT_SECRET: AgB...`), and `generic-api-key` reads a key word plus a long
+# high-entropy value as a credential. Scoped by path AND line, like the entry above: only the
+# files `scripts/seal-secret.ts` writes, and only a line whose whole value has the kubeseal shape
+# (base64 starting "Ag" or "AQ", 300+ characters; the script's CIPHERTEXT pattern). A plain value
+# pasted into such a file is shorter or differently shaped and is still reported; every
+# named-vendor rule still fires on these files.
+[[allowlists]]
+description = "kubeseal ciphertext in SealedSecret manifests only."
+targetRules = ["generic-api-key"]
+condition = "AND"
+paths = [
+  '''(.*/)?deploy/apps/[^/]+/secrets\.yaml$''',
+  '''(.*/)?deploy/monitoring/grafana-secret/[^/]+\.yaml$''',
+]
+regexTarget = "line"
+regexes = ['''^\s*[A-Z_][A-Z0-9_]*:\s*A[gQ][A-Za-z0-9+/]{298,}={0,2}\s*$''']
+
 # Add repo-specific vendor-key rules below (optional), e.g.:
 # [[rules]]
 # id = "vendor-api-key"
