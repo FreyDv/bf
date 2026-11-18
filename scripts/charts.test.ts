@@ -1050,7 +1050,14 @@ describe('monitoring Applications (ADR-083, backlog MON-1)', () => {
       ) as { title: string; panels: { targets: { expr: string; legendFormat?: string }[] }[] };
       assert.equal(dashboard.title, 'Postgres');
       const targets = dashboard.panels.flatMap((panel) => panel.targets);
-      for (const target of targets) assert.match(target.expr, /job="postgres-exporter"/);
+      // Every query names its source: the exporter, or DigitalOcean's endpoint for the server row.
+      for (const target of targets) assert.match(target.expr, /job="(postgres-exporter|bfdb-do)"/);
+      assert.ok(
+        targets.some((target) =>
+          target.expr.includes('disk_used{job="bfdb-do", path="/var/lib/pgsql"}'),
+        ),
+        'the disk of the data volume is on the dashboard',
+      );
       assert.ok(
         targets.some((target) => target.legendFormat === '{{state}}'),
         'the escape of the template survives',
@@ -1137,12 +1144,13 @@ describe('monitoring Applications (ADR-083, backlog MON-1)', () => {
       assert.match(contact, /chatid: \$\{TELEGRAM_CHAT_ID\}/);
     });
 
-    it('provisions the Prometheus datasource, the eight alert rules and a Telegram policy from files', () => {
+    it('provisions the Prometheus datasource, the nine alert rules and a Telegram policy from files', () => {
       const config = named(grafanaOutput, 'ConfigMap', 'grafana');
       assert.match(blockOf(config, 'datasources.yaml'), /uid: prometheus\n/);
       const rules = blockOf(config, 'rules.yaml');
       assert.deepEqual([...rules.matchAll(/^ {4}uid: (\S+)$/gm)].map((match) => match[1]).sort(), [
         'bfdb-connections-high',
+        'bfdb-disk-filling',
         'bfdb-unreachable',
         'cert-expiry-critical',
         'cert-expiry-warning',
@@ -1151,7 +1159,7 @@ describe('monitoring Applications (ADR-083, backlog MON-1)', () => {
         'pvc-filling',
         'scrape-target-down',
       ]);
-      assert.equal(rules.match(/datasourceUid: prometheus\n/g)?.length, 8);
+      assert.equal(rules.match(/datasourceUid: prometheus\n/g)?.length, 9);
       // 30 and 14 days for the certificate (ADR-083), and Prometheus itself failing is an alert, not an "Error".
       assert.match(rules, /params:\n\s+- 14\n\s+- 30\n\s+type: within_range/);
       assert.match(rules, /params:\n\s+- 14\n\s+type: lt/);

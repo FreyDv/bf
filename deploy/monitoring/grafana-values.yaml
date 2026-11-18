@@ -481,6 +481,41 @@ alerting:
                       query: {params: [C]}
                       reducer: {type: last, params: []}
                       type: query
+          # The volume of Postgres' data on the database server, from DigitalOcean's endpoint (job bfdb-do). A full
+          # disk stops every write; a replication slot whose consumer stopped fills it without a limit (ADR-021).
+          - uid: bfdb-disk-filling
+            title: Диск bfdb занят больше 80%
+            condition: C
+            for: 10m
+            noDataState: OK
+            execErrState: Error
+            labels:
+              severity: critical
+            annotations:
+              summary: На томе данных Postgres (/var/lib/pgsql) сервера bfdb занято больше 80%. Посмотрите на дашборде Postgres размер баз и WAL в слотах репликации; если растёт слот, остановлен его потребитель (Debezium). Увеличить диск - в панели DO, это стоит денег.
+            data:
+              - refId: A
+                relativeTimeRange: {from: 600, to: 0}
+                datasourceUid: prometheus
+                model:
+                  expr: disk_used{job="bfdb-do", path="/var/lib/pgsql"} / disk_total{job="bfdb-do", path="/var/lib/pgsql"}
+                  instant: true
+                  range: false
+                  refId: A
+              - *reduce
+              - refId: C
+                datasourceUid: __expr__
+                model:
+                  type: threshold
+                  expression: B
+                  refId: C
+                  datasource: {type: __expr__, uid: __expr__}
+                  conditions:
+                    - evaluator: {type: gt, params: [0.8]}
+                      operator: {type: and}
+                      query: {params: [C]}
+                      reducer: {type: last, params: []}
+                      type: query
 
 # The public address, through Traefik (ADR-083 supersedes ADR-043 item 5): the TLS ends on the balancer with the
 # wildcard certificate *.malinina.ca, as for the site (ADR-038), and the security headers are those of the entrypoint.
@@ -1067,7 +1102,7 @@ extraObjects:
               "h": 4,
               "w": 4,
               "x": 0,
-              "y": 0
+              "y": 4
              },
              "options": {
               "reduceOptions": {
@@ -1142,7 +1177,7 @@ extraObjects:
               "h": 4,
               "w": 4,
               "x": 4,
-              "y": 0
+              "y": 4
              },
              "options": {
               "reduceOptions": {
@@ -1206,7 +1241,7 @@ extraObjects:
               "h": 4,
               "w": 4,
               "x": 8,
-              "y": 0
+              "y": 4
              },
              "options": {
               "reduceOptions": {
@@ -1271,7 +1306,7 @@ extraObjects:
               "h": 4,
               "w": 4,
               "x": 12,
-              "y": 0
+              "y": 4
              },
              "options": {
               "reduceOptions": {
@@ -1327,7 +1362,7 @@ extraObjects:
               "h": 4,
               "w": 4,
               "x": 16,
-              "y": 0
+              "y": 4
              },
              "options": {
               "reduceOptions": {
@@ -1382,7 +1417,7 @@ extraObjects:
              "id": 6,
              "type": "stat",
              "title": "WAL в слотах репликации",
-             "description": "Сколько WAL держат слоты репликации (pg_wal_lsn_diff). Слот Debezium появится в CDC-2; до тех пор 0. Остановленный потребитель копит WAL на диске базы без предела (ADR-021), алерт - CDC-3.",
+             "description": "Сколько WAL держат слоты репликации (pg_wal_lsn_diff). Сейчас это только pghoard_local - агент бэкапов DigitalOcean, сотни байт; слот Debezium появится в CDC-2. Остановленный потребитель копит WAL на диске базы без предела (ADR-021), алерт - CDC-3.",
              "datasource": {
               "type": "prometheus",
               "uid": "prometheus"
@@ -1391,7 +1426,7 @@ extraObjects:
               "h": 4,
               "w": 4,
               "x": 20,
-              "y": 0
+              "y": 4
              },
              "options": {
               "reduceOptions": {
@@ -1455,7 +1490,7 @@ extraObjects:
               "h": 8,
               "w": 12,
               "x": 0,
-              "y": 4
+              "y": 8
              },
              "fieldConfig": {
               "defaults": {
@@ -1516,7 +1551,7 @@ extraObjects:
               "h": 8,
               "w": 12,
               "x": 12,
-              "y": 4
+              "y": 8
              },
              "fieldConfig": {
               "defaults": {
@@ -1577,7 +1612,7 @@ extraObjects:
               "h": 8,
               "w": 12,
               "x": 0,
-              "y": 12
+              "y": 16
              },
              "fieldConfig": {
               "defaults": {
@@ -1656,7 +1691,7 @@ extraObjects:
               "h": 8,
               "w": 12,
               "x": 12,
-              "y": 12
+              "y": 16
              },
              "fieldConfig": {
               "defaults": {
@@ -1708,7 +1743,7 @@ extraObjects:
               "h": 8,
               "w": 12,
               "x": 0,
-              "y": 20
+              "y": 24
              },
              "fieldConfig": {
               "defaults": {
@@ -1760,7 +1795,7 @@ extraObjects:
               "h": 8,
               "w": 12,
               "x": 12,
-              "y": 20
+              "y": 24
              },
              "fieldConfig": {
               "defaults": {
@@ -1812,7 +1847,7 @@ extraObjects:
               "h": 8,
               "w": 12,
               "x": 0,
-              "y": 28
+              "y": 32
              },
              "fieldConfig": {
               "defaults": {
@@ -1873,7 +1908,7 @@ extraObjects:
               "h": 8,
               "w": 12,
               "x": 12,
-              "y": 28
+              "y": 32
              },
              "fieldConfig": {
               "defaults": {
@@ -1925,7 +1960,7 @@ extraObjects:
               "h": 8,
               "w": 12,
               "x": 0,
-              "y": 36
+              "y": 40
              },
              "fieldConfig": {
               "defaults": {
@@ -1961,6 +1996,672 @@ extraObjects:
                },
                "expr": "max by (datname, state) (pg_stat_activity_max_tx_duration{job=\"postgres-exporter\"})",
                "legendFormat": "{{`{{datname}}`}} {{`{{state}}`}}"
+              }
+             ]
+            },
+            {
+             "id": 16,
+             "type": "stat",
+             "title": "Сервер базы: CPU",
+             "description": "Загрузка процессора сервера базы, все ядра. Сервер базы bfdb, эндпоинт метрик DigitalOcean (задание bfdb-do, ADR-086).",
+             "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus"
+             },
+             "gridPos": {
+              "h": 4,
+              "w": 6,
+              "x": 0,
+              "y": 0
+             },
+             "options": {
+              "reduceOptions": {
+               "calcs": [
+                "lastNotNull"
+               ],
+               "fields": "",
+               "values": false
+              },
+              "colorMode": "value",
+              "graphMode": "area",
+              "textMode": "value",
+              "justifyMode": "center"
+             },
+             "fieldConfig": {
+              "defaults": {
+               "unit": "percentunit",
+               "decimals": 0,
+               "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                 {
+                  "color": "green",
+                  "value": null
+                 },
+                 {
+                  "color": "orange",
+                  "value": 0.6
+                 },
+                 {
+                  "color": "red",
+                  "value": 0.8
+                 }
+                ]
+               }
+              },
+              "overrides": []
+             },
+             "targets": [
+              {
+               "refId": "A",
+               "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+               },
+               "expr": "(100 - cpu_usage_idle{job=\"bfdb-do\", cpu=\"cpu-total\"}) / 100",
+               "instant": true,
+               "range": false
+              }
+             ]
+            },
+            {
+             "id": 17,
+             "type": "stat",
+             "title": "Сервер базы: память",
+             "description": "Занятая память сервера базы. Postgres держит в ней кэш страниц, поэтому высокое значение само по себе не тревожно. Сервер базы bfdb, эндпоинт метрик DigitalOcean (задание bfdb-do, ADR-086).",
+             "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus"
+             },
+             "gridPos": {
+              "h": 4,
+              "w": 6,
+              "x": 6,
+              "y": 0
+             },
+             "options": {
+              "reduceOptions": {
+               "calcs": [
+                "lastNotNull"
+               ],
+               "fields": "",
+               "values": false
+              },
+              "colorMode": "value",
+              "graphMode": "area",
+              "textMode": "value",
+              "justifyMode": "center"
+             },
+             "fieldConfig": {
+              "defaults": {
+               "unit": "percentunit",
+               "decimals": 0,
+               "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                 {
+                  "color": "green",
+                  "value": null
+                 },
+                 {
+                  "color": "orange",
+                  "value": 0.6
+                 },
+                 {
+                  "color": "red",
+                  "value": 0.8
+                 }
+                ]
+               }
+              },
+              "overrides": []
+             },
+             "targets": [
+              {
+               "refId": "A",
+               "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+               },
+               "expr": "mem_used_percent{job=\"bfdb-do\"} / 100",
+               "instant": true,
+               "range": false
+              }
+             ]
+            },
+            {
+             "id": 18,
+             "type": "stat",
+             "title": "Диск базы занят",
+             "description": "Доля занятого места на томе данных Postgres (/var/lib/pgsql). Выше 80% - алерт. Сюда же пишется WAL, который держат слоты репликации. Сервер базы bfdb, эндпоинт метрик DigitalOcean (задание bfdb-do, ADR-086).",
+             "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus"
+             },
+             "gridPos": {
+              "h": 4,
+              "w": 6,
+              "x": 12,
+              "y": 0
+             },
+             "options": {
+              "reduceOptions": {
+               "calcs": [
+                "lastNotNull"
+               ],
+               "fields": "",
+               "values": false
+              },
+              "colorMode": "value",
+              "graphMode": "area",
+              "textMode": "value",
+              "justifyMode": "center"
+             },
+             "fieldConfig": {
+              "defaults": {
+               "unit": "percentunit",
+               "decimals": 1,
+               "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                 {
+                  "color": "green",
+                  "value": null
+                 },
+                 {
+                  "color": "orange",
+                  "value": 0.6
+                 },
+                 {
+                  "color": "red",
+                  "value": 0.8
+                 }
+                ]
+               }
+              },
+              "overrides": []
+             },
+             "targets": [
+              {
+               "refId": "A",
+               "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+               },
+               "expr": "disk_used{job=\"bfdb-do\", path=\"/var/lib/pgsql\"} / disk_total{job=\"bfdb-do\", path=\"/var/lib/pgsql\"}",
+               "instant": true,
+               "range": false
+              }
+             ]
+            },
+            {
+             "id": 19,
+             "type": "stat",
+             "title": "Диск базы свободно",
+             "description": "Свободно на томе данных Postgres из всего его объёма. Сервер базы bfdb, эндпоинт метрик DigitalOcean (задание bfdb-do, ADR-086).",
+             "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus"
+             },
+             "gridPos": {
+              "h": 4,
+              "w": 6,
+              "x": 18,
+              "y": 0
+             },
+             "options": {
+              "reduceOptions": {
+               "calcs": [
+                "lastNotNull"
+               ],
+               "fields": "",
+               "values": false
+              },
+              "colorMode": "value",
+              "graphMode": "area",
+              "textMode": "value",
+              "justifyMode": "center"
+             },
+             "fieldConfig": {
+              "defaults": {
+               "unit": "bytes",
+               "decimals": 1,
+               "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                 {
+                  "color": "blue",
+                  "value": null
+                 }
+                ]
+               }
+              },
+              "overrides": []
+             },
+             "targets": [
+              {
+               "refId": "A",
+               "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+               },
+               "expr": "disk_free{job=\"bfdb-do\", path=\"/var/lib/pgsql\"}",
+               "instant": true,
+               "range": false
+              }
+             ]
+            },
+            {
+             "id": 20,
+             "type": "timeseries",
+             "title": "Сервер базы: CPU",
+             "description": "Загрузка процессора: пользовательские процессы, ядро, ожидание диска (iowait) и украденное гипервизором (steal). Сервер базы bfdb, эндпоинт метрик DigitalOcean (задание bfdb-do, ADR-086).",
+             "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus"
+             },
+             "gridPos": {
+              "h": 8,
+              "w": 12,
+              "x": 0,
+              "y": 48
+             },
+             "fieldConfig": {
+              "defaults": {
+               "unit": "percent",
+               "min": 0,
+               "custom": {
+                "fillOpacity": 30,
+                "showPoints": "never",
+                "stacking": {
+                 "mode": "normal"
+                }
+               }
+              },
+              "overrides": []
+             },
+             "options": {
+              "legend": {
+               "displayMode": "table",
+               "placement": "right",
+               "calcs": [
+                "lastNotNull",
+                "max"
+               ]
+              },
+              "tooltip": {
+               "mode": "multi",
+               "sort": "desc"
+              }
+             },
+             "targets": [
+              {
+               "refId": "A",
+               "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+               },
+               "expr": "cpu_usage_user{job=\"bfdb-do\", cpu=\"cpu-total\"}",
+               "legendFormat": "user"
+              },
+              {
+               "refId": "B",
+               "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+               },
+               "expr": "cpu_usage_system{job=\"bfdb-do\", cpu=\"cpu-total\"}",
+               "legendFormat": "system"
+              },
+              {
+               "refId": "C",
+               "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+               },
+               "expr": "cpu_usage_iowait{job=\"bfdb-do\", cpu=\"cpu-total\"}",
+               "legendFormat": "iowait"
+              },
+              {
+               "refId": "D",
+               "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+               },
+               "expr": "cpu_usage_steal{job=\"bfdb-do\", cpu=\"cpu-total\"}",
+               "legendFormat": "steal"
+              }
+             ]
+            },
+            {
+             "id": 21,
+             "type": "timeseries",
+             "title": "Сервер базы: память",
+             "description": "Занято, кэш и всего. Сервер базы bfdb, эндпоинт метрик DigitalOcean (задание bfdb-do, ADR-086).",
+             "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus"
+             },
+             "gridPos": {
+              "h": 8,
+              "w": 12,
+              "x": 12,
+              "y": 48
+             },
+             "fieldConfig": {
+              "defaults": {
+               "unit": "bytes",
+               "min": 0,
+               "custom": {
+                "fillOpacity": 10,
+                "showPoints": "never"
+               }
+              },
+              "overrides": []
+             },
+             "options": {
+              "legend": {
+               "displayMode": "table",
+               "placement": "right",
+               "calcs": [
+                "lastNotNull",
+                "max"
+               ]
+              },
+              "tooltip": {
+               "mode": "multi",
+               "sort": "desc"
+              }
+             },
+             "targets": [
+              {
+               "refId": "A",
+               "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+               },
+               "expr": "mem_used{job=\"bfdb-do\"}",
+               "legendFormat": "занято"
+              },
+              {
+               "refId": "B",
+               "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+               },
+               "expr": "mem_cached{job=\"bfdb-do\"}",
+               "legendFormat": "кэш"
+              },
+              {
+               "refId": "C",
+               "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+               },
+               "expr": "mem_total{job=\"bfdb-do\"}",
+               "legendFormat": "всего"
+              }
+             ]
+            },
+            {
+             "id": 22,
+             "type": "timeseries",
+             "title": "Диск базы",
+             "description": "Занято на томе данных Postgres и его объём. Сервер базы bfdb, эндпоинт метрик DigitalOcean (задание bfdb-do, ADR-086).",
+             "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus"
+             },
+             "gridPos": {
+              "h": 8,
+              "w": 12,
+              "x": 0,
+              "y": 56
+             },
+             "fieldConfig": {
+              "defaults": {
+               "unit": "bytes",
+               "min": 0,
+               "custom": {
+                "fillOpacity": 10,
+                "showPoints": "never"
+               }
+              },
+              "overrides": []
+             },
+             "options": {
+              "legend": {
+               "displayMode": "table",
+               "placement": "right",
+               "calcs": [
+                "lastNotNull",
+                "max"
+               ]
+              },
+              "tooltip": {
+               "mode": "multi",
+               "sort": "desc"
+              }
+             },
+             "targets": [
+              {
+               "refId": "A",
+               "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+               },
+               "expr": "disk_used{job=\"bfdb-do\", path=\"/var/lib/pgsql\"}",
+               "legendFormat": "занято"
+              },
+              {
+               "refId": "B",
+               "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+               },
+               "expr": "disk_total{job=\"bfdb-do\", path=\"/var/lib/pgsql\"}",
+               "legendFormat": "объём"
+              }
+             ]
+            },
+            {
+             "id": 23,
+             "type": "timeseries",
+             "title": "Сервер базы: load average",
+             "description": "Среднее число задач в очереди к процессору за 1, 5 и 15 минут; линия «ядер» - число vCPU. Load выше числа ядер долгое время - процессора не хватает. Сервер базы bfdb, эндпоинт метрик DigitalOcean (задание bfdb-do, ADR-086).",
+             "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus"
+             },
+             "gridPos": {
+              "h": 8,
+              "w": 12,
+              "x": 12,
+              "y": 56
+             },
+             "fieldConfig": {
+              "defaults": {
+               "unit": "short",
+               "min": 0,
+               "custom": {
+                "fillOpacity": 10,
+                "showPoints": "never"
+               }
+              },
+              "overrides": []
+             },
+             "options": {
+              "legend": {
+               "displayMode": "table",
+               "placement": "right",
+               "calcs": [
+                "lastNotNull",
+                "max"
+               ]
+              },
+              "tooltip": {
+               "mode": "multi",
+               "sort": "desc"
+              }
+             },
+             "targets": [
+              {
+               "refId": "A",
+               "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+               },
+               "expr": "system_load1{job=\"bfdb-do\"}",
+               "legendFormat": "1 мин"
+              },
+              {
+               "refId": "B",
+               "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+               },
+               "expr": "system_load5{job=\"bfdb-do\"}",
+               "legendFormat": "5 мин"
+              },
+              {
+               "refId": "C",
+               "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+               },
+               "expr": "system_load15{job=\"bfdb-do\"}",
+               "legendFormat": "15 мин"
+              },
+              {
+               "refId": "D",
+               "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+               },
+               "expr": "system_n_cpus{job=\"bfdb-do\"}",
+               "legendFormat": "ядер"
+              }
+             ]
+            },
+            {
+             "id": 24,
+             "type": "timeseries",
+             "title": "Сервер базы: чтение и запись диска",
+             "description": "Байт в секунду на системный диск сервера (vda), за 5 минут. Сервер базы bfdb, эндпоинт метрик DigitalOcean (задание bfdb-do, ADR-086).",
+             "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus"
+             },
+             "gridPos": {
+              "h": 8,
+              "w": 12,
+              "x": 0,
+              "y": 64
+             },
+             "fieldConfig": {
+              "defaults": {
+               "unit": "Bps",
+               "min": 0,
+               "custom": {
+                "fillOpacity": 10,
+                "showPoints": "never"
+               }
+              },
+              "overrides": []
+             },
+             "options": {
+              "legend": {
+               "displayMode": "table",
+               "placement": "right",
+               "calcs": [
+                "lastNotNull",
+                "max"
+               ]
+              },
+              "tooltip": {
+               "mode": "multi",
+               "sort": "desc"
+              }
+             },
+             "targets": [
+              {
+               "refId": "A",
+               "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+               },
+               "expr": "rate(diskio_read_bytes{job=\"bfdb-do\", name=\"vda\"}[5m])",
+               "legendFormat": "чтение"
+              },
+              {
+               "refId": "B",
+               "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+               },
+               "expr": "rate(diskio_write_bytes{job=\"bfdb-do\", name=\"vda\"}[5m])",
+               "legendFormat": "запись"
+              }
+             ]
+            },
+            {
+             "id": 25,
+             "type": "timeseries",
+             "title": "Сервер базы: сеть",
+             "description": "Байт в секунду по интерфейсам сервера, за 5 минут. Сервер базы bfdb, эндпоинт метрик DigitalOcean (задание bfdb-do, ADR-086).",
+             "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus"
+             },
+             "gridPos": {
+              "h": 8,
+              "w": 12,
+              "x": 12,
+              "y": 64
+             },
+             "fieldConfig": {
+              "defaults": {
+               "unit": "Bps",
+               "min": 0,
+               "custom": {
+                "fillOpacity": 10,
+                "showPoints": "never"
+               }
+              },
+              "overrides": []
+             },
+             "options": {
+              "legend": {
+               "displayMode": "table",
+               "placement": "right",
+               "calcs": [
+                "lastNotNull",
+                "max"
+               ]
+              },
+              "tooltip": {
+               "mode": "multi",
+               "sort": "desc"
+              }
+             },
+             "targets": [
+              {
+               "refId": "A",
+               "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+               },
+               "expr": "rate(net_bytes_recv{job=\"bfdb-do\"}[5m])",
+               "legendFormat": "{{`{{interface}}`}} принято"
+              },
+              {
+               "refId": "B",
+               "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+               },
+               "expr": "rate(net_bytes_sent{job=\"bfdb-do\"}[5m])",
+               "legendFormat": "{{`{{interface}}`}} отправлено"
               }
              ]
             }
