@@ -1036,6 +1036,6 @@
   ],
   "exceptions": [
     { "kind": "content", "match": ".nvmrc", "reason": "ADR-007: Node 26 LTS; the standard's copy pins an older Node" },
-    { "kind": "content", "match": ".gitleaks.toml", "reason": "ADR-060: one added allowlist for kubeseal ciphertext lines in SealedSecret manifests (generic-api-key only, path AND line); owner approved 2026-11-18" }
+    { "kind": "content", "match": ".gitleaks.toml", "reason": "ADR-060: one added allowlist for kubeseal ciphertext lines in SealedSecret manifests (generic-api-key only, path AND line); owner approved 2026-11-18, widened to deploy/monitoring/bfdb the same day (ADR-086)" }
   ]
 }

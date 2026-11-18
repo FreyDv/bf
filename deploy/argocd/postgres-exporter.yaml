@@ -1,0 +1,70 @@
+# postgres_exporter in front of the managed database bfdb (ADR-083 item 10, ADR-086): the statistics only a query
+# sees - connections by state against the limit, transactions and rows per second, the cache hit ratio, the size of
+# each database, locks, deadlocks, temporary files, the oldest open transaction, and the replication slots with the
+# WAL they hold (the alert on retained WAL, CDC-3). Prometheus scrapes it (job `postgres-exporter` in
+# deploy/monitoring/prometheus-values.yaml). The root Application (root.yaml) reads this directory of `main`, so
+# merging this file creates the Application.
+#
+# Chart 8.2.5 (appVersion v0.20.1) was published 2026-11-10 and passed the 7 full days of ADR-005 on 2026-11-17; it is
+# the newest version. No digest is pinned for a third-party chart (ADR-076 covers only our own Dockerfiles).
+# `pnpm charts` renders exactly this chart with exactly these values (scripts/charts-check.ts).
+#
+# It logs in as the role monitor (database/roles/03-as-doadmin-monitor.sql: pg_monitor, no data, no writes) over the
+# private host with `verify-full` against the CA of the DigitalOcean project. The password (Secret bfdb-monitoring) and
+# the CA (ConfigMap bfdb-ca) come from deploy/monitoring/bfdb/, a source of the Application prometheus, which needs
+# both too; this pod waits until they exist.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: postgres-exporter
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://prometheus-community.github.io/helm-charts
+    chart: prometheus-postgres-exporter
+    targetRevision: 8.2.5
+    helm:
+      valuesObject:
+        # The Service is `postgres-exporter`; Prometheus finds the pod by its label, not by this name.
+        fullnameOverride: postgres-exporter
+        # It never calls the Kubernetes API.
+        rbac:
+          create: false
+        # An assumption, not a measurement; no limits (MON-2 replaces it).
+        resources:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+        config:
+          datasource:
+            # The private host of bfdb inside the VPC (runbook bfdb-postgres.md); the cluster is a trusted source.
+            host: private-bfdb-do-user-48015624-0.i.db.ondigitalocean.com
+            port: "25060"
+            database: bf
+            user: monitor
+            passwordSecret:
+              name: bfdb-monitoring
+              key: DATA_SOURCE_PASS
+            # The certificate names the private host (runbook bfdb-postgres.md), so the name is checked too (ADR-053).
+            sslmode: verify-full
+            extraParams: sslrootcert=/etc/bfdb-ca/ca.crt
+          # _dodb is DigitalOcean's own database: monitor may not connect to it, and its size is not ours to watch.
+          extraArgs:
+            - --exclude-databases=_dodb,template0,template1
+        extraVolumes:
+          - name: bfdb-ca
+            configMap:
+              name: bfdb-ca
+        extraVolumeMounts:
+          - name: bfdb-ca
+            mountPath: /etc/bfdb-ca
+            readOnly: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: false
+    syncOptions:
+      - CreateNamespace=true

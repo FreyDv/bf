@@ -38,6 +38,29 @@ server:
   # The ClusterIP Service is the only way in: no Ingress, the UI is reached with `kubectl port-forward` (ADR-083).
   service:
     type: ClusterIP
+  # The login of DigitalOcean's metrics endpoint of bfdb and the CA of the project (job `bfdb-do` below, ADR-086). Both
+  # come from deploy/monitoring/bfdb/, a source of this Application, so they exist before the pod starts. Only the two
+  # keys of the endpoint are mounted; the exporter's password in the same Secret stays out of this pod.
+  # Plain volumes, because the chart's extraSecretMounts cannot pick keys.
+  extraVolumes:
+    - name: bfdb-metrics
+      secret:
+        secretName: bfdb-monitoring
+        items:
+          - key: DO_METRICS_USERNAME
+            path: username
+          - key: DO_METRICS_PASSWORD
+            path: password
+    - name: bfdb-ca
+      configMap:
+        name: bfdb-ca
+  extraVolumeMounts:
+    - name: bfdb-metrics
+      mountPath: /etc/bfdb-metrics
+      readOnly: true
+    - name: bfdb-ca
+      mountPath: /etc/bfdb-ca
+      readOnly: true
 
 configmapReload:
   prometheus:
@@ -201,6 +224,43 @@ scrapeConfigs:
         target_label: pod
       - source_labels: [__meta_kubernetes_pod_node_name]
         target_label: node
+
+  # postgres_exporter in front of bfdb (ADR-086): the statistics of the managed database, read by the role monitor.
+  # Its `up` says the exporter answers; its pg_up says it reached the database (the alert "bfdb недоступна").
+  postgres-exporter:
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names: [monitoring]
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+        regex: prometheus-postgres-exporter
+        action: keep
+      - source_labels: [__meta_kubernetes_pod_container_port_name]
+        regex: http
+        action: keep
+      - source_labels: [__meta_kubernetes_namespace]
+        target_label: namespace
+      - source_labels: [__meta_kubernetes_pod_name]
+        target_label: pod
+      - source_labels: [__meta_kubernetes_pod_node_name]
+        target_label: node
+
+  # DigitalOcean's metrics endpoint of bfdb (ADR-086): the database server itself (CPU, memory, disk, load), which no
+  # query can see. The host is the public one from the API (`metrics_endpoints`; DigitalOcean documents no private
+  # one), the cluster passes as a trusted source of bfdb (rule `k8s`). Basic auth and the project's CA are the files
+  # the pod mounts from the Secret bfdb-monitoring and the ConfigMap bfdb-ca. Once a minute, as for the probe above.
+  bfdb-do:
+    scheme: https
+    scrape_interval: 1m
+    basic_auth:
+      username_file: /etc/bfdb-metrics/username
+      password_file: /etc/bfdb-metrics/password
+    tls_config:
+      ca_file: /etc/bfdb-ca/ca.crt
+    static_configs:
+      - targets:
+          - bfdb-do-user-48015624-0.i.db.ondigitalocean.com:9273
 
   # The certificate of the balancer, asked for from inside the cluster through the blackbox exporter, which only
   # completes a TLS handshake (module tls_expiry): a 404 or 5xx of the application does not hide the certificate.
