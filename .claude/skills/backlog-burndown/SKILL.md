@@ -1,6 +1,6 @@
 ---
 name: backlog-burndown
-description: Use when the owner wants to work the backlog down item by item - "close the backlog", "take the next item", "разгреби бэклог", "закрой следующий пункт". Opus orchestrates, Sonnet agents research and build through two workflows (at most 5 agents at once); the agent settles technical choices itself and asks the owner only about money, product and GitHub settings (ADR-063), and each item lands in main as its own squash-merged PR, merged by the agent on green CI, before the next one starts.
+description: Use when the owner wants to work the backlog down item by item - "close the backlog", "take the next item", "разгреби бэклог", "закрой следующий пункт". Opus orchestrates, Sonnet agents research and build through two workflows (at most 5 agents at once); every technical decision goes to the owner with options and a recommendation before it is taken (ADR-087), and each item lands in main as its own squash-merged PR, merged by the agent on green CI, before the next one starts.
 ---
 
 # backlog-burndown
@@ -9,13 +9,13 @@ One item at a time, fully closed, then the next. You (the main session) are the 
 must run on Opus; every worker is a Sonnet agent inside `.claude/workflows/backlog-prepare.js` and
 `.claude/workflows/backlog-execute.js`, which cap themselves at 5 concurrent agents.
 
-**Who decides (ADR-063).** You settle technical choices yourself, on your own recommendation, and
-record each where it belongs (an ADR says "Decided by: агент по поручению владельца, ADR-063").
-The owner decides only: new paid resources or DO spend; product and users (BDR, specs, personas);
-writes to GitHub settings and secrets; anything the owner explicitly kept. When the owner asks
-"help me choose" or "explain", explain and recommend - then wait for their answer. A deferral
-("decide later") is an answer: record it as a `[NEEDS DECISION]` marker or a backlog row, never
-drop it.
+**Who decides (ADR-087).** The owner decides every choice - technical ones included. You bring
+each one before it is taken: the fork in plain words, the options with their cost, and your
+recommendation worded so that "yes" accepts it. Then wait; nothing is built on a choice the owner
+has not answered. Facts are yours to find (Sonnet agents, the repo, the docs) - never ask the owner
+for a fact. Record each answer where it belongs, an ADR with "Decided by: владелец" and the owner's
+words. A deferral ("decide later") is an answer: record it as a `[NEEDS DECISION]` marker or a
+backlog row, never drop it. Push, PR and the squash-merge on green CI stay yours (ADR-063 item 1).
 
 Talk to the owner in Russian. Files follow AGENTS.md "Working language".
 
@@ -52,17 +52,16 @@ When it returns, read `brief` and `critique` yourself:
 
 ## Step 3 - Grill the owner (drill-me)
 
-Split `brief.decisions` (after step 2's fixes): technical ones you settle yourself on your
-recommendation (ADR-063) and list for the owner in step 7; only owner-level ones (see "Who decides")
-go to the owner. If none are owner-level, skip to step 5.
+Every entry of `brief.decisions` (after step 2's fixes) goes to the owner (ADR-087). If the list is
+empty, skip to step 5.
 
-For the owner-level ones, invoke the `drill-me` skill. The design tree is those decisions;
+Invoke the `drill-me` skill. The design tree is those decisions;
 `brief.settled` is never re-asked. Each round: the whole frontier, numbered, each with your
 recommendation, worded so "yes" accepts it. Lead with the plain-language `why`, then the options
 with cost where there is one.
 
 - Facts you are missing go to a Sonnet subagent (`Agent` with `model: "sonnet"`), never to the owner.
-- A decision that contradicts an Accepted ADR/BDR means superseding it: say so; a BDR, or an ADR on an owner-level matter, the owner decides; a technical ADR you supersede yourself with a new record.
+- A decision that contradicts an Accepted ADR/BDR means superseding it: say so; the owner decides it like any other choice, and the new record supersedes the old one.
 - New dependency, datastore, broker or paid service: its ADR becomes part of this item.
 - Loop until the frontier is empty and the owner confirms you understand each other.
 
@@ -74,8 +73,8 @@ line each and asks to confirm. Set
 (`.claude/elicitation/points.json`): `spec.scope,spec.acceptance,spec.unknowns` for a spec,
 `discover.materials,discover.decisions` for `docs/discovery/**`; records, personas and
 `PRODUCT.md` are already settled by `docs/adoption-provenance.md`. The confirmed list is the
-`decisions` object passed to step 6 - keys from the brief, values in the owner's words for the
-owner-level ones and your recommendation for the technical ones.
+`decisions` object passed to step 6 - keys from the brief, values in the owner's words (a "yes" to
+your recommendation is recorded as that recommendation).
 
 ## Step 5 - Branch and the writes only you may make
 
@@ -118,9 +117,10 @@ the owner relies on; an agent's "passed" is a claim until you saw it.
 
 ## Step 7 - Tell the owner
 
-In Russian, short: what changed (decision -> file), the technical choices you made and why,
-checks you saw pass, what was not verified, backlog rows filed, `advice` worth their attention.
-Do not ask; go on to step 8 (ADR-063).
+In Russian, short: what changed (owner's decision -> file), checks you saw pass, what was not
+verified, backlog rows filed, `advice` worth their attention. A choice the build forced that the
+owner has not answered is not reported here as done - stop and take it to them (ADR-087). Otherwise
+go on to step 8 without asking (ADR-063 item 1).
 
 ## Step 8 - Push and PR
 
