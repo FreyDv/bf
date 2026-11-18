@@ -1,0 +1,41 @@
+# Prometheus with kube-state-metrics and node-exporter (ADR-083, backlog MON-1). The root Application (root.yaml) reads
+# this directory of `main`, so merging this file creates the Application. Plain chart, server only: no operator, no CRDs,
+# no Alertmanager (the alerts are Grafana's), no Pushgateway. Values: deploy/monitoring/prometheus-values.yaml, so the
+# scrape jobs and their comments sit in one file of their own (the same layout as argo-cd.yaml). `pnpm charts` renders
+# this chart at this version with exactly that file (scripts/charts-check.ts).
+#
+# Chart 29.47.1 (appVersion v3.16.0) was published 2026-11-11 (02:08 UTC) and passed the 7 full days of ADR-005 on
+# 2026-11-18; it is the newest version past the window (29.47.2, from 2026-11-11 18:50 UTC, passes it later). It bundles
+# kube-state-metrics 9.0.0 (2026-11-04) and prometheus-node-exporter 5.1.0 (2026-11-10), both past the window too. Dates
+# are the `created` fields of the repository index. The images are the ones the chart names; no digest is pinned for a
+# third-party chart (ADR-076 covers only our own Dockerfiles).
+#
+# Namespace `monitoring` (ADR-083): one for the whole stack, so a NetworkPolicy can name it and OBS-2 puts Loki and
+# Alloy beside it. The Prometheus volume is 10Gi of do-block-storage-retain (paid, approved by the owner 2026-11-18).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: prometheus
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://prometheus-community.github.io/helm-charts
+      chart: prometheus
+      targetRevision: 29.47.1
+      helm:
+        valueFiles:
+          - $values/deploy/monitoring/prometheus-values.yaml
+    - repoURL: https://github.com/FreyDv/bf
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      # A chart change never deletes a monitoring object or its volume by itself; removing one is a person's decision.
+      prune: false
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

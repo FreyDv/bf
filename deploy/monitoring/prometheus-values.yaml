@@ -1,0 +1,223 @@
+# Values of the prometheus chart (server, kube-state-metrics, node-exporter), read by deploy/argocd/prometheus.yaml
+# (ADR-083, backlog MON-1). This is a values file, not a Kubernetes object: the root Application reads only
+# deploy/argocd, so nothing here is applied by itself.
+#
+# Prometheus pulls its own targets: six jobs below, no push, no Alertmanager. Alerts are Grafana's (grafana-values.yaml),
+# which queries this server.
+#
+# The requests are estimates, not measurements: the cluster has no metrics-server and there is nothing to measure
+# until this runs. No limits, as for NATS and Traefik (an OOM kill at a guessed ceiling loses the TSDB head).
+# MON-2 replaces both numbers by measured ones.
+
+# The two components of the chart that are not wanted: the alerts go through Grafana, and no job pushes metrics.
+alertmanager:
+  enabled: false
+prometheus-pushgateway:
+  enabled: false
+
+server:
+  global:
+    # Six jobs and about thirty pods: 30 s is cheap, and an alert that waits for two failed scrapes reacts in a minute.
+    scrape_interval: 30s
+    scrape_timeout: 10s
+    evaluation_interval: 1m
+  # Both limits apply, whichever is hit first: the time keeps a fortnight of history, the size keeps a cardinality
+  # spike from filling the volume (a full volume stops Prometheus). 8GB of 10Gi leaves room for the WAL and compaction.
+  retention: 15d
+  retentionSize: 8GB
+  persistentVolume:
+    enabled: true
+    size: 10Gi
+    # Retain: the volume outlives the PVC and the Application, and is billed until the owner deletes it by hand
+    # (runbook malinina-kubernetes.md, "Мониторинг"), the same as for NATS.
+    storageClass: do-block-storage-retain
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+  # The ClusterIP Service is the only way in: no Ingress, the UI is reached with `kubectl port-forward` (ADR-083).
+  service:
+    type: ClusterIP
+
+configmapReload:
+  prometheus:
+    resources:
+      requests:
+        cpu: 10m
+        memory: 16Mi
+
+kube-state-metrics:
+  # The chart's default lists 30 kinds, among them `secrets` and `configmaps`, and builds the ClusterRole from the list:
+  # the account could then read every Secret of the cluster, the sealing key of kube-system included. These six are
+  # all the alerts and the dashboard use (restarts and requests of pods, node and workload state, claims).
+  collectors:
+    - pods
+    - nodes
+    - deployments
+    - daemonsets
+    - statefulsets
+    - persistentvolumeclaims
+  resources:
+    requests:
+      cpu: 10m
+      memory: 64Mi
+
+prometheus-node-exporter:
+  # Listens on the address of the node inside the VPC instead of all interfaces: the pod runs in the host network
+  # (it reads the host's devices), so an open 0.0.0.0:9100 would be a port on the node itself.
+  service:
+    listenOnAllInterfaces: false
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+
+# The chart's default jobs find targets by annotation, in every namespace. They are off, so that a pod joins the
+# scrape only by a line in this file (and so no pod can start being scraped by an annotation of its own).
+# Targets are found by pod: the namespace, the pod label and the container port name pick them, and the pod and its
+# node become labels. No label carries user data (ADR-037).
+scrapeConfigs:
+  kubernetes-api-servers:
+    enabled: false
+  kubernetes-service-endpoints:
+    enabled: false
+  kubernetes-service-endpoints-slow:
+    enabled: false
+  prometheus-pushgateway:
+    enabled: false
+  kubernetes-services:
+    enabled: false
+  kubernetes-pods:
+    enabled: false
+  kubernetes-pods-slow:
+    enabled: false
+
+  # The server itself (default job, kept): the `up` of this job is the "Prometheus is gone" alert.
+  prometheus:
+    enabled: true
+
+  # The kubelet on every node, through the API server: only the volume series are kept, for the alert on a filling
+  # PVC (kubelet_volume_stats_*). The rest of the kubelet's several thousand series is nobody's question yet.
+  kubernetes-nodes:
+    enabled: true
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: kubelet_volume_stats_(available|capacity|used)_bytes
+        action: keep
+    post_relabel_configs: |
+      - source_labels: [__meta_kubernetes_node_name]
+        target_label: node
+
+  # The container CPU and memory per pod, for the consumption dashboard. cAdvisor exposes hundreds of families per
+  # container; the two used are kept.
+  kubernetes-nodes-cadvisor:
+    enabled: true
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: container_cpu_usage_seconds_total|container_memory_working_set_bytes
+        action: keep
+    post_relabel_configs: |
+      - source_labels: [__meta_kubernetes_node_name]
+        target_label: node
+
+  kube-state-metrics:
+    # The series name the pod and the namespace they describe; without this Prometheus would rename them to
+    # exported_pod and exported_namespace, and every query on a pod would miss.
+    honor_labels: true
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names: [monitoring]
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+        regex: kube-state-metrics
+        action: keep
+      - source_labels: [__meta_kubernetes_pod_container_port_name]
+        regex: http
+        action: keep
+      - source_labels: [__meta_kubernetes_namespace]
+        target_label: namespace
+      - source_labels: [__meta_kubernetes_pod_name]
+        target_label: pod
+      - source_labels: [__meta_kubernetes_pod_node_name]
+        target_label: node
+
+  node-exporter:
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names: [monitoring]
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+        regex: prometheus-node-exporter
+        action: keep
+      - source_labels: [__meta_kubernetes_pod_container_port_name]
+        regex: metrics
+        action: keep
+      - source_labels: [__meta_kubernetes_namespace]
+        target_label: namespace
+      - source_labels: [__meta_kubernetes_pod_name]
+        target_label: pod
+      - source_labels: [__meta_kubernetes_pod_node_name]
+        target_label: node
+
+  # Traefik's own metrics (ADR-083): the port is named `metrics` in the pod and is not on the Service.
+  traefik:
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names: [traefik]
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+        regex: traefik
+        action: keep
+      - source_labels: [__meta_kubernetes_pod_container_port_name]
+        regex: metrics
+        action: keep
+      - source_labels: [__meta_kubernetes_namespace]
+        target_label: namespace
+      - source_labels: [__meta_kubernetes_pod_name]
+        target_label: pod
+      - source_labels: [__meta_kubernetes_pod_node_name]
+        target_label: node
+
+  # The exporter container of the NATS server pod. The NetworkPolicy `nats` lets this namespace reach port 7777 and
+  # nobody else (deploy/argocd/nats.yaml).
+  nats:
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names: [bf]
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+        regex: nats
+        action: keep
+      - source_labels: [__meta_kubernetes_pod_container_port_name]
+        regex: prom-metrics
+        action: keep
+      - source_labels: [__meta_kubernetes_namespace]
+        target_label: namespace
+      - source_labels: [__meta_kubernetes_pod_name]
+        target_label: pod
+      - source_labels: [__meta_kubernetes_pod_node_name]
+        target_label: node
+
+  # The certificate of the balancer, asked for from inside the cluster through the blackbox exporter, which only
+  # completes a TLS handshake (module tls_expiry): a 404 or 5xx of the application does not hide the certificate.
+  # One probe a minute, because Grafana's alert reads the newest sample and a gap longer than Prometheus' five-minute
+  # look-back would read as "no data" (an alert in itself).
+  blackbox-tls:
+    metrics_path: /probe
+    scrape_interval: 1m
+    params:
+      module: [tls_expiry]
+    static_configs:
+      - targets:
+          - malinina.ca:443
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter.monitoring.svc:9115

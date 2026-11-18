@@ -1,0 +1,56 @@
+# blackbox_exporter (ADR-083, backlog MON-1): asks malinina.ca:443 for its certificate once a minute on behalf of
+# Prometheus (job `blackbox-tls` in deploy/monitoring/prometheus-values.yaml), so the alert on the certificate of the
+# balancer has a number to read (probe_ssl_earliest_cert_expiry). The root Application (root.yaml) reads this directory
+# of `main`, so merging this file creates the Application.
+#
+# Chart 11.21.2 (appVersion v0.29.1) was published 2026-11-10 and passed the 7 full days of ADR-005 on 2026-11-17; it is
+# the newest version past the window (11.21.3 is from 2026-11-12). No digest is pinned for a third-party chart (ADR-076 covers only our own
+# Dockerfiles). `pnpm charts` renders exactly this chart with exactly these values (scripts/charts-check.ts).
+#
+# ClusterIP only, in `monitoring` with the rest of the stack (ADR-083); it answers whoever asks, so there is no Ingress
+# and it is reachable by `kubectl port-forward` alone. The chart already runs it non-root with a read-only root, no
+# capabilities and no service account token.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: blackbox-exporter
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://prometheus-community.github.io/helm-charts
+    chart: prometheus-blackbox-exporter
+    targetRevision: 11.21.2
+    helm:
+      valuesObject:
+        # The Service is `blackbox-exporter`: Prometheus' job names it, so the name does not depend on the release name.
+        fullnameOverride: blackbox-exporter
+        # An assumption, not a measurement; no limits (MON-2 replaces it).
+        resources:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+        config:
+          modules:
+            # The chart's default module, which needs an HTTP 2xx, is removed: only the module below is used.
+            http_2xx: null
+            # A TLS handshake and nothing after it. The probe never sends an HTTP request, so a 404 (no app behind the
+            # host) or a 5xx cannot mask the certificate, and the exporter reports the expiry of what it was shown.
+            # The handshake checks the chain and the name against the system roots (the default of the module); a
+            # failed handshake leaves the metric out, which the alert reads as "no data" and fires on.
+            tls_expiry:
+              prober: tcp
+              timeout: 10s
+              tcp:
+                tls: true
+                preferred_ip_protocol: ip4
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: false
+    syncOptions:
+      # prometheus.yaml creates the namespace too; neither Application may depend on the other having run first.
+      - CreateNamespace=true
+      - ServerSideApply=true

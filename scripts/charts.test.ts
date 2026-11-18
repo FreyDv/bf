@@ -636,6 +636,13 @@ describe('nats Application (ADR-022, backlog NATS-1)', () => {
     assert.match(spec, /allowPrivilegeEscalation: false/);
   });
 
+  it('runs the metrics exporter as a container of the server pod on 7777, named prom-metrics (MON-1)', () => {
+    const set = find(renderApplication(app), 'StatefulSet');
+    assert.match(set, /name: prom-exporter\n/);
+    assert.match(set, /containerPort: 7777\n\s+name: prom-metrics\n/);
+    assert.match(set, /http:\/\/localhost:8222\//, 'it reads the monitor port inside the pod');
+  });
+
   describe('NetworkPolicy (ADR-081, backlog NATS-4)', () => {
     const output = renderApplication(app);
     const policies = all(output, 'NetworkPolicy');
@@ -661,17 +668,38 @@ describe('nats Application (ADR-022, backlog NATS-1)', () => {
       assert.doesNotMatch(policy, /Egress|egress/);
     });
 
-    it('has one ingress rule that opens 4222/TCP and nothing else', () => {
-      assert.equal(ingress.match(/^ {2}- /gm)?.length, 1, 'one ingress rule');
+    // The rules render in the order of the values: the apps on 4222 first, then the metrics scrape on 7777 (ADR-083).
+    const rules = ingress.split(/^ {2}- (?=from:)/m).filter((rule) => rule.includes('from:'));
+
+    it('has two ingress rules that open 4222/TCP and 7777/TCP and nothing else', () => {
+      assert.equal(rules.length, 2, 'two ingress rules');
       assert.deepEqual(
         [...ingress.matchAll(/- port: (\d+)\n\s+protocol: (\w+)/g)].map((m) => [m[1], m[2]]),
-        [['4222', 'TCP']],
+        [
+          ['4222', 'TCP'],
+          ['7777', 'TCP'],
+        ],
       );
-      assert.equal(ingress.match(/port:/g)?.length, 1);
+      assert.equal(ingress.match(/port:/g)?.length, 2);
     });
 
-    it('admits exactly the backend and Debezium by label, and nats-box, with no empty peer', () => {
-      const from = ingress.slice(ingress.indexOf('from:'));
+    it('opens the exporter port 7777 to the namespace monitoring alone, by the label Kubernetes sets (ADR-083)', () => {
+      const [, scrape] = rules;
+      assert.match(scrape, /port: 7777/);
+      assert.match(
+        scrape,
+        /- namespaceSelector:\n\s+matchLabels:\n\s+kubernetes\.io\/metadata\.name: monitoring\n/,
+      );
+      assert.equal(
+        scrape.match(/- (namespaceSelector|podSelector|ipBlock):/g)?.length,
+        1,
+        'one peer',
+      );
+      assert.doesNotMatch(scrape, /podSelector|ipBlock/);
+    });
+
+    it('admits exactly the backend and Debezium by label, and nats-box, to 4222, with no empty peer', () => {
+      const from = rules[0].slice(rules[0].indexOf('from:'));
       assert.equal(from.match(/- podSelector:/g)?.length, 2, 'two peers');
       assert.doesNotMatch(from, /namespaceSelector|ipBlock|podSelector: ?\{\}/);
       assert.match(
@@ -759,7 +787,7 @@ describe('traefik Application (ADR-038, backlog TRAEFIK-1)', () => {
     assert.match(service, /do-loadbalancer-redirect-http-to-https: "true"/);
   });
 
-  it('keeps one pod through a drain, spreads the two over nodes, logs JSON and exposes no metrics (TRAEFIK-3)', () => {
+  it('keeps one pod through a drain, spreads the two over nodes and logs JSON (TRAEFIK-3)', () => {
     const rendered = renderApplication(app);
     const budget = find(rendered, 'PodDisruptionBudget');
     assert.match(budget, /maxUnavailable: 1\n/);
@@ -776,11 +804,335 @@ describe('traefik Application (ADR-038, backlog TRAEFIK-1)', () => {
     assert.match(set, /app\.kubernetes\.io\/instance: traefik-traefik\n/);
     assert.ok(set.includes('--log.format=json'));
     assert.ok(set.includes('--log.level=INFO'));
-    assert.doesNotMatch(rendered, /--metrics|9100|prometheus\.io/, 'metrics stay off until MON-1');
+  });
+
+  // MON-1, ADR-083: the metrics are on for the Prometheus of `monitoring`, and the port never reaches the balancer.
+  it('serves Prometheus metrics on port 9100 named metrics, and lists that port on no Service (MON-1)', () => {
+    const rendered = renderApplication(app);
+    const set = find(rendered, 'Deployment');
+    assert.ok(set.includes('--metrics.prometheus=true'));
+    assert.ok(set.includes('--entryPoints.metrics.address=:9100/tcp'));
+    assert.match(set, /containerPort: 9100\n\s+name: metrics\n/);
+    for (const service of all(rendered, 'Service')) {
+      assert.doesNotMatch(service, /9100/, 'the DigitalOcean balancer forwards only Service ports');
+    }
+    assert.doesNotMatch(find(rendered, 'Service'), /name: metrics/);
+  });
+
+  it('gives the Service a hostname in its status, so a pod reaches the balancer and its certificate (MON-1)', () => {
+    assert.match(
+      find(renderApplication(app), 'Service'),
+      /do-loadbalancer-hostname: malinina\.ca\n/,
+    );
   });
 
   it('serves the IngressClass that the app chart names by default', () => {
     assert.match(find(renderApplication(app), 'IngressClass'), /\n {2}name: traefik\n/);
+  });
+});
+
+// MON-1, ADR-083: the metrics and alerts stack. `pnpm charts:test` renders each chart at its pinned version with the
+// values of this repository, so these are properties of what the cluster would get.
+describe('monitoring Applications (ADR-083, backlog MON-1)', () => {
+  const dir = `${deploy}/argocd`;
+  const applications = readChartApplications(dir);
+  const byChart = (chartName: string) => {
+    const item = applications.find((candidate) => candidate.chart === chartName);
+    assert.ok(item, `deploy/argocd has an Application for ${chartName}`);
+    return item;
+  };
+  const prometheus = byChart('prometheus');
+  const blackbox = byChart('prometheus-blackbox-exporter');
+  const grafana = byChart('grafana');
+  const sourceOf = (file: string) => readFileSync(`${dir}/${file}`, 'utf8');
+  // The lines of a YAML block scalar (`key: |`) in a rendered document, with their common indent removed.
+  const blockOf = (doc: string, key: string) => {
+    const lines = doc.split('\n');
+    const start = lines.findIndex((line) => new RegExp(`^ {2}${key}: \\|$`).test(line));
+    assert.notEqual(start, -1, `${key} is in the document`);
+    const body: string[] = [];
+    for (const line of lines.slice(start + 1)) {
+      if (line.trim() !== '' && !line.startsWith('    ')) break;
+      body.push(line.slice(4));
+    }
+    return body.join('\n');
+  };
+  const prometheusOutput = renderApplication(prometheus);
+  const grafanaOutput = renderApplication(grafana);
+
+  it('pins exact chart versions and puts the whole stack in the namespace monitoring, which it creates', () => {
+    for (const item of [prometheus, blackbox, grafana]) {
+      assert.match(item.version, /^\d+\.\d+\.\d+$/);
+      assert.equal(item.namespace, 'monitoring');
+    }
+    for (const file of ['prometheus.yaml', 'blackbox-exporter.yaml', 'grafana.yaml']) {
+      const source = sourceOf(file);
+      assert.match(source, /- CreateNamespace=true/);
+      assert.match(source, /prune: false\n/, `${file} never prunes what it deployed`);
+    }
+  });
+
+  describe('Prometheus', () => {
+    const server = named(prometheusOutput, 'Deployment', 'prometheus-server');
+
+    it('keeps 15 days and at most 8GB, on a 10Gi retained volume (ADR-083)', () => {
+      assert.ok(server.includes('--storage.tsdb.retention.time=15d'));
+      assert.ok(server.includes('--storage.tsdb.retention.size=8GB'));
+      assert.match(
+        find(prometheusOutput, 'PersistentVolumeClaim'),
+        /storageClassName: "do-block-storage-retain"/,
+      );
+      assert.match(find(prometheusOutput, 'PersistentVolumeClaim'), /storage: "10Gi"/);
+      assert.match(
+        server,
+        /strategy:\n\s+type: Recreate/,
+        'one volume, so the old pod stops first',
+      );
+    });
+
+    it('installs the server, kube-state-metrics and node-exporter, and no Alertmanager or Pushgateway', () => {
+      const names = all(prometheusOutput, 'Deployment').concat(all(prometheusOutput, 'DaemonSet'));
+      const rendered = names.map((doc) => /^ {2}name: (\S+)$/m.exec(doc)?.[1]).sort();
+      assert.deepEqual(rendered, [
+        'prometheus-kube-state-metrics',
+        'prometheus-prometheus-node-exporter',
+        'prometheus-server',
+      ]);
+      assert.doesNotMatch(prometheusOutput, /alertmanager|pushgateway/i);
+    });
+
+    it('reads the cluster and writes nothing: every ClusterRole rule is get, list or watch', () => {
+      const roles = all(prometheusOutput, 'ClusterRole');
+      assert.equal(roles.length, 2, 'the server and kube-state-metrics');
+      for (const role of roles) {
+        assert.doesNotMatch(
+          role,
+          /\b(create|update|patch|delete|deletecollection|escalate|bind|impersonate)\b/,
+        );
+        assert.doesNotMatch(role, /verbs:\s*\[?\s*"?\*/);
+      }
+    });
+
+    it('keeps kube-state-metrics away from Secrets and ConfigMaps (its default would list every Secret)', () => {
+      const role =
+        all(prometheusOutput, 'ClusterRole').find((doc) =>
+          /name: prometheus-kube-state-metrics\n/.test(doc),
+        ) ?? '';
+      assert.ok(role, 'a ClusterRole for kube-state-metrics');
+      assert.doesNotMatch(role, /secrets|configmaps/);
+      assert.match(role, /- pods\n/);
+    });
+
+    it('makes node-exporter listen on the node address inside the VPC, not on every interface', () => {
+      const set = find(prometheusOutput, 'DaemonSet');
+      assert.match(set, /--web\.listen-address=\[\$\(HOST_IP\)\]:9100/);
+      assert.match(set, /hostNetwork: true/);
+      assert.match(set, /automountServiceAccountToken: false/);
+    });
+
+    it('asks for resources on every container and limits none (estimates, MON-2 replaces them)', () => {
+      const workloads = [
+        ...all(prometheusOutput, 'Deployment'),
+        ...all(prometheusOutput, 'DaemonSet'),
+        ...all(renderApplication(blackbox), 'Deployment'),
+        ...all(grafanaOutput, 'Deployment'),
+      ];
+      assert.equal(workloads.length, 5);
+      for (const doc of workloads) {
+        const images = doc.match(/^\s+image: /gm)?.length ?? 0;
+        assert.equal(
+          doc.match(/^\s+requests:/gm)?.length ?? 0,
+          images,
+          'a requests block per container',
+        );
+        assert.doesNotMatch(doc, /^\s+limits:/m);
+      }
+    });
+
+    it('scrapes eight named jobs, found by namespace, pod label and port name, and none by annotation', () => {
+      const config = blockOf(
+        named(prometheusOutput, 'ConfigMap', 'prometheus-server'),
+        'prometheus.yml',
+      );
+      const jobs = [...config.matchAll(/^- job_name: (\S+)$/gm)].map((match) => match[1]).sort();
+      assert.deepEqual(jobs, [
+        'blackbox-tls',
+        'kube-state-metrics',
+        'kubernetes-nodes',
+        'kubernetes-nodes-cadvisor',
+        'nats',
+        'node-exporter',
+        'prometheus',
+        'traefik',
+      ]);
+      assert.doesNotMatch(config, /prometheus_io_scrape|prometheus_io_probe/);
+      // The jobs of other namespaces name their namespace, so no job reads pods of the whole cluster.
+      for (const ns of ['monitoring', 'traefik', 'bf'])
+        assert.match(config, new RegExp(`- ${ns}\\n`));
+    });
+
+    it('probes the certificate of the balancer with the module tls_expiry, once a minute', () => {
+      const config = blockOf(
+        named(prometheusOutput, 'ConfigMap', 'prometheus-server'),
+        'prometheus.yml',
+      );
+      const job = config.slice(
+        config.indexOf('- job_name: blackbox-tls'),
+        config.indexOf('- job_name: kube-state-metrics'),
+      );
+      assert.match(job, /module:\n\s+- tls_expiry/);
+      assert.match(job, /- malinina\.ca:443/);
+      assert.match(job, /scrape_interval: 1m/);
+      assert.match(job, /replacement: blackbox-exporter\.monitoring\.svc:9115/);
+    });
+  });
+
+  describe('blackbox exporter', () => {
+    const output = renderApplication(blackbox);
+
+    it('has one module, a bare TLS handshake, so a 404 or 5xx of the site cannot hide the certificate', () => {
+      const config = find(output, 'ConfigMap');
+      assert.match(config, /tls_expiry:\n\s+prober: tcp\n/);
+      assert.match(config, /tls: true/);
+      assert.doesNotMatch(config, /prober: http|http_2xx/);
+      assert.equal(config.match(/prober:/g)?.length, 1);
+    });
+
+    it('is a ClusterIP Service named blackbox-exporter, with no Ingress', () => {
+      assert.match(find(output, 'Service'), /name: blackbox-exporter\n/);
+      assert.doesNotMatch(find(output, 'Service'), /LoadBalancer|NodePort/);
+      assert.deepEqual(
+        kinds(output).filter((kind) => kind === 'Ingress'),
+        [],
+      );
+    });
+  });
+
+  describe('Grafana', () => {
+    const deployment = find(grafanaOutput, 'Deployment');
+    const ini = blockOf(named(grafanaOutput, 'ConfigMap', 'grafana'), 'grafana.ini');
+    const valuesSource = readFileSync(`${deploy}/monitoring/grafana-values.yaml`, 'utf8');
+
+    it('keeps its state on a 1Gi retained volume and stops the old pod before the new one starts', () => {
+      const claim = find(grafanaOutput, 'PersistentVolumeClaim');
+      assert.match(claim, /storage: "?1Gi"?/);
+      assert.match(claim, /storageClassName: "?do-block-storage-retain"?/);
+      assert.match(deployment, /strategy:\n\s+type: Recreate/);
+    });
+
+    it('reads every secret value from the sealed secret grafana-env, and the chart generates none', () => {
+      assert.match(deployment, /envFrom:\n\s+- secretRef:\n\s+name: grafana-env\n/);
+      assert.match(
+        deployment,
+        /name: GF_SECURITY_ADMIN_PASSWORD\n\s+valueFrom:\n\s+secretKeyRef:\n\s+name: grafana-env\n/,
+      );
+      assert.deepEqual(all(grafanaOutput, 'Secret'), []);
+      assert.match(deployment, /automountServiceAccountToken: false/);
+    });
+
+    it('lets in only the one pre-created Google user: no sign-up, no login form', () => {
+      assert.match(ini, /\[auth\]\ndisable_login_form = true\n/);
+      assert.match(ini, /\[auth\.google\]\nallow_sign_up = false\nenabled = true\n/);
+      assert.match(ini, /\[users\]\nallow_sign_up = false\n/);
+      assert.match(ini, /root_url = https:\/\/log\.malinina\.ca\n/);
+      assert.match(ini, /cookie_secure = true/);
+      assert.match(ini, /content_security_policy = true/);
+    });
+
+    it('is public on its own subdomain through Traefik, behind a per-IP rate limit (ADR-083)', () => {
+      const ingress = find(grafanaOutput, 'Ingress');
+      assert.match(ingress, /ingressClassName: traefik/);
+      assert.match(ingress, /host: "log\.malinina\.ca"/);
+      assert.match(ingress, /router\.middlewares: "monitoring-grafana-rate-limit@kubernetescrd"/);
+      assert.deepEqual(all(grafanaOutput, 'Ingress').length, 1);
+      const limit = named(grafanaOutput, 'Middleware', 'grafana-rate-limit');
+      assert.match(limit, /namespace: monitoring/);
+      assert.match(limit, /depth: 1\n/);
+      assert.match(limit, /sync-wave: "-1"/);
+      assert.doesNotMatch(grafanaOutput, /LoadBalancer|NodePort/);
+    });
+
+    it('writes no credential and no e-mail address into the repository', () => {
+      const code = valuesSource.replace(/^\s*#.*$/gm, '');
+      assert.doesNotMatch(code, /client_secret|client_id\s*[:=]/i);
+      assert.doesNotMatch(
+        code,
+        /[\w.+-]+@[\w-]+\.[a-z]{2,}/i,
+        'the allowed user is created by hand',
+      );
+      assert.doesNotMatch(code, /\d{6,}:[A-Za-z0-9_-]{30,}/, 'a Telegram bot token has this shape');
+      const contact = blockOf(named(grafanaOutput, 'ConfigMap', 'grafana'), 'contactpoints.yaml');
+      assert.match(contact, /bottoken: \$\{TELEGRAM_BOT_TOKEN\}/);
+      assert.match(contact, /chatid: \$\{TELEGRAM_CHAT_ID\}/);
+    });
+
+    it('provisions the Prometheus datasource, the six alert rules and a Telegram policy from files', () => {
+      const config = named(grafanaOutput, 'ConfigMap', 'grafana');
+      assert.match(blockOf(config, 'datasources.yaml'), /uid: prometheus\n/);
+      const rules = blockOf(config, 'rules.yaml');
+      assert.deepEqual([...rules.matchAll(/^ {4}uid: (\S+)$/gm)].map((match) => match[1]).sort(), [
+        'cert-expiry-critical',
+        'cert-expiry-warning',
+        'pod-restarting',
+        'prometheus-down',
+        'pvc-filling',
+        'scrape-target-down',
+      ]);
+      assert.equal(rules.match(/datasourceUid: prometheus\n/g)?.length, 6);
+      // 30 and 14 days for the certificate (ADR-083), and Prometheus itself failing is an alert, not an "Error".
+      assert.match(rules, /params:\n\s+- 14\n\s+- 30\n\s+type: within_range/);
+      assert.match(rules, /params:\n\s+- 14\n\s+type: lt/);
+      assert.match(rules, /execErrState: Alerting/);
+      assert.match(blockOf(config, 'policies.yaml'), /receiver: telegram-owner/);
+    });
+
+    it('provisions the consumption dashboard: CPU and memory by namespace, pod and node', () => {
+      const dashboard = JSON.parse(
+        blockOf(named(grafanaOutput, 'ConfigMap', 'consumption-dashboard'), 'consumption.json'),
+      ) as {
+        title: string;
+        panels: { title: string; targets: { expr: string; legendFormat: string }[] }[];
+      };
+      assert.equal(dashboard.title, 'Потребление');
+      assert.equal(dashboard.panels.length, 6);
+      const exprs = dashboard.panels.map((panel) => panel.targets[0].expr).join('\n');
+      for (const by of ['by (namespace)', 'by (namespace, pod)', 'by (node)'])
+        assert.ok(exprs.includes(by));
+      assert.ok(
+        exprs.includes('container_cpu_usage_seconds_total') &&
+          exprs.includes('node_memory_MemAvailable_bytes'),
+      );
+      assert.equal(
+        dashboard.panels[0].targets[0].legendFormat,
+        '{{namespace}}',
+        'the escape of the template survives',
+      );
+    });
+
+    it('takes the sealed secret from its own directory and never holds a plain value there', () => {
+      assert.match(sourceOf('grafana.yaml'), /path: deploy\/monitoring\/grafana-secret\n/);
+      const secretDir = `${deploy}/monitoring/grafana-secret`;
+      if (!existsSync(secretDir)) return; // sealed by hand before the merge (runbook "Мониторинг")
+      const files = readdirSync(secretDir).filter((name) => name.endsWith('.yaml'));
+      assert.ok(files.length > 0);
+      for (const file of files) {
+        const text = readFileSync(`${secretDir}/${file}`, 'utf8');
+        assert.match(text, /^kind: SealedSecret$/m);
+        assert.match(text, /^ {2}name: grafana-env$/m);
+        assert.match(text, /^ {2}namespace: monitoring$/m);
+        const values = [...text.matchAll(/^ {4}([A-Z_0-9]+): (\S+)$/gm)];
+        assert.deepEqual(values.map((match) => match[1]).sort(), [
+          'GF_AUTH_GOOGLE_CLIENT_ID',
+          'GF_AUTH_GOOGLE_CLIENT_SECRET',
+          'GF_SECURITY_ADMIN_PASSWORD',
+          'TELEGRAM_BOT_TOKEN',
+          'TELEGRAM_CHAT_ID',
+        ]);
+        for (const [, key, value] of values) {
+          assert.match(value, /^A[gQ][A-Za-z0-9+/]{298,}={0,2}$/, `${key} is kubeseal ciphertext`);
+        }
+      }
+    });
   });
 });
 
@@ -855,8 +1207,11 @@ describe('ArgoCD self-management (ADR-019, ADR-046, backlog ARGOCD-1)', () => {
     assert.deepEqual(synced.sort(), [
       'argo-cd.yaml',
       'backend.yaml',
+      'blackbox-exporter.yaml',
       'frontend.yaml',
+      'grafana.yaml',
       'nats.yaml',
+      'prometheus.yaml',
       'root.yaml',
       'sealed-secrets.yaml',
       'traefik.yaml',

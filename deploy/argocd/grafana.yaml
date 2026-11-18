@@ -1,0 +1,51 @@
+# Grafana (ADR-083, backlog MON-1): the one Grafana of the cluster, for metrics now and logs after OBS-2. It draws the
+# graphs and, with the rules in its values file, sends the alerts to Telegram; it stores no metrics itself. The root
+# Application (root.yaml) reads this directory of `main`, so merging this file creates the Application.
+#
+# Chart grafana-community/grafana 14.4.1 (appVersion 13.3.1) was published 2026-11-10 and passed the 7 full days of
+# ADR-005 on 2026-11-17; it is the newest version past the window (14.4.2 is from 2026-11-16). The chart moved to the
+# `grafana-community` repository (https://github.com/grafana-community/helm-charts); the old `grafana` repository stops at
+# 10.5.15. No digest is pinned for a third-party chart (ADR-076 covers only our own Dockerfiles).
+#
+# Three sources, one Application:
+# - the chart, with the values of deploy/monitoring/grafana-values.yaml (datasource, dashboard, alert rules, contact
+#   point, Ingress; the same layout as argo-cd.yaml);
+# - this repository as `ref: values`, which is where that file is read from;
+# - deploy/monitoring/grafana-secret/, a directory holding the SealedSecret `grafana-env` with the five values Grafana
+#   needs (Google OAuth, admin password, Telegram). Sealed by hand before the merge (runbook malinina-kubernetes.md,
+#   "Мониторинг"): until the file exists this source has no path and the sync fails, so Grafana never starts without
+#   its secret.
+#
+# Public at https://log.malinina.ca (ADR-083, which supersedes ADR-043 item 5): a login only through Google, one allowed
+# user, no sign-up. The name is the Helm release; the SealedSecret is sealed for exactly the name `grafana-env` and the
+# namespace `monitoring` (strict scope, ADR-060 item 7).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: grafana
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://grafana-community.github.io/helm-charts
+      chart: grafana
+      targetRevision: 14.4.1
+      helm:
+        valueFiles:
+          - $values/deploy/monitoring/grafana-values.yaml
+    - repoURL: https://github.com/FreyDv/bf
+      targetRevision: main
+      ref: values
+    - repoURL: https://github.com/FreyDv/bf
+      targetRevision: main
+      path: deploy/monitoring/grafana-secret
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      # A chart change never deletes Grafana or its volume by itself; removing one is a person's decision.
+      prune: false
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

@@ -19,8 +19,8 @@
 # it speaks http to the nodes, so the `websecure` entrypoint (port 443 of the balancer) takes plain http and its own
 # TLS is off. The balancer redirects http to https, so `web` never serves a client directly.
 #
-# Set on purpose below rather than left at the chart defaults (TRAEFIK-3): metrics off, JSON log, a disruption budget
-# and spreading the two pods over the nodes. The pod hardening needs no value: the chart already drops all
+# Set on purpose below rather than left at the chart defaults (TRAEFIK-3): metrics on (MON-1), JSON log, a disruption
+# budget and spreading the two pods over the nodes. The pod hardening needs no value: the chart already drops all
 # capabilities, forbids privilege escalation, mounts the root read-only, runs as non-root with seccomp RuntimeDefault
 # (charts.test.ts pins it).
 apiVersion: argoproj.io/v1alpha1
@@ -64,23 +64,31 @@ spec:
               matchLabels:
                 app.kubernetes.io/name: traefik
                 app.kubernetes.io/instance: traefik-traefik
-        # No metrics stack exists (MON-1 undecided), so nothing would scrape port 9100: off until MON-1 picks one.
+        # Prometheus metrics on port 9100, scraped by the Prometheus of the `monitoring` namespace (ADR-083, MON-1), which
+        # finds the pods by the port name `metrics`. The port is not exposed on the Service, so the balancer never forwards
+        # it; the chart's own defaults give exactly that and are kept (`pnpm charts:test` pins it). Series carry the
+        # entrypoint, router, service, method and status code, no path and no client address (ADR-037, ADR-043 item 4.1).
         metrics:
-          prometheus: null
+          prometheus:
+            entryPoint: metrics
         # The controller's own log as JSON, which the log collector parses (ADR-043 item 7.2); the production level and
         # filtering are OBS-2's. Access logs stay off until client IP and query string are hidden (ADR-043 item 4.1).
         log:
           format: json
           level: INFO
         # An assumption, not a measurement: the cluster has no metrics-server. No limits on purpose, so the edge is
-        # not throttled or OOM-killed at a guessed ceiling. Revisit after MON-1.
+        # not throttled or OOM-killed at a guessed ceiling. Replaced by the measured values in MON-2.
         resources:
           requests:
             cpu: 100m
             memory: 128Mi
         ports:
-          # The entrypoint of the metrics above; without a metrics stack it only opens port 9100 in the pod (MON-1).
-          metrics: null
+          # The entrypoint of the metrics above. Never exposed on the Service: the DigitalOcean balancer forwards only the
+          # Service ports, so 9100 stays reachable inside the cluster alone (the chart default, set here so a change is a
+          # diff; `pnpm charts:test` renders the Service and fails if it lists 9100).
+          metrics:
+            expose:
+              default: false
           web:
             # Only the load balancer's VPC (default-tor1) may set X-Forwarded-* (ADR-038 item 6). PROXY protocol
             # stays off. The rate limit counts the rightmost X-Forwarded-For entry, the client (INGRESS-1, checked:
@@ -109,6 +117,12 @@ spec:
             # Let's Encrypt certificate changes on every renewal. The `certificate-id` annotation wins over this one
             # when both are set, so it must never be added here.
             service.beta.kubernetes.io/do-loadbalancer-certificate-name: malinina-ca
+            # From a pod on 2026-11-18, https://malinina.ca answered with a self-signed certificate, not malinina-ca: the
+            # connection did not reach the balancer. The assumed cause is that a Service with an IP in its status is
+            # reached inside the cluster without leaving it, and a hostname there leaves no IP to short-circuit. The
+            # certificate probe of MON-1 (ADR-083) needs the balancer's certificate. Not verified with this annotation
+            # before the merge; the check is in the runbook, section "Мониторинг".
+            service.beta.kubernetes.io/do-loadbalancer-hostname: malinina.ca
             # DOKS 1.33.1-do.0 and later default a new Service to REGIONAL_NETWORK, a TCP pass-through balancer that
             # takes no certificate, no http rules and no redirect; the first sync got exactly that (TRAEFIK-2).
             # TLS on the balancer (ADR-038 item 4) needs the http balancer, so the type is set, not left to the default.
