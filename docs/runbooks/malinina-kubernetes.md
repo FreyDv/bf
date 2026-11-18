@@ -33,14 +33,15 @@ Serves: владелец-оператор и агент, действующий 
 | Правила | 80 http -> http, 443 https -> http с сертификатом `b6041d52-2a99-4f99-bcc9-9060e58eff45` (это `malinina-ca`, найден по имени), редирект http -> https включён (`redirect_http_to_https: true`) |
 | Сертификат | `malinina-ca`: `malinina.ca`, `*.malinina.ca`, Let's Encrypt, CN `malinina.ca`, до 2027-02-09; продление DO не проверялось (CERT-1); в аннотации Service задан по имени, не по id |
 | DNS | зона `malinina.ca` на DO (NS `ns1-3.digitalocean.com`), TTL каждой записи - 300: A `@` (`1837993633`) и A `*` (`1837993634`) на `209.38.0.223`, AAAA `@` (`1838012116`) на `2604:a880:cad:d0:0:1:d312:8001`; AAAA для `*` нет; дубль A `@` (`1838012115`) удалён. `dig` через `ns1.digitalocean.com`, `1.1.1.1`, `8.8.8.8` отдаёт эти адреса |
-| Ingress | Traefik: chart `traefik/traefik` 42.3.1 (с 2026-11-16, TRAEFIK-3: PDB, разнос по узлам, лог JSON, метрики выключены), образ `traefik:v3.7.17`, 2 пода в namespace `traefik`, Application `traefik` `Synced` и `Healthy` с 2026-11-14 (ArgoCD, `deploy/argocd/traefik.yaml`) |
+| Ingress | Traefik: chart `traefik/traefik` 42.3.1 (с 2026-11-16, TRAEFIK-3: PDB, разнос по узлам, лог JSON; метрики включены в MON-1, ADR-083), образ `traefik:v3.7.17`, 2 пода в namespace `traefik`, Application `traefik` `Synced` и `Healthy` с 2026-11-14 (ArgoCD, `deploy/argocd/traefik.yaml`) |
 | Проверка | `curl --resolve` на `209.38.0.223`: `:443` на любой путь - `404 page not found` от Traefik (приложений за ним ещё нет, DEPLOY-1); `:80` - 307 на `https://malinina.ca/` (делает балансировщик). Браузер владельца показывает `404 page not found` на `https://malinina.ca/` |
 
 #### Что записано в Service Traefik (ADR-038)
 
 | Что | Значение |
 |---|---|
-| Аннотации | сертификат `malinina-ca` по имени (`do-loadbalancer-certificate-name`, не по id: id Let's Encrypt меняется при продлении), тип `do-loadbalancer-type: REGIONAL`, протокол `http`, TLS-порт 443, редирект http -> https (ADR-038 п. 4; точные имена - в `deploy/argocd/traefik.yaml`) |
+| Аннотации | сертификат `malinina-ca` по имени (`do-loadbalancer-certificate-name`, не по id: id Let's Encrypt меняется при продлении), тип `do-loadbalancer-type: REGIONAL`, протокол `http`, TLS-порт 443, редирект http -> https (ADR-038 п. 4; точные имена - в `deploy/argocd/traefik.yaml`); `do-loadbalancer-hostname: malinina.ca` с MON-1 (ADR-083 п. 5, проверка - раздел «Мониторинг») |
+| Порты Service | только 80 и 443; порт метрик 9100 (с MON-1) есть в поде и не в Service, балансировщик его не пересылает |
 | Доверенные адреса | `forwardedHeaders.trustedIPs` = `10.118.0.0/20` (VPC `default-tor1`), IP клиента из `X-Forwarded-For` (ADR-038 п. 6; что видит Traefik на деле - раздел «Лимит частоты и IP клиента») |
 | TLS | завершается на балансировщике, внутри кластера http (ADR-037, Transport); срок и продление сертификата - CERT-1 |
 
@@ -84,10 +85,11 @@ Serves: владелец-оператор и агент, действующий 
 | `traefik` | Traefik (2 пода, chart 42.3.1) с 2026-11-14 под ArgoCD, Service `traefik` держит балансировщик (TRAEFIK-2); namespace `ingress-nginx` удалён 2026-11-14 |
 | `kube-system` | компоненты DO: Cilium, CoreDNS, Hubble, CSI, konnectivity, агенты - работают |
 | `argocd` | ArgoCD работает с 2026-11-11: Helm-релиз `argocd` (chart argo-cd 10.11.6, app v3.5.6) `deployed`; Deployment: server 2, repo-server 2, applicationset-controller, dex-server, notifications-controller, redis; StatefulSet application-controller; есть только `AppProject default`; с 2026-11-13 управляет собой и Application из `deploy/argocd/` (`root`, `argo-cd`, `sealed-secrets`, `nats`, с 2026-11-14 `traefik`; ARGOCD-2, TRAEFIK-2), UI - через port-forward |
-| `bf` | NATS JetStream с 2026-11-13: `nats-0` (2/2), `nats-box`, PVC `nats-js-nats-0` 10Gi, стрим `BF` (NATS-2) |
+| `bf` | NATS JetStream с 2026-11-13: `nats-0` (2/2; с MON-1 3/3 с exporter), `nats-box`, PVC `nats-js-nats-0` 10Gi, стрим `BF` (NATS-2) |
+| `monitoring` | Prometheus, kube-state-metrics, node-exporter, blackbox_exporter, Grafana; ставится слиянием MON-1 (ADR-083), состояние после живых проверок - раздел «Мониторинг» |
 | `default` | пусто |
 
-Контроллер Sealed Secrets работает в `kube-system` с 2026-11-13, ключ один, сертификат в `deploy/sealed-secrets/pub-cert.pem` и копия ключа в менеджере паролей с 2026-11-14 (SEALED-2). Приложений за Traefik ещё нет (DEPLOY-1). Не установлено: Debezium (CDC-2), Loki и Grafana (OBS-2), чарт `app` (CHART-1), приложения.
+Контроллер Sealed Secrets работает в `kube-system` с 2026-11-13, ключ один, сертификат в `deploy/sealed-secrets/pub-cert.pem` и копия ключа в менеджере паролей с 2026-11-14 (SEALED-2). Приложений за Traefik ещё нет (DEPLOY-1). Не установлено: Debezium (CDC-2), Loki и Alloy (OBS-2; Grafana ставится в MON-1), чарт `app` (CHART-1), приложения.
 
 ## Что видно и требует решения
 
@@ -97,7 +99,7 @@ Serves: владелец-оператор и агент, действующий 
 | 2 | У `bfdb` не было доверенных источников; с 2026-11-11 разрешены кластер и адрес владельца | узлы кластера имеют публичные IP, но база пускает их по правилу `k8s` | DBSEC-1 закрыт ([bfdb-postgres.md](bfdb-postgres.md)) |
 | 3 | Control plane без HA, 3 узла без автомасштабирования | сбой control plane останавливает управление кластером, работающие поды живут; при росте нагрузки узлы не добавятся | решение при росте |
 | 4 | Автообновление выключено | версия кластера устареет, обновление - ручное в окно обслуживания | решено: остаётся выключенным, процедура ниже («Обновление кластера вручную») |
-| 5 | Нет metrics-server | не работают `kubectl top` и автомасштабирование подов | при появлении нагрузки |
+| 5 | Нет metrics-server | не работают `kubectl top` и автомасштабирование подов; потребление CPU и памяти по namespace, подам и узлам показывает дашборд «Потребление» в Grafana (ADR-083) | автомасштабирование - при появлении нагрузки |
 | 6 | Дубль A-записи `@` в DNS | был безвреден, но лишний | сделано 2026-11-14 (TRAEFIK-2): удалён; DO сам добавляет A и AAAA при подключении сертификата, см. находку 3 выше |
 | 7 | TLS завершается на балансировщике, внутри кластера http | трафик LB -> узел внутри VPC без шифрования; риск принят в ADR-037; ingress-контроллер, заголовки и IP клиента решены в ADR-038: `ingress-nginx` снят с поддержки и заменён Traefik 2026-11-14 (миграция ниже), срок сертификата - CERT-1 | ADR-037, ADR-038, TRAEFIK-1, CERT-1 |
 | 8 | Spaces не видны через `doctl` | нужны отдельные ключи Spaces; состояние бакетов не проверено | ADR-042 (решение), [spaces.md](spaces.md), проверки - RUNBOOK-2 |
@@ -106,7 +108,8 @@ Serves: владелец-оператор и агент, действующий 
 
 - Spaces: имена бакетов, регион, права, ключи ([spaces.md](spaces.md), проверки владельца, RUNBOOK-2).
 - Автопродление сертификата (CERT-1) и делегирование зоны у регистратора домена (проверки владельца в разделе «Вход в кластер»).
-- Часовой пояс окна обслуживания, расход ресурсов узлов (нет metrics-server).
+- Часовой пояс окна обслуживания, расход ресурсов узлов (нет metrics-server; после MON-1 - дашборд «Потребление», замеры - MON-2).
+- Мониторинг (MON-1): ничего из установки на кластере не проверено до слияния, список проверок - раздел «Мониторинг», «Проверки после синка»; алерт на WAL не проверен и не работает до CDC-2 и CDC-3.
 - Sealed Secrets: установлен и проверен 2026-11-13..14 (SEALED-2); после перезапуска ключ один. Не проверено: восстановление из копии ключа и ротация (шаги разделов ниже взяты из README апстрима, на кластере не выполнялись).
 - NATS: установлен и проверен 2026-11-13 (NATS-2), под с `drop: [ALL]` и без `runAsNonRoot` на томе DO работает; размеры стрима и requests - допущения без замеров.
 - Traefik: поставлен и проверен 2026-11-14 (TRAEFIK-2): синк без повтора, http с балансировщика доходит до `websecure` при `tls.enabled=false`. IP клиента проверен 2026-11-17 (раздел «Лимит частоты и IP клиента»). Не проверено: заголовки на ответе настоящего приложения (DEPLOY-1; на временном маршруте все четыре пришли, находка 2); requests подов - допущение без замеров.
@@ -206,7 +209,7 @@ Chart берётся командами `helm repo add argo https://argoproj.git
 | Что | Значение |
 |---|---|
 | Сервер | работает с 2026-11-13, NATS 2.15.2, `nats-0` (NATS-2) |
-| Состав | StatefulSet `nats` (1 под: сервер и reloader), Service `nats` (ClusterIP, 4222), Deployment `nats-box` (клиент `nats`), PodDisruptionBudget; кластера NATS нет, метрик нет (`promExporter` выключен до MON-1) |
+| Состав | StatefulSet `nats` (1 под: сервер и reloader), Service `nats` (ClusterIP, 4222), Deployment `nats-box` (клиент `nats`), PodDisruptionBudget; кластера NATS нет; метрики - sidecar `prom-exporter` на 7777 (MON-1, ADR-083) |
 | Образы | `nats:2.15.2-alpine`; `natsio/nats-server-config-reloader` и `natsio/nats-box` - теги, которые несёт чарт 2.15.2; при смене чарта меняются вместе |
 | Том | PVC `nats-js-nats-0`, 10Gi, StorageClass `do-block-storage-retain`, без снимков и бэкапа |
 | Стрим | `BF` создан владельцем 2026-11-13 (шаг 5); создание из git - NATS-5 |
@@ -218,7 +221,7 @@ Chart берётся командами `helm repo add argo https://argoproj.git
 - **Шифрование тома.** В ответ на строку «Data at rest» ADR-037 (там сказано, что ответ даёт запись, которая ставит NATS): шифрование блочных томов DO в найденной документации не заявлено, считается непроверенным; проверка - BACKUP-1. Класс `-retain` защищает от удаления тома вместе с PVC, а не от чтения данных.
 - **Нет аутентификации.** Любой, кто дошёл до порта 4222, может публиковать, читать и удалять стрим. Service только ClusterIP, наружу порт не выставлен. Риск принят владельцем: сервис внутренний, паролей не будет (ADR-082). Кто до порта доходит - ниже, «Кто может подключаться».
 - **Namespace `bf`.** Логи NATS входят в охват сборщика ADR-043 (`bf`), окружение одно (ADR-038).
-- **Requests** 100m / 256Mi без limits и 10Gi тома - допущения: metrics-server нет. Пересмотр после MON-1.
+- **Requests** 100m / 256Mi без limits и 10Gi тома - допущения: metrics-server нет. Замена замерами - MON-2 (замер по дашборду «Потребление»).
 - **Жёсткость пода.** У чарта нет значения `securityContext`, поэтому `allowPrivilegeEscalation: false`, `drop: [ALL]`, `seccompProfile: RuntimeDefault` и отказ от токена ServiceAccount заданы через `merge` чарта. `runAsNonRoot` и read-only root не заданы: пользователь образа и владелец тома без кластера не проверены.
 
 ### Кто может подключаться (NATS-4, ADR-081)
@@ -227,7 +230,7 @@ Chart берётся командами `helm repo add argo https://argoproj.git
 
 - Ограничен только вход (`Ingress`); выход пода NATS не ограничен (ADR-082).
 - Порт 4222/TCP принимает поды `bf` с меткой `app.kubernetes.io/name` из списка `backend`, `debezium` и под `nats-box` (`name=nats`, `component=nats-box`). Поды релиза `backend` (миграции и CronJob несут те же метки) тоже входят.
-- Остальные порты пода (монитор 8222, 6222, 7777) для других подов закрыты; пробы kubelet идут с узла и проходят.
+- Порт 7777/TCP (метрики) принимает только namespace `monitoring` (MON-1, ADR-083). Остальные порты пода (монитор 8222, 6222) для других подов закрыты; пробы kubelet идут с узла и проходят.
 - Новый клиент: добавить имя его релиза (метка `app.kubernetes.io/name` его подов) в список `values` у `matchExpressions` политики в `deploy/argocd/nats.yaml`, слить в `main`; ArgoCD применит. Debezium (CDC-2) обязан работать в `bf` с меткой `app.kubernetes.io/name=debezium`.
 - Удаление политики из значений не удаляет её в кластере (`prune: false` у Application): убрать вручную, `kubectl -n bf delete networkpolicy nats`.
 
@@ -274,6 +277,90 @@ Chart берётся командами `helm repo add argo https://argoproj.git
 - Смена лимитов стрима: `nats stream edit BF ...`; смена размера тома или requests - значения в `deploy/argocd/nats.yaml` и повторное применение. Сужение subjects - CDC-2.
 - Обновление: чарт и образ - новая версия в `targetRevision` и `container.image.tag` одним коммитом, не раньше чем через 7 дней после выхода (ADR-005); данные на томе остаются, пока под перезапускается (простой, пока он не поднялся: Debezium стоит, слот копит WAL, ADR-021).
 
+## Мониторинг: Prometheus, Grafana, алерты в Telegram (ADR-083, MON-1)
+
+Что это и зачем простыми словами - в ADR-083, «Что есть что». Файлы: `deploy/argocd/{prometheus,blackbox-exporter,grafana}.yaml`, значения `deploy/monitoring/{prometheus,grafana}-values.yaml`, секрет `deploy/monitoring/grafana-secret/` (создаётся шагом ниже). Размеры, версии, пороги алертов и цена - только в ADR-083, здесь не повторяются (R4). Состояние на 2026-11-18: файлы в репозитории, на кластере слиянием MON-1 ничего ещё не стоит.
+
+| Что | Значение |
+|---|---|
+| Namespace | `monitoring`, создают сами Application (`CreateNamespace=true`) |
+| Application | `prometheus` (с kube-state-metrics и node-exporter), `blackbox-exporter`, `grafana`; автосинк без prune |
+| Тома | PVC Prometheus и PVC Grafana, класс `do-block-storage-retain`: переживают удаление Application и тарифицируются, пока владелец не удалит том вручную (как у NATS, «Откат и сопровождение») |
+| Grafana | `https://log.malinina.ca`, вход только Google; Prometheus и blackbox - только `port-forward` |
+| Алерты | Telegram-бот владельцу; правила, contact point и политика - файлы в `deploy/monitoring/grafana-values.yaml` |
+
+### Доступ
+
+- **Grafana**: открыть `https://log.malinina.ca` и войти через Google. Допущен один пользователь, создан по шагу «Первый пользователь» ниже; любой другой аккаунт Google получает отказ. Формы пароля нет.
+- **Крайний случай** (Google недоступен или пользователь утерян): пароль администратора из менеджера паролей, только API через порт, не наружу:
+  `kubectl -n monitoring port-forward svc/grafana 3000:80`, затем `curl -u admin:<пароль> http://127.0.0.1:3000/api/org`. Тот же пароль принимает и публичный `/api` (форма скрыта, базовая аутентификация API включена, ADR-083 п. 9): пароль длинный, и его не вводят нигде, кроме этого порта.
+- **Prometheus**: `kubectl -n monitoring port-forward svc/prometheus-server 9090:80`, затем `http://127.0.0.1:9090` (цели - `/targets`).
+- **blackbox**: `kubectl -n monitoring port-forward svc/blackbox-exporter 9115:9115`, затем `http://127.0.0.1:9115/probe?module=tls_expiry&target=malinina.ca:443`.
+
+### Что делает владелец до слияния (деньги и аккаунты)
+
+1. **Telegram-бот.** В `@BotFather` команда `/newbot`, токен бота - в менеджер паролей. Написать боту любое сообщение с аккаунта, куда должны приходить алерты; `chat id` агент берёт сам из `getUpdates` бота (токен и id в чат не вставляются, только в файл ниже).
+2. **Клиент Google OAuth** (Google Cloud Console, «Credentials», «OAuth client ID», тип Web application): authorized redirect URI ровно `https://log.malinina.ca/login/google`; экран согласия в режиме Testing, единственный тестовый пользователь - сам владелец (второй замок). Client ID и client secret - в менеджер паролей.
+3. **Пароль администратора Grafana**: длинный случайный, в менеджер паролей.
+4. **Тома**: расход на два тома одобрен владельцем 2026-11-18 (сумма - ADR-083 п. 8).
+
+### Секрет Grafana: запечатать до слияния
+
+Корень репозитория, `kubeseal` в `PATH`, сертификат `deploy/sealed-secrets/pub-cert.pem` (ADR-020, ADR-060 п. 5). Файл `deploy/monitoring/.env.grafana.production` не коммитится (`.env.*` в `.gitignore`, скрипт откажется работать с неигнорируемым):
+
+```
+GF_AUTH_GOOGLE_CLIENT_ID=...
+GF_AUTH_GOOGLE_CLIENT_SECRET=...
+GF_SECURITY_ADMIN_PASSWORD=...
+TELEGRAM_BOT_TOKEN=...
+TELEGRAM_CHAT_ID=...
+```
+
+Значения - строго по ADR-060 п. 3: без пустых, без повторов, `#` в значении только в кавычках. Затем:
+
+```
+node scripts/seal-secret.ts --env deploy/monitoring/.env.grafana.production --name grafana-env --namespace monitoring --out deploy/monitoring/grafana-secret/grafana-env.yaml
+```
+
+Имя `grafana-env` и namespace `monitoring` нельзя менять: шифртекст привязан к ним (строгая область), а Grafana читает секрет по этому имени. Файл `grafana-env.yaml` коммитится в ту же ветку, что и MON-1, **до слияния**: пока каталога `deploy/monitoring/grafana-secret/` нет, Application `grafana` не синхронизируется (это нарочно: Grafana без секрета не стартует), а `pnpm charts:test` проверяет, что значения в файле - шифртекст. Смена любого значения - правка `.env`, повтор команды, коммит; под Grafana перезапустится по новому секрету вручную (`kubectl -n monitoring rollout restart deploy/grafana`).
+
+### Первый пользователь Grafana (после первого синка)
+
+С `allow_sign_up=false` вход через Google работает только для пользователя, который уже есть. Адрес владельца в репозиторий не записывается: он берётся из окружения команды и нигде не сохраняется.
+
+```
+kubectl -n monitoring port-forward svc/grafana 3000:80 &
+export GF_ADMIN_PASSWORD=<пароль администратора>
+export OWNER_EMAIL=<адрес Google владельца>
+curl -s -u admin:"$GF_ADMIN_PASSWORD" -H 'Content-Type: application/json' \
+  -d "{\"name\":\"owner\",\"email\":\"$OWNER_EMAIL\",\"login\":\"owner\",\"password\":\"$(openssl rand -base64 33)\"}" \
+  http://127.0.0.1:3000/api/admin/users
+# ответ содержит "id"; дать роль Admin в организации 1:
+curl -s -u admin:"$GF_ADMIN_PASSWORD" -X PATCH -H 'Content-Type: application/json' \
+  -d '{"role":"Admin"}' http://127.0.0.1:3000/api/orgs/1/users/<id>
+```
+
+Пароль созданного пользователя случайный и нигде не нужен (входят через Google). Первый вход - `https://log.malinina.ca`, кнопка Google, тот же адрес.
+
+### Проверки после синка (живые; на момент записи не выполнены)
+
+1. `kubectl -n argocd get applications prometheus grafana blackbox-exporter`: `Synced` и `Healthy`; `kubectl -n monitoring get pods,pvc`: поды `Running`, оба PVC `Bound`.
+2. Данные переживают перезапуск: запомнить в Prometheus `count(up)` и самую раннюю точку (`/graph`, диапазон 1 час), `kubectl -n monitoring delete pod -l app.kubernetes.io/name=prometheus,app.kubernetes.io/component=server`, дождаться пода и убедиться, что точки старше удаления остались. То же у Grafana: правило и дашборд на месте, пользователь не потерян.
+3. Цели: `/targets` Prometheus, все `up`; `up == 0` пусто.
+4. Сертификат: `(probe_ssl_earliest_cert_expiry - time()) / 86400` около числа дней до 2027-02-09, и **это не самоподписанный сертификат**. Если пробы нет или даты не те - проба видит не балансировщик: аннотация `do-loadbalancer-hostname` не помогла (ADR-083 п. 5, Revisit when); проверить вручную `kubectl run` с `curl -v https://malinina.ca` из пода и сравнить с `doctl compute certificate list --format ID,Name,NotAfter,State`.
+5. Порт 9100 Traefik не на балансировщике: `kubectl -n traefik get svc traefik` (порты 80 и 443), `curl --max-time 5 http://209.38.0.223:9100/metrics` не отвечает.
+6. NATS-exporter не виден из чужого namespace: `kubectl -n default run np-probe --rm -i --restart=Never --image=busybox:1.37 -- nc -z -w 3 nats.bf.svc 7777` завершается ошибкой, а из `monitoring` (`kubectl -n monitoring run ...`) проходит.
+7. Telegram: Grafana, «Alerting» -> «Contact points» -> `telegram-owner` -> «Test»; сообщение приходит.
+8. Правило срабатывает: временно понизить порог критичного правила срока сертификата в `deploy/monitoring/grafana-values.yaml` (например, `lt` 14 на `lt` 1000), слить, дождаться срабатывания и сообщения, вернуть значение и слить; либо проверить состояние правил в Grafana, «Alerting» -> «Alert rules» (все шесть видны, `Normal`).
+9. Вход: Google пускает владельца; чужой аккаунт Google получает отказ; формы пароля на странице нет; `https://log.malinina.ca` отвечает заголовками безопасности, а повтор запросов быстрее лимита - `429`.
+
+### Откат и сопровождение
+
+- Удаление Application не удаляет тома (`-retain`). Чтобы убрать том совсем: `kubectl -n monitoring delete pvc <имя>`, затем том в консоли DO или `doctl compute volume delete`. История метрик Prometheus не восстановится; состояние Grafana (пользователи, алерты, молчания) - тоже.
+- Обновление: версия чарта в `targetRevision` Application, не раньше чем через 7 дней после выхода (ADR-005); данные на томах остаются. Подчарты kube-state-metrics и node-exporter приходят с версией чарта `prometheus`.
+- Требования и размеры пересматривает MON-2 по дашборду «Потребление»; сюда числа не копируются.
+- Алерт на удерживаемый WAL - CDC-3 (ADR-083 п. 10): до тех пор его нет.
+
 ## Обновление кластера вручную
 
 Автообновление остаётся выключенным (решение владельца 2026-11-12): control plane без HA и нет проверенного восстановления
@@ -293,6 +380,7 @@ Chart берётся командами `helm repo add argo https://argoproj.git
 - Кластер: `doctl kubernetes cluster get malinina`; узлы: `kubectl get nodes -o wide`.
 - Релизы: `helm list -A`; поды: `kubectl get pods -A`.
 - Вход: `doctl compute load-balancer get 77882fbb-5a96-4620-bacf-549e1dba0bee`, `kubectl -n traefik get svc,pods`.
+- Мониторинг: `kubectl -n monitoring get pods,pvc,ingress`, `kubectl -n argocd get applications prometheus grafana blackbox-exporter`.
 - NATS: `kubectl -n bf get pods,pvc -l app.kubernetes.io/name=nats`; логи `kubectl -n bf logs nats-0 -c nats`; состояние JetStream - `kubectl -n bf exec deploy/nats-box -- nats stream info BF` и `nats server report jetstream`; монитор сервера - `kubectl -n bf port-forward pod/nats-0 8222:8222`, затем `curl -s localhost:8222/jsz`.
 - Три вероятные причины недоступности сайта, по убыванию: контроллер ingress или его Service (LB без здоровых узлов); сертификат или DNS; недоступны узлы.
 
