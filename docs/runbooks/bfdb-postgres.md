@@ -116,6 +116,8 @@ backups` (только чтение) и SELECT-запросы к `pg_catalog` ч
 | Роль `monitor` | создана `doctl databases user create`; `LOGIN`, без SUPERUSER, CREATEROLE, CREATEDB, REPLICATION, BYPASSRLS; `CONNECT` на `bf`; из встроенных ролей - только `pg_read_all_stats`: `pg_monitor`, `pg_read_all_settings` и `pg_stat_scan_tables` `doadmin` выдать не может (`permission denied to grant role`) |
 | Чего нет без двух ролей | параметры, видимые только суперпользователю (`max_connections` виден всем), и функции `pgstattuple`; экспортёр по умолчанию их не использует |
 | Эндпоинт метрик DO | `https://bfdb-do-user-48015624-0.i.db.ondigitalocean.com:9273/metrics` (публичный хост из `metrics_endpoints`), базовая аутентификация, CA проекта; из пода кластера без пароля - `401` за 0.06 с, то есть правило `k8s` в доверенных источниках пускает и на этот порт |
+| Слот репликации до CDC | `pghoard_local`, активный, держит сотни байт WAL: агент бэкапов DigitalOcean (pghoard). «WAL в слотах» на дашборде Postgres считает и его; алерт на WAL Debezium (CDC-3) фильтрует по `slot_name` |
+| Сервер базы (эндпоинт DO, 2026-11-18) | CPU около 25-37% на пустой базе (служебные процессы DO), память 30% от 3.8 ГиБ, том данных `/var/lib/pgsql` - 3.0 из 57 ГиБ (5.2%), load 0.5-0.7 на 2 vCPU |
 | CA проекта | `CN=3c2fc18c-71f4-4f2f-8987-b43a7ddfa6b7 Project CA`, до 2036-11-03, ConfigMap `bfdb-ca` (`deploy/monitoring/bfdb/bfdb-ca.yaml`) |
 | Секрет | SealedSecret `bfdb-monitoring` (`deploy/monitoring/bfdb/bfdb-monitoring.yaml`): `DATA_SOURCE_PASS`, `DO_METRICS_USERNAME`, `DO_METRICS_PASSWORD`; исходник - `deploy/monitoring/.env.bfdb-monitoring.production` на ноутбуке владельца, в git не попадает |
 
