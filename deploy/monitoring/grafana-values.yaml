@@ -54,6 +54,13 @@ admin:
 env:
   GF_SECURITY_ADMIN_USER: admin
 
+# Business Charts (Apache ECharts) draws the three utilisation gauges of the dashboard: no built-in panel draws a
+# half-circle of segments sized by the data (ADR-084). An exact version, past the 7-day cooldown (ADR-005); the chart
+# passes it as GF_PLUGINS_PREINSTALL_SYNC, Grafana installs it from grafana.com into the volume before it starts and
+# does not update it on its own (`preinstall_auto_update: false` in the chart defaults). Signed by Grafana Labs.
+plugins:
+  - volkovlabs-echarts-panel@7.3.0
+
 grafana.ini:
   server:
     # The public address (ADR-083). Grafana builds the OAuth redirect from it: https://log.malinina.ca/login/google.
@@ -473,7 +480,7 @@ extraObjects:
               "h": 8,
               "w": 12,
               "x": 0,
-              "y": 0
+              "y": 11
              },
              "fieldConfig": {
               "defaults": {
@@ -522,7 +529,7 @@ extraObjects:
               "h": 8,
               "w": 12,
               "x": 12,
-              "y": 0
+              "y": 11
              },
              "fieldConfig": {
               "defaults": {
@@ -571,7 +578,7 @@ extraObjects:
               "h": 8,
               "w": 12,
               "x": 0,
-              "y": 8
+              "y": 19
              },
              "fieldConfig": {
               "defaults": {
@@ -620,7 +627,7 @@ extraObjects:
               "h": 8,
               "w": 12,
               "x": 12,
-              "y": 8
+              "y": 19
              },
              "fieldConfig": {
               "defaults": {
@@ -669,7 +676,7 @@ extraObjects:
               "h": 8,
               "w": 12,
               "x": 0,
-              "y": 16
+              "y": 27
              },
              "fieldConfig": {
               "defaults": {
@@ -718,7 +725,7 @@ extraObjects:
               "h": 8,
               "w": 12,
               "x": 12,
-              "y": 16
+              "y": 27
              },
              "fieldConfig": {
               "defaults": {
@@ -751,6 +758,249 @@ extraObjects:
                "expr": "1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes",
                "legendFormat": "{{`{{node}}`}}",
                "range": true
+              }
+             ]
+            },
+            {
+             "id": 7,
+             "type": "volkovlabs-echarts-panel",
+             "title": "CPU",
+             "description": "Дуга - сколько CPU зарезервировано (requests) для FE (frontend), BE (backend и NATS) и платформы (все остальные поды), и сколько не зарезервировано никому (Free); все доли - от ёмкости для подов (allocatable узлов). Центр - сколько CPU поды используют сейчас, от той же ёмкости. Использование без системы узла: график «CPU по узлам» ниже показывает больше (ADR-084).",
+             "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus"
+             },
+             "gridPos": {
+              "h": 11,
+              "w": 8,
+              "x": 0,
+              "y": 0
+             },
+             "options": {
+              "renderer": "canvas",
+              "editorMode": "code",
+              "editor": {
+               "format": "auto"
+              },
+              "themeEditor": {
+               "name": "default",
+               "config": "{}"
+              },
+              "map": "none",
+              "getOption": "// Arc: what is reserved for FE, BE and the platform (for storage: what each occupies on its volumes) and what is\n// left; centre: what is used now. Every share is of the same capacity, so the segments add up to 100% (ADR-084).\nconst KIND = 'cpu';\nconst theme = context.grafana.theme;\nconst color = (name) => theme.visualization.getColorByName(name);\nconst last = (ref) => {\n  const s = context.panel.data.series.find((x) => x.refId === ref);\n  const f = s && s.fields.find((x) => x.type === 'number');\n  const values = f ? Array.from(f.values) : [];\n  return values.length ? Number(values[values.length - 1]) || 0 : 0;\n};\n\nconst capacity = last('capacity');\nconst fe = last('fe');\nconst be = last('be');\nconst platform = Math.max(last('allocated') - fe - be, 0);\nconst free = Math.max(capacity - fe - be - platform, 0);\nconst used = last('used');\n\nconst amount = (x) => {\n  if (KIND === 'cpu') return x.toFixed(x >= 10 ? 1 : 2) + ' vCPU';\n  const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];\n  let i = 0;\n  while (x >= 1024 && i < units.length - 1) {\n    x /= 1024;\n    i += 1;\n  }\n  return x.toFixed(i === 0 || x >= 100 ? 0 : 1) + ' ' + units[i];\n};\n\nconst parts = [\n  { name: 'FE', value: fe, color: color('purple') },\n  { name: 'BE', value: be, color: color('blue') },\n  { name: 'Платформа', value: platform, color: theme.isDark ? '#6e7079' : '#b5b8c0' },\n  { name: 'Free', value: free, color: color('green') },\n];\n// Shares in tenths of a percent, rounded by the largest remainder so the four shown add up to exactly 100.0%.\nconst exact = parts.map((p) => (capacity > 0 ? (p.value / capacity) * 1000 : 0));\nconst tenths = exact.map(Math.floor);\nlet rest = capacity > 0 ? 1000 - tenths.reduce((a, b) => a + b, 0) : 0;\nexact\n  .map((x, i) => [x - Math.floor(x), i])\n  .sort((a, b) => b[0] - a[0])\n  .forEach(([, i]) => {\n    if (rest > 0) {\n      tenths[i] += 1;\n      rest -= 1;\n    }\n  });\nparts.forEach((p, i) => {\n  p.percent = (tenths[i] / 10).toFixed(1) + '%';\n});\n\nconst usedShare = capacity > 0 ? (used / capacity) * 100 : 0;\nconst usedColor = usedShare >= 85 ? color('red') : usedShare >= 60 ? color('orange') : color('green');\nconst text = theme.colors.text;\nconst arc = parts.filter((p) => p.value > 0).sort((a, b) => a.value - b.value);\n\nreturn {\n  backgroundColor: 'transparent',\n  tooltip: {\n    trigger: 'item',\n    formatter: (p) => p.name + ': ' + p.data.percent + ' · ' + amount(p.value),\n  },\n  series: [\n    {\n      type: 'pie',\n      startAngle: 180,\n      endAngle: 0,\n      clockwise: true,\n      radius: ['56%', '84%'],\n      center: ['50%', '64%'],\n      avoidLabelOverlap: true,\n      minAngle: 2,\n      itemStyle: { borderColor: theme.colors.background.primary, borderWidth: 2, borderRadius: 4 },\n      label: {\n        formatter: (p) => '{pct|' + p.data.percent + '}\\n{abs|' + amount(p.value) + '}',\n        rich: {\n          pct: { fontSize: 15, fontWeight: 700, lineHeight: 18 },\n          abs: { fontSize: 11, lineHeight: 14 },\n        },\n      },\n      data: arc.map((p) => {\n        const inside = capacity > 0 && p.value / capacity >= 0.1;\n        return {\n          name: p.name,\n          value: p.value,\n          percent: p.percent,\n          itemStyle: { color: p.color },\n          label: { position: inside ? 'inside' : 'outside', color: inside ? '#ffffff' : text.primary },\n          labelLine: { show: !inside, length: 6, length2: 6 },\n        };\n      }),\n    },\n  ],\n  title: [\n    {\n      left: '50%',\n      top: '41%',\n      textAlign: 'center',\n      text:\n        '{big|' + usedShare.toFixed(usedShare >= 10 ? 0 : 1) + '%}\\n' +\n        '{used|' + amount(used) + '}{total| / ' + amount(capacity) + '}\\n' +\n        '{hint|используется сейчас}',\n      textStyle: {\n        rich: {\n          big: { fontSize: 34, fontWeight: 700, color: usedColor, lineHeight: 40 },\n          used: { fontSize: 14, color: text.secondary, lineHeight: 20 },\n          total: { fontSize: 14, fontWeight: 700, color: text.primary, lineHeight: 20 },\n          hint: { fontSize: 12, color: text.secondary, lineHeight: 16 },\n        },\n      },\n    },\n    ...parts.map((p, i) => ({\n      left: 12.5 + 25 * i + '%',\n      top: '80%',\n      textAlign: 'center',\n      text: '{dot|■} {name|' + p.name + '}\\n{pct|' + p.percent + '}\\n{abs|' + amount(p.value) + '}',\n      textStyle: {\n        rich: {\n          dot: { fontSize: 14, color: p.color },\n          name: { fontSize: 12, color: text.primary },\n          pct: { fontSize: 16, fontWeight: 700, color: text.primary, lineHeight: 22 },\n          abs: { fontSize: 11, color: text.secondary },\n        },\n      },\n    })),\n  ],\n};\n"
+             },
+             "targets": [
+              {
+               "refId": "capacity",
+               "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+               },
+               "expr": "sum(kube_node_status_allocatable{resource=\"cpu\"})",
+               "instant": true,
+               "range": false
+              },
+              {
+               "refId": "fe",
+               "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+               },
+               "expr": "sum(kube_pod_container_resource_requests{resource=\"cpu\", namespace=\"bf\", pod=~\"frontend-.*\"} * on (namespace, pod) group_left () max by (namespace, pod) (kube_pod_status_phase{phase=\"Running\"} == 1)) or vector(0)",
+               "instant": true,
+               "range": false
+              },
+              {
+               "refId": "be",
+               "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+               },
+               "expr": "sum(kube_pod_container_resource_requests{resource=\"cpu\", namespace=\"bf\", pod=~\"backend-.*|nats-.*\"} * on (namespace, pod) group_left () max by (namespace, pod) (kube_pod_status_phase{phase=\"Running\"} == 1)) or vector(0)",
+               "instant": true,
+               "range": false
+              },
+              {
+               "refId": "allocated",
+               "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+               },
+               "expr": "sum(kube_pod_container_resource_requests{resource=\"cpu\"} * on (namespace, pod) group_left () max by (namespace, pod) (kube_pod_status_phase{phase=\"Running\"} == 1))",
+               "instant": true,
+               "range": false
+              },
+              {
+               "refId": "used",
+               "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+               },
+               "expr": "sum(rate(container_cpu_usage_seconds_total{container!=\"\", container!=\"POD\"}[5m]))",
+               "instant": true,
+               "range": false
+              }
+             ]
+            },
+            {
+             "id": 8,
+             "type": "volkovlabs-echarts-panel",
+             "title": "Память",
+             "description": "Дуга - сколько памяти зарезервировано (requests) для FE (frontend), BE (backend и NATS) и платформы (все остальные поды), и сколько не зарезервировано никому (Free); все доли - от ёмкости для подов (allocatable узлов). Центр - сколько памяти поды используют сейчас (working set), от той же ёмкости; оно может быть больше зарезервированного (ADR-084).",
+             "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus"
+             },
+             "gridPos": {
+              "h": 11,
+              "w": 8,
+              "x": 8,
+              "y": 0
+             },
+             "options": {
+              "renderer": "canvas",
+              "editorMode": "code",
+              "editor": {
+               "format": "auto"
+              },
+              "themeEditor": {
+               "name": "default",
+               "config": "{}"
+              },
+              "map": "none",
+              "getOption": "// Arc: what is reserved for FE, BE and the platform (for storage: what each occupies on its volumes) and what is\n// left; centre: what is used now. Every share is of the same capacity, so the segments add up to 100% (ADR-084).\nconst KIND = 'bytes';\nconst theme = context.grafana.theme;\nconst color = (name) => theme.visualization.getColorByName(name);\nconst last = (ref) => {\n  const s = context.panel.data.series.find((x) => x.refId === ref);\n  const f = s && s.fields.find((x) => x.type === 'number');\n  const values = f ? Array.from(f.values) : [];\n  return values.length ? Number(values[values.length - 1]) || 0 : 0;\n};\n\nconst capacity = last('capacity');\nconst fe = last('fe');\nconst be = last('be');\nconst platform = Math.max(last('allocated') - fe - be, 0);\nconst free = Math.max(capacity - fe - be - platform, 0);\nconst used = last('used');\n\nconst amount = (x) => {\n  if (KIND === 'cpu') return x.toFixed(x >= 10 ? 1 : 2) + ' vCPU';\n  const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];\n  let i = 0;\n  while (x >= 1024 && i < units.length - 1) {\n    x /= 1024;\n    i += 1;\n  }\n  return x.toFixed(i === 0 || x >= 100 ? 0 : 1) + ' ' + units[i];\n};\n\nconst parts = [\n  { name: 'FE', value: fe, color: color('purple') },\n  { name: 'BE', value: be, color: color('blue') },\n  { name: 'Платформа', value: platform, color: theme.isDark ? '#6e7079' : '#b5b8c0' },\n  { name: 'Free', value: free, color: color('green') },\n];\n// Shares in tenths of a percent, rounded by the largest remainder so the four shown add up to exactly 100.0%.\nconst exact = parts.map((p) => (capacity > 0 ? (p.value / capacity) * 1000 : 0));\nconst tenths = exact.map(Math.floor);\nlet rest = capacity > 0 ? 1000 - tenths.reduce((a, b) => a + b, 0) : 0;\nexact\n  .map((x, i) => [x - Math.floor(x), i])\n  .sort((a, b) => b[0] - a[0])\n  .forEach(([, i]) => {\n    if (rest > 0) {\n      tenths[i] += 1;\n      rest -= 1;\n    }\n  });\nparts.forEach((p, i) => {\n  p.percent = (tenths[i] / 10).toFixed(1) + '%';\n});\n\nconst usedShare = capacity > 0 ? (used / capacity) * 100 : 0;\nconst usedColor = usedShare >= 85 ? color('red') : usedShare >= 60 ? color('orange') : color('green');\nconst text = theme.colors.text;\nconst arc = parts.filter((p) => p.value > 0).sort((a, b) => a.value - b.value);\n\nreturn {\n  backgroundColor: 'transparent',\n  tooltip: {\n    trigger: 'item',\n    formatter: (p) => p.name + ': ' + p.data.percent + ' · ' + amount(p.value),\n  },\n  series: [\n    {\n      type: 'pie',\n      startAngle: 180,\n      endAngle: 0,\n      clockwise: true,\n      radius: ['56%', '84%'],\n      center: ['50%', '64%'],\n      avoidLabelOverlap: true,\n      minAngle: 2,\n      itemStyle: { borderColor: theme.colors.background.primary, borderWidth: 2, borderRadius: 4 },\n      label: {\n        formatter: (p) => '{pct|' + p.data.percent + '}\\n{abs|' + amount(p.value) + '}',\n        rich: {\n          pct: { fontSize: 15, fontWeight: 700, lineHeight: 18 },\n          abs: { fontSize: 11, lineHeight: 14 },\n        },\n      },\n      data: arc.map((p) => {\n        const inside = capacity > 0 && p.value / capacity >= 0.1;\n        return {\n          name: p.name,\n          value: p.value,\n          percent: p.percent,\n          itemStyle: { color: p.color },\n          label: { position: inside ? 'inside' : 'outside', color: inside ? '#ffffff' : text.primary },\n          labelLine: { show: !inside, length: 6, length2: 6 },\n        };\n      }),\n    },\n  ],\n  title: [\n    {\n      left: '50%',\n      top: '41%',\n      textAlign: 'center',\n      text:\n        '{big|' + usedShare.toFixed(usedShare >= 10 ? 0 : 1) + '%}\\n' +\n        '{used|' + amount(used) + '}{total| / ' + amount(capacity) + '}\\n' +\n        '{hint|используется сейчас}',\n      textStyle: {\n        rich: {\n          big: { fontSize: 34, fontWeight: 700, color: usedColor, lineHeight: 40 },\n          used: { fontSize: 14, color: text.secondary, lineHeight: 20 },\n          total: { fontSize: 14, fontWeight: 700, color: text.primary, lineHeight: 20 },\n          hint: { fontSize: 12, color: text.secondary, lineHeight: 16 },\n        },\n      },\n    },\n    ...parts.map((p, i) => ({\n      left: 12.5 + 25 * i + '%',\n      top: '80%',\n      textAlign: 'center',\n      text: '{dot|■} {name|' + p.name + '}\\n{pct|' + p.percent + '}\\n{abs|' + amount(p.value) + '}',\n      textStyle: {\n        rich: {\n          dot: { fontSize: 14, color: p.color },\n          name: { fontSize: 12, color: text.primary },\n          pct: { fontSize: 16, fontWeight: 700, color: text.primary, lineHeight: 22 },\n          abs: { fontSize: 11, color: text.secondary },\n        },\n      },\n    })),\n  ],\n};\n"
+             },
+             "targets": [
+              {
+               "refId": "capacity",
+               "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+               },
+               "expr": "sum(kube_node_status_allocatable{resource=\"memory\"})",
+               "instant": true,
+               "range": false
+              },
+              {
+               "refId": "fe",
+               "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+               },
+               "expr": "sum(kube_pod_container_resource_requests{resource=\"memory\", namespace=\"bf\", pod=~\"frontend-.*\"} * on (namespace, pod) group_left () max by (namespace, pod) (kube_pod_status_phase{phase=\"Running\"} == 1)) or vector(0)",
+               "instant": true,
+               "range": false
+              },
+              {
+               "refId": "be",
+               "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+               },
+               "expr": "sum(kube_pod_container_resource_requests{resource=\"memory\", namespace=\"bf\", pod=~\"backend-.*|nats-.*\"} * on (namespace, pod) group_left () max by (namespace, pod) (kube_pod_status_phase{phase=\"Running\"} == 1)) or vector(0)",
+               "instant": true,
+               "range": false
+              },
+              {
+               "refId": "allocated",
+               "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+               },
+               "expr": "sum(kube_pod_container_resource_requests{resource=\"memory\"} * on (namespace, pod) group_left () max by (namespace, pod) (kube_pod_status_phase{phase=\"Running\"} == 1))",
+               "instant": true,
+               "range": false
+              },
+              {
+               "refId": "used",
+               "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+               },
+               "expr": "sum(container_memory_working_set_bytes{container!=\"\", container!=\"POD\"})",
+               "instant": true,
+               "range": false
+              }
+             ]
+            },
+            {
+             "id": 9,
+             "type": "volkovlabs-echarts-panel",
+             "title": "Хранилище (тома)",
+             "description": "Только тома (PVC): ёмкость - сумма их размеров. Дуга - сколько занято на томах FE (у frontend томов нет), BE (backend и NATS) и платформы (Prometheus, Grafana), и сколько на томах свободно (Free). Центр - сколько занято всего. Диски узлов (образы, логи) сюда не входят (ADR-084).",
+             "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus"
+             },
+             "gridPos": {
+              "h": 11,
+              "w": 8,
+              "x": 16,
+              "y": 0
+             },
+             "options": {
+              "renderer": "canvas",
+              "editorMode": "code",
+              "editor": {
+               "format": "auto"
+              },
+              "themeEditor": {
+               "name": "default",
+               "config": "{}"
+              },
+              "map": "none",
+              "getOption": "// Arc: what is reserved for FE, BE and the platform (for storage: what each occupies on its volumes) and what is\n// left; centre: what is used now. Every share is of the same capacity, so the segments add up to 100% (ADR-084).\nconst KIND = 'bytes';\nconst theme = context.grafana.theme;\nconst color = (name) => theme.visualization.getColorByName(name);\nconst last = (ref) => {\n  const s = context.panel.data.series.find((x) => x.refId === ref);\n  const f = s && s.fields.find((x) => x.type === 'number');\n  const values = f ? Array.from(f.values) : [];\n  return values.length ? Number(values[values.length - 1]) || 0 : 0;\n};\n\nconst capacity = last('capacity');\nconst fe = last('fe');\nconst be = last('be');\nconst platform = Math.max(last('allocated') - fe - be, 0);\nconst free = Math.max(capacity - fe - be - platform, 0);\nconst used = last('used');\n\nconst amount = (x) => {\n  if (KIND === 'cpu') return x.toFixed(x >= 10 ? 1 : 2) + ' vCPU';\n  const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];\n  let i = 0;\n  while (x >= 1024 && i < units.length - 1) {\n    x /= 1024;\n    i += 1;\n  }\n  return x.toFixed(i === 0 || x >= 100 ? 0 : 1) + ' ' + units[i];\n};\n\nconst parts = [\n  { name: 'FE', value: fe, color: color('purple') },\n  { name: 'BE', value: be, color: color('blue') },\n  { name: 'Платформа', value: platform, color: theme.isDark ? '#6e7079' : '#b5b8c0' },\n  { name: 'Free', value: free, color: color('green') },\n];\n// Shares in tenths of a percent, rounded by the largest remainder so the four shown add up to exactly 100.0%.\nconst exact = parts.map((p) => (capacity > 0 ? (p.value / capacity) * 1000 : 0));\nconst tenths = exact.map(Math.floor);\nlet rest = capacity > 0 ? 1000 - tenths.reduce((a, b) => a + b, 0) : 0;\nexact\n  .map((x, i) => [x - Math.floor(x), i])\n  .sort((a, b) => b[0] - a[0])\n  .forEach(([, i]) => {\n    if (rest > 0) {\n      tenths[i] += 1;\n      rest -= 1;\n    }\n  });\nparts.forEach((p, i) => {\n  p.percent = (tenths[i] / 10).toFixed(1) + '%';\n});\n\nconst usedShare = capacity > 0 ? (used / capacity) * 100 : 0;\nconst usedColor = usedShare >= 85 ? color('red') : usedShare >= 60 ? color('orange') : color('green');\nconst text = theme.colors.text;\nconst arc = parts.filter((p) => p.value > 0).sort((a, b) => a.value - b.value);\n\nreturn {\n  backgroundColor: 'transparent',\n  tooltip: {\n    trigger: 'item',\n    formatter: (p) => p.name + ': ' + p.data.percent + ' · ' + amount(p.value),\n  },\n  series: [\n    {\n      type: 'pie',\n      startAngle: 180,\n      endAngle: 0,\n      clockwise: true,\n      radius: ['56%', '84%'],\n      center: ['50%', '64%'],\n      avoidLabelOverlap: true,\n      minAngle: 2,\n      itemStyle: { borderColor: theme.colors.background.primary, borderWidth: 2, borderRadius: 4 },\n      label: {\n        formatter: (p) => '{pct|' + p.data.percent + '}\\n{abs|' + amount(p.value) + '}',\n        rich: {\n          pct: { fontSize: 15, fontWeight: 700, lineHeight: 18 },\n          abs: { fontSize: 11, lineHeight: 14 },\n        },\n      },\n      data: arc.map((p) => {\n        const inside = capacity > 0 && p.value / capacity >= 0.1;\n        return {\n          name: p.name,\n          value: p.value,\n          percent: p.percent,\n          itemStyle: { color: p.color },\n          label: { position: inside ? 'inside' : 'outside', color: inside ? '#ffffff' : text.primary },\n          labelLine: { show: !inside, length: 6, length2: 6 },\n        };\n      }),\n    },\n  ],\n  title: [\n    {\n      left: '50%',\n      top: '41%',\n      textAlign: 'center',\n      text:\n        '{big|' + usedShare.toFixed(usedShare >= 10 ? 0 : 1) + '%}\\n' +\n        '{used|' + amount(used) + '}{total| / ' + amount(capacity) + '}\\n' +\n        '{hint|используется сейчас}',\n      textStyle: {\n        rich: {\n          big: { fontSize: 34, fontWeight: 700, color: usedColor, lineHeight: 40 },\n          used: { fontSize: 14, color: text.secondary, lineHeight: 20 },\n          total: { fontSize: 14, fontWeight: 700, color: text.primary, lineHeight: 20 },\n          hint: { fontSize: 12, color: text.secondary, lineHeight: 16 },\n        },\n      },\n    },\n    ...parts.map((p, i) => ({\n      left: 12.5 + 25 * i + '%',\n      top: '80%',\n      textAlign: 'center',\n      text: '{dot|■} {name|' + p.name + '}\\n{pct|' + p.percent + '}\\n{abs|' + amount(p.value) + '}',\n      textStyle: {\n        rich: {\n          dot: { fontSize: 14, color: p.color },\n          name: { fontSize: 12, color: text.primary },\n          pct: { fontSize: 16, fontWeight: 700, color: text.primary, lineHeight: 22 },\n          abs: { fontSize: 11, color: text.secondary },\n        },\n      },\n    })),\n  ],\n};\n"
+             },
+             "targets": [
+              {
+               "refId": "capacity",
+               "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+               },
+               "expr": "sum(kubelet_volume_stats_capacity_bytes)",
+               "instant": true,
+               "range": false
+              },
+              {
+               "refId": "fe",
+               "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+               },
+               "expr": "sum(kubelet_volume_stats_used_bytes{namespace=\"bf\", persistentvolumeclaim=~\"frontend.*\"}) or vector(0)",
+               "instant": true,
+               "range": false
+              },
+              {
+               "refId": "be",
+               "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+               },
+               "expr": "sum(kubelet_volume_stats_used_bytes{namespace=\"bf\", persistentvolumeclaim=~\"backend.*|nats-.*\"}) or vector(0)",
+               "instant": true,
+               "range": false
+              },
+              {
+               "refId": "allocated",
+               "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+               },
+               "expr": "sum(kubelet_volume_stats_used_bytes)",
+               "instant": true,
+               "range": false
+              },
+              {
+               "refId": "used",
+               "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+               },
+               "expr": "sum(kubelet_volume_stats_used_bytes)",
+               "instant": true,
+               "range": false
               }
              ]
             }

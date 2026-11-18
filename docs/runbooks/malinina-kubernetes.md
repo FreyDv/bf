@@ -375,6 +375,7 @@ curl -s -u admin:"$GF_ADMIN_PASSWORD" -X PATCH -H 'Content-Type: application/jso
 - Удаление Application не удаляет тома (`-retain`). Чтобы убрать том совсем: `kubectl -n monitoring delete pvc <имя>`, затем том в консоли DO или `doctl compute volume delete`. История метрик Prometheus не восстановится; состояние Grafana (пользователи, алерты, молчания) - тоже.
 - Обновление: версия чарта в `targetRevision` Application, не раньше чем через 7 дней после выхода (ADR-005); данные на томах остаются. Подчарты kube-state-metrics и node-exporter приходят с версией чарта `prometheus`.
 - Требования и размеры пересматривает MON-2 по дашборду «Потребление»; сюда числа не копируются.
+- Плагин Business Charts виджетов загрузки (ADR-084): версия - строка `plugins` в `deploy/monitoring/grafana-values.yaml`, Grafana ставит его с grafana.com при старте пода. Виджеты пишут «плагин не найден» - смотреть лог пода (`kubectl -n monitoring logs deploy/grafana | grep -i plugin`): чаще всего под не достучался до grafana.com.
 - Алерт на удерживаемый WAL - CDC-3 (ADR-083 п. 10): до тех пор его нет.
 
 ## Обновление кластера вручную

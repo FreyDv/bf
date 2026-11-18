@@ -1091,11 +1091,19 @@ describe('monitoring Applications (ADR-083, backlog MON-1)', () => {
         blockOf(named(grafanaOutput, 'ConfigMap', 'consumption-dashboard'), 'consumption.json'),
       ) as {
         title: string;
-        panels: { title: string; targets: { expr: string; legendFormat: string }[] }[];
+        panels: {
+          type: string;
+          title: string;
+          gridPos: { y: number };
+          options?: { getOption: string };
+          targets: { refId: string; expr: string; legendFormat: string }[];
+        }[];
       };
       assert.equal(dashboard.title, 'Потребление');
-      assert.equal(dashboard.panels.length, 6);
-      const exprs = dashboard.panels.map((panel) => panel.targets[0].expr).join('\n');
+      assert.equal(dashboard.panels.length, 9);
+      const graphs = dashboard.panels.filter((panel) => panel.type === 'timeseries');
+      assert.equal(graphs.length, 6);
+      const exprs = graphs.map((panel) => panel.targets[0].expr).join('\n');
       for (const by of ['by (namespace)', 'by (namespace, pod)', 'by (node)'])
         assert.ok(exprs.includes(by));
       assert.ok(
@@ -1107,6 +1115,51 @@ describe('monitoring Applications (ADR-083, backlog MON-1)', () => {
         '{{namespace}}',
         'the escape of the template survives',
       );
+    });
+
+    it('draws the three utilisation gauges with the pinned plugin, every share of one capacity (ADR-084)', () => {
+      const dashboard = JSON.parse(
+        blockOf(named(grafanaOutput, 'ConfigMap', 'consumption-dashboard'), 'consumption.json'),
+      ) as {
+        panels: {
+          type: string;
+          title: string;
+          gridPos: { y: number };
+          options?: { getOption: string };
+          targets: { refId: string; expr: string }[];
+        }[];
+      };
+      const gauges = dashboard.panels.filter((panel) => panel.type === 'volkovlabs-echarts-panel');
+      assert.deepEqual(
+        gauges.map((gauge) => gauge.title),
+        ['CPU', 'Память', 'Хранилище (тома)'],
+      );
+      for (const gauge of gauges) {
+        assert.equal(gauge.gridPos.y, 0, 'the gauges are the top row');
+        assert.deepEqual(
+          gauge.targets.map((target) => target.refId),
+          ['capacity', 'fe', 'be', 'allocated', 'used'],
+        );
+        assert.match(gauge.options?.getOption ?? '', /startAngle: 180,\n\s+endAngle: 0,/);
+      }
+      const [cpu, memory, storage] = gauges.map((gauge) =>
+        Object.fromEntries(gauge.targets.map((target) => [target.refId, target.expr])),
+      );
+      // Reserved (requests) on the arc and used in the centre, never mixed: the capacity is allocatable, not raw.
+      assert.match(cpu.capacity, /kube_node_status_allocatable\{resource="cpu"\}/);
+      assert.match(cpu.allocated, /kube_pod_container_resource_requests\{resource="cpu"\}/);
+      assert.match(cpu.used, /container_cpu_usage_seconds_total/);
+      assert.match(memory.used, /container_memory_working_set_bytes/);
+      assert.match(memory.be, /pod=~"backend-\.\*\|nats-\.\*"/);
+      assert.match(storage.capacity, /kubelet_volume_stats_capacity_bytes/);
+      assert.match(storage.used, /kubelet_volume_stats_used_bytes/);
+      for (const graph of dashboard.panels.filter((panel) => panel.type === 'timeseries'))
+        assert.ok(graph.gridPos.y >= 11, 'the graphs sit below the gauges');
+      // One exact version, installed before start and never updated by Grafana itself (ADR-005).
+      const config = named(grafanaOutput, 'ConfigMap', 'grafana');
+      assert.match(config, /^ {2}plugins: volkovlabs-echarts-panel@7\.3\.0$/m);
+      assert.match(config, /preinstall_auto_update = false/);
+      assert.match(grafanaOutput, /name: GF_PLUGINS_PREINSTALL_SYNC/);
     });
 
     it('takes the sealed secret from its own directory and never holds a plain value there', () => {
