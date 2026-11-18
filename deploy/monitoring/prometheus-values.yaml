@@ -2,7 +2,7 @@
 # (ADR-083, backlog MON-1). This is a values file, not a Kubernetes object: the root Application reads only
 # deploy/argocd, so nothing here is applied by itself.
 #
-# Prometheus pulls its own targets: six jobs below, no push, no Alertmanager. Alerts are Grafana's (grafana-values.yaml),
+# Prometheus pulls its own targets: the jobs are listed below and counted in ADR-083 item 3, no push, no Alertmanager. Alerts are Grafana's (grafana-values.yaml),
 # which queries this server.
 #
 # The requests are estimates, not measurements: the cluster has no metrics-server and there is nothing to measure
@@ -17,7 +17,7 @@ prometheus-pushgateway:
 
 server:
   global:
-    # Six jobs and about thirty pods: 30 s is cheap, and an alert that waits for two failed scrapes reacts in a minute.
+    # A handful of jobs (ADR-083 item 3) and about thirty pods: 30 s is cheap, and an alert that waits for two failed scrapes reacts in a minute.
     scrape_interval: 30s
     scrape_timeout: 10s
     evaluation_interval: 1m
