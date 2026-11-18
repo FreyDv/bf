@@ -86,10 +86,10 @@ Serves: владелец-оператор и агент, действующий 
 | `kube-system` | компоненты DO: Cilium, CoreDNS, Hubble, CSI, konnectivity, агенты - работают |
 | `argocd` | ArgoCD работает с 2026-11-11: Helm-релиз `argocd` (chart argo-cd 10.11.6, app v3.5.6) `deployed`; Deployment: server 2, repo-server 2, applicationset-controller, dex-server, notifications-controller, redis; StatefulSet application-controller; есть только `AppProject default`; с 2026-11-13 управляет собой и Application из `deploy/argocd/` (`root`, `argo-cd`, `sealed-secrets`, `nats`, с 2026-11-14 `traefik`; ARGOCD-2, TRAEFIK-2), UI - через port-forward |
 | `bf` | NATS JetStream с 2026-11-13: `nats-0` (2/2; с MON-1 3/3 с exporter), `nats-box`, PVC `nats-js-nats-0` 10Gi, стрим `BF` (NATS-2) |
-| `monitoring` | Prometheus, kube-state-metrics, node-exporter, blackbox_exporter, Grafana; ставится слиянием MON-1 (ADR-083), состояние после живых проверок - раздел «Мониторинг» |
+| `monitoring` | Prometheus, kube-state-metrics, node-exporter, blackbox_exporter, Grafana; работают с 2026-11-18 (MON-1, ADR-083), живые проверки - раздел «Мониторинг» |
 | `default` | пусто |
 
-Контроллер Sealed Secrets работает в `kube-system` с 2026-11-13, ключ один, сертификат в `deploy/sealed-secrets/pub-cert.pem` и копия ключа в менеджере паролей с 2026-11-14 (SEALED-2). Приложений за Traefik ещё нет (DEPLOY-1). Не установлено: Debezium (CDC-2), Loki и Alloy (OBS-2; Grafana ставится в MON-1), чарт `app` (CHART-1), приложения.
+Контроллер Sealed Secrets работает в `kube-system` с 2026-11-13, ключ один, сертификат в `deploy/sealed-secrets/pub-cert.pem` и копия ключа в менеджере паролей с 2026-11-14 (SEALED-2). Приложений за Traefik ещё нет (DEPLOY-1). Не установлено: Debezium (CDC-2), Loki и Alloy (OBS-2; Grafana стоит с MON-1), чарт `app` (CHART-1), приложения.
 
 ## Что видно и требует решения
 
@@ -279,7 +279,7 @@ Chart берётся командами `helm repo add argo https://argoproj.git
 
 ## Мониторинг: Prometheus, Grafana, алерты в Telegram (ADR-083, MON-1)
 
-Что это и зачем простыми словами - в ADR-083, «Что есть что». Файлы: `deploy/argocd/{prometheus,blackbox-exporter,grafana}.yaml`, значения `deploy/monitoring/{prometheus,grafana}-values.yaml`, секрет `deploy/monitoring/grafana-secret/` (создаётся шагом ниже). Размеры, версии, пороги алертов и цена - только в ADR-083, здесь не повторяются (R4). Состояние на 2026-11-18: файлы в репозитории, на кластере слиянием MON-1 ничего ещё не стоит.
+Что это и зачем простыми словами - в ADR-083, «Что есть что». Файлы: `deploy/argocd/{prometheus,blackbox-exporter,grafana}.yaml`, значения `deploy/monitoring/{prometheus,grafana}-values.yaml`, секрет `deploy/monitoring/grafana-secret/` (создаётся шагом ниже). Размеры, версии, пороги алертов и цена - только в ADR-083, здесь не повторяются (R4). Состояние на 2026-11-18: всё стоит и проверено на кластере (ниже, «Проверки после синка»).
 
 | Что | Значение |
 |---|---|
@@ -322,7 +322,7 @@ TELEGRAM_CHAT_ID=...
 node scripts/seal-secret.ts --env deploy/monitoring/.env.grafana.production --name grafana-env --namespace monitoring --out deploy/monitoring/grafana-secret/grafana-env.yaml
 ```
 
-Имя `grafana-env` и namespace `monitoring` нельзя менять: шифртекст привязан к ним (строгая область), а Grafana читает секрет по этому имени. Файл `grafana-env.yaml` коммитится в ту же ветку, что и MON-1, **до слияния**: пока каталога `deploy/monitoring/grafana-secret/` нет, Application `grafana` не синхронизируется (это нарочно: Grafana без секрета не стартует), а `pnpm charts:test` проверяет, что значения в файле - шифртекст. Смена любого значения - правка `.env`, повтор команды, коммит; под Grafana перезапустится по новому секрету вручную (`kubectl -n monitoring rollout restart deploy/grafana`).
+Имя `grafana-env` и namespace `monitoring` нельзя менять: шифртекст привязан к ним (строгая область), а Grafana читает секрет по этому имени. Пока каталога `deploy/monitoring/grafana-secret/` нет, Application `grafana` не синхронизируется (это нарочно: Grafana без секрета не стартует); так и было между слиянием MON-1 (#97) и секрета (#98). `pnpm charts:test` проверяет, что значения в файле - шифртекст. gitleaks пропускает в этом файле и в `deploy/apps/*/secrets.yaml` только строки целиком в форме шифртекста kubeseal (исключение в `.gitleaks.toml`, запись в `exceptions` манифеста, ADR-060): без него правило `generic-api-key` принимает шифртекст под именем вроде `GF_AUTH_GOOGLE_CLIENT_SECRET` за ключ. Смена любого значения - правка `.env`, повтор команды, коммит; под Grafana перезапустится по новому секрету вручную (`kubectl -n monitoring rollout restart deploy/grafana`).
 
 ### Первый пользователь Grafana (после первого синка)
 
@@ -342,7 +342,7 @@ curl -s -u admin:"$GF_ADMIN_PASSWORD" -X PATCH -H 'Content-Type: application/jso
 
 Пароль созданного пользователя случайный и нигде не нужен (входят через Google). Первый вход - `https://log.malinina.ca`, кнопка Google, тот же адрес.
 
-### Проверки после синка (живые; на момент записи не выполнены)
+### Проверки после синка (живые)
 
 1. `kubectl -n argocd get applications prometheus grafana blackbox-exporter`: `Synced` и `Healthy`; `kubectl -n monitoring get pods,pvc`: поды `Running`, оба PVC `Bound`.
 2. Данные переживают перезапуск: запомнить в Prometheus `count(up)` и самую раннюю точку (`/graph`, диапазон 1 час), `kubectl -n monitoring delete pod -l app.kubernetes.io/name=prometheus,app.kubernetes.io/component=server`, дождаться пода и убедиться, что точки старше удаления остались. То же у Grafana: правило и дашборд на месте, пользователь не потерян.
@@ -350,9 +350,25 @@ curl -s -u admin:"$GF_ADMIN_PASSWORD" -X PATCH -H 'Content-Type: application/jso
 4. Сертификат: `(probe_ssl_earliest_cert_expiry - time()) / 86400` около числа дней до 2027-02-09, и **это не самоподписанный сертификат**. Если пробы нет или даты не те - проба видит не балансировщик: аннотация `do-loadbalancer-hostname` не помогла (ADR-083 п. 5, Revisit when); проверить вручную `kubectl run` с `curl -v https://malinina.ca` из пода и сравнить с `doctl compute certificate list --format ID,Name,NotAfter,State`.
 5. Порт 9100 Traefik не на балансировщике: `kubectl -n traefik get svc traefik` (порты 80 и 443), `curl --max-time 5 http://209.38.0.223:9100/metrics` не отвечает.
 6. NATS-exporter не виден из чужого namespace: `kubectl -n default run np-probe --rm -i --restart=Never --image=busybox:1.37 -- nc -z -w 3 nats.bf.svc 7777` завершается ошибкой, а из `monitoring` (`kubectl -n monitoring run ...`) проходит.
-7. Telegram: Grafana, «Alerting» -> «Contact points» -> `telegram-owner` -> «Test»; сообщение приходит.
+7. Telegram: Grafana, «Alerting» -> «Contact points» -> `telegram-owner` -> «Test»; сообщение приходит. Через API (Grafana 13; старый `/api/alertmanager/grafana/config/api/v1/receivers/test` удалён): `GET /apis/notifications.alerting.grafana.app/v1beta1/namespaces/default/receivers/<имя>` и `POST .../<имя>/test` с телом `{"integration": <spec.integrations[0] из ответа GET>}`; `secureFields` в нём заставляет Grafana взять сохранённый токен.
 8. Правило срабатывает: временно понизить порог критичного правила срока сертификата в `deploy/monitoring/grafana-values.yaml` (например, `lt` 14 на `lt` 1000), слить, дождаться срабатывания и сообщения, вернуть значение и слить; либо проверить состояние правил в Grafana, «Alerting» -> «Alert rules» (все шесть видны, `Normal`).
 9. Вход: Google пускает владельца; чужой аккаунт Google получает отказ; формы пароля на странице нет; `https://log.malinina.ca` отвечает заголовками безопасности, а повтор запросов быстрее лимита - `429`.
+
+Выполнено 2026-11-18 (Prometheus и blackbox после #97, Grafana после #98):
+
+| # | Результат |
+|---|---|
+| 1 | три Application `Synced` и `Healthy`; поды `Running`; PVC `prometheus-server` 10Gi и `grafana` 1Gi `Bound` |
+| 2 | Prometheus: точки до удаления пода остались. Grafana: после удаления пода на месте пользователь `owner` (Admin), 6 правил, дашборд «Потребление», источник Prometheus |
+| 3 | 15 целей, все `up` |
+| 4 | `probe_ssl_earliest_cert_expiry` = 2027-02-09 00:21:48 UTC, сертификат балансировщика (не самоподписанный); статус Service Traefik - `hostname: malinina.ca` |
+| 5 | у Service только 80 и 443; `209.38.0.223:9100` не отвечает |
+| 6 | 7777 закрыт из `bf`, открыт из `monitoring` |
+| 7 | тест контакта `success`, сообщение пришло владельцу; `**Firing**` в нём буквально: шаблон Grafana по умолчанию с разметкой, Telegram её не разбирает (косметика) |
+| 8 | все шесть правил `ok`, `inactive`; срабатывание с пониженным порогом не проверялось |
+| 9 | `/` -> 302 на `/login`, форма пароля скрыта (`disableLoginForm: true`), единственная кнопка - Google; `/login/google` ведёт на `accounts.google.com` с `redirect_uri=https://log.malinina.ca/login/google`, PKCE S256; аноним на `/api/user` - 401; четыре заголовка безопасности есть; 400 запросов `/api/health` по 100 параллельно - 158 `200`, 222 `429`, 20 обрывов на стороне клиента; сертификат `*.malinina.ca`. Вход владельца через Google и отказ чужому аккаунту проверяет владелец в браузере |
+
+Пользователь `owner` создан 2026-11-18 шагом «Первый пользователь Grafana».
 
 ### Откат и сопровождение
 
