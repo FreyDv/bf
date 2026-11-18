@@ -1117,14 +1117,14 @@ describe('monitoring Applications (ADR-083, backlog MON-1)', () => {
       );
     });
 
-    it('draws the three utilisation gauges with the pinned plugin, every share of one capacity (ADR-084)', () => {
+    it('draws the three utilisation gauges, one segment per part, every share of one capacity (ADR-084, ADR-085)', () => {
       const dashboard = JSON.parse(
         blockOf(named(grafanaOutput, 'ConfigMap', 'consumption-dashboard'), 'consumption.json'),
       ) as {
         panels: {
           type: string;
           title: string;
-          gridPos: { y: number };
+          gridPos: { x: number; y: number; w: number; h: number };
           options?: { getOption: string };
           targets: { refId: string; expr: string }[];
         }[];
@@ -1134,27 +1134,113 @@ describe('monitoring Applications (ADR-083, backlog MON-1)', () => {
         gauges.map((gauge) => gauge.title),
         ['CPU', 'Память', 'Хранилище (тома)'],
       );
-      for (const gauge of gauges) {
-        assert.equal(gauge.gridPos.y, 0, 'the gauges are the top row');
-        assert.deepEqual(
-          gauge.targets.map((target) => target.refId),
-          ['capacity', 'fe', 'be', 'allocated', 'used'],
-        );
-        assert.match(gauge.options?.getOption ?? '', /startAngle: 180,\n\s+endAngle: 0,/);
-      }
+      // Stacked, one per row and the full width; the graphs below them.
+      assert.deepEqual(
+        gauges.map(({ gridPos }) => [gridPos.x, gridPos.w, gridPos.y]),
+        [
+          [0, 24, 0],
+          [0, 24, gauges[0].gridPos.h],
+          [0, 24, gauges[0].gridPos.h * 2],
+        ],
+      );
+      const below = gauges[0].gridPos.h * 3;
+      for (const graph of dashboard.panels.filter((panel) => panel.type === 'timeseries'))
+        assert.ok(graph.gridPos.y >= below, 'the graphs sit below the gauges');
+
       const [cpu, memory, storage] = gauges.map((gauge) =>
         Object.fromEntries(gauge.targets.map((target) => [target.refId, target.expr])),
       );
+      for (const query of [cpu, memory, storage])
+        assert.deepEqual(Object.keys(query), ['capacity', 'groups', 'used']);
       // Reserved (requests) on the arc and used in the centre, never mixed: the capacity is allocatable, not raw.
       assert.match(cpu.capacity, /kube_node_status_allocatable\{resource="cpu"\}/);
-      assert.match(cpu.allocated, /kube_pod_container_resource_requests\{resource="cpu"\}/);
+      assert.match(
+        cpu.groups,
+        /^sum by \(namespace, pod\) \(kube_pod_container_resource_requests\{resource="cpu"\}/,
+      );
+      assert.match(cpu.groups, /kube_pod_status_phase\{phase="Running"\}/);
       assert.match(cpu.used, /container_cpu_usage_seconds_total/);
+      assert.match(memory.groups, /kube_pod_container_resource_requests\{resource="memory"\}/);
       assert.match(memory.used, /container_memory_working_set_bytes/);
-      assert.match(memory.be, /pod=~"backend-\.\*\|nats-\.\*"/);
       assert.match(storage.capacity, /kubelet_volume_stats_capacity_bytes/);
-      assert.match(storage.used, /kubelet_volume_stats_used_bytes/);
-      for (const graph of dashboard.panels.filter((panel) => panel.type === 'timeseries'))
-        assert.ok(graph.gridPos.y >= 11, 'the graphs sit below the gauges');
+      assert.match(
+        storage.groups,
+        /^sum by \(namespace, persistentvolumeclaim\) \(kubelet_volume_stats_used_bytes\)$/,
+      );
+
+      // The panel code itself, on data shaped like Grafana's frames: every part catches its pods, a pod no rule
+      // names lands in "Прочее", Free is the rest, and the shares shown add up to exactly 100.0%.
+      const frame = (refId: string, value: number, labels?: Record<string, string>) => ({
+        refId,
+        fields: [
+          { type: 'time', values: [0] },
+          { type: 'number', labels, values: [value] },
+        ],
+      });
+      const pods: [string, string, number][] = [
+        ['bf', 'frontend-6497d47bd-lgdb6', 0.5],
+        ['bf', 'backend-6cd9cd589b-cwfj9', 0.5],
+        ['bf', 'nats-0', 1],
+        ['bf', 'debezium-server-0', 0.5],
+        ['kube-system', 'cilium-5fqf9', 2],
+        ['traefik', 'traefik-7d9c-abcde', 0.5],
+        ['monitoring', 'prometheus-server-d8b79d56c-zn7hk', 0.5],
+        ['monitoring', 'grafana-648d789c6d-xcbm4', 0.25],
+        ['argocd', 'argocd-server-5d4f-xyz12', 0.25],
+        ['default', 'stray-pod', 1],
+      ];
+      const theme = {
+        isDark: true,
+        visualization: { getColorByName: (name: string) => name },
+        colors: { text: { primary: '#fff', secondary: '#ccc' }, background: { primary: '#111' } },
+      };
+      const run = new Function('context', gauges[0].options?.getOption ?? '') as (
+        context: unknown,
+      ) => {
+        title: { text: string }[];
+        series: { data: { name: string }[] }[];
+      };
+      const option = run({
+        grafana: { theme },
+        panel: {
+          data: {
+            series: [
+              frame('capacity', 10),
+              ...pods.map(([namespace, pod, value]) => frame('groups', value, { namespace, pod })),
+              frame('used', 3),
+            ],
+          },
+        },
+      });
+      const legend = option.title.slice(1).map((title) => title.text);
+      const cell = (text: string) => text.match(/\{name\|([^}]+)\}\{pct\|([\d.]+)%\}/)?.slice(1);
+      assert.deepEqual(
+        legend.map((text) => cell(text)),
+        [
+          ['FE', '5.0'],
+          ['BE', '5.0'],
+          ['NATS', '10.0'],
+          ['Debezium', '5.0'],
+          ['kube', '20.0'],
+          ['Traefik', '5.0'],
+          ['Prometheus + экспортёры', '5.0'],
+          ['Grafana', '2.5'],
+          ['ArgoCD', '2.5'],
+          ['Прочее', '10.0'],
+          ['Free', '30.0'],
+        ],
+      );
+      assert.match(
+        option.title[0].text,
+        /^\{big\|30%\}/,
+        'the centre is what is used, not what is reserved',
+      );
+      assert.deepEqual(
+        option.series[0].data.map((segment) => segment.name).slice(0, 2),
+        ['Grafana', 'ArgoCD'],
+        'the arc runs from the smallest part to the largest',
+      );
+
       // One exact version, installed before start and never updated by Grafana itself (ADR-005).
       const config = named(grafanaOutput, 'ConfigMap', 'grafana');
       assert.match(config, /^ {2}plugins: volkovlabs-echarts-panel@7\.3\.0$/m);
