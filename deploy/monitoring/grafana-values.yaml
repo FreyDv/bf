@@ -132,12 +132,20 @@ dashboardProviders:
         allowUiUpdates: false
         options:
           path: /var/lib/grafana/dashboards/default
+      - name: postgres
+        orgId: 1
+        type: file
+        disableDeletion: true
+        allowUiUpdates: false
+        options:
+          path: /var/lib/grafana/dashboards/postgres
 
 # The dashboard "Потребление" (CPU and memory by namespace, pod and node) is the ConfigMap `consumption-dashboard` under
 # extraObjects below; the chart mounts it into the provider `default`. A ConfigMap and not the chart's `dashboards`
 # value, because that value adds an init container with a curl image that fetches dashboards from the internet.
 dashboardsConfigMaps:
   default: consumption-dashboard
+  postgres: postgres-dashboard
 
 # The alert rules, the contact point and the policy as Grafana's provisioning files (the chart mounts each key of
 # `alerting` as a file). The text has no templates on purpose: the chart renders these values, and Grafana's own
@@ -394,6 +402,81 @@ alerting:
                   datasource: {type: __expr__, uid: __expr__}
                   conditions:
                     - evaluator: {type: lt, params: [1]}
+                      operator: {type: and}
+                      query: {params: [C]}
+                      reducer: {type: last, params: []}
+                      type: query
+      # The managed database bfdb (ADR-086). An exporter that stops answering is already "Цель сбора метрик
+      # недоступна"; these two see the database itself.
+      - orgId: 1
+        name: bfdb
+        folder: Мониторинг
+        interval: 1m
+        rules:
+          - uid: bfdb-unreachable
+            title: База bfdb недоступна
+            condition: C
+            for: 5m
+            # No series at all means the exporter is gone, which the rule on `up` reports; the database question is
+            # open then, so it is reported here too.
+            noDataState: Alerting
+            execErrState: Error
+            labels:
+              severity: critical
+            annotations:
+              summary: postgres_exporter работает, но не может подключиться к bfdb под ролью monitor. Проверьте кластер базы в панели DO, доверенные источники и пароль роли (runbook bfdb-postgres.md).
+            data:
+              - refId: A
+                relativeTimeRange: {from: 600, to: 0}
+                datasourceUid: prometheus
+                model:
+                  expr: pg_up{job="postgres-exporter"}
+                  instant: true
+                  range: false
+                  refId: A
+              - *reduce
+              - refId: C
+                datasourceUid: __expr__
+                model:
+                  type: threshold
+                  expression: B
+                  refId: C
+                  datasource: {type: __expr__, uid: __expr__}
+                  conditions:
+                    - evaluator: {type: lt, params: [1]}
+                      operator: {type: and}
+                      query: {params: [C]}
+                      reducer: {type: last, params: []}
+                      type: query
+          - uid: bfdb-connections-high
+            title: Соединений с bfdb больше 80% от предела
+            condition: C
+            for: 10m
+            noDataState: OK
+            execErrState: Error
+            labels:
+              severity: warning
+            annotations:
+              summary: Открытых соединений больше 80% от max_connections. Когда предел кончится, новые подключения backend получат отказ. Посмотрите на дашборде Postgres, какие соединения простаивают или висят в транзакции.
+            data:
+              - refId: A
+                relativeTimeRange: {from: 600, to: 0}
+                datasourceUid: prometheus
+                model:
+                  expr: sum(pg_stat_activity_count{job="postgres-exporter"}) / max(pg_settings_max_connections{job="postgres-exporter"})
+                  instant: true
+                  range: false
+                  refId: A
+              - *reduce
+              - refId: C
+                datasourceUid: __expr__
+                model:
+                  type: threshold
+                  expression: B
+                  refId: C
+                  datasource: {type: __expr__, uid: __expr__}
+                  conditions:
+                    - evaluator: {type: gt, params: [0.8]}
                       operator: {type: and}
                       query: {params: [C]}
                       reducer: {type: last, params: []}
@@ -941,6 +1024,943 @@ extraObjects:
                "expr": "sum(kubelet_volume_stats_used_bytes)",
                "instant": true,
                "range": false
+              }
+             ]
+            }
+           ]
+          }
+  # The dashboard "Postgres" (ADR-086): the managed database through postgres_exporter. The same raw-string escape of
+  # the legend braces as above.
+  - apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: postgres-dashboard
+      namespace: monitoring
+    data:
+      postgres.json: |
+          {
+           "uid": "postgres",
+           "title": "Postgres",
+           "tags": [
+            "monitoring",
+            "postgres"
+           ],
+           "timezone": "browser",
+           "schemaVersion": 39,
+           "version": 1,
+           "refresh": "1m",
+           "time": {
+            "from": "now-6h",
+            "to": "now"
+           },
+           "panels": [
+            {
+             "id": 1,
+             "type": "stat",
+             "title": "Доступна",
+             "description": "Подключается ли postgres_exporter к bfdb под ролью monitor (pg_up). «Нет» - тот же сигнал, что алерт «База bfdb недоступна».",
+             "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus"
+             },
+             "gridPos": {
+              "h": 4,
+              "w": 4,
+              "x": 0,
+              "y": 0
+             },
+             "options": {
+              "reduceOptions": {
+               "calcs": [
+                "lastNotNull"
+               ],
+               "fields": "",
+               "values": false
+              },
+              "colorMode": "value",
+              "graphMode": "area",
+              "textMode": "value",
+              "justifyMode": "center"
+             },
+             "fieldConfig": {
+              "defaults": {
+               "unit": "none",
+               "mappings": [
+                {
+                 "type": "value",
+                 "options": {
+                  "0": {
+                   "text": "Нет",
+                   "color": "red"
+                  },
+                  "1": {
+                   "text": "Да",
+                   "color": "green"
+                  }
+                 }
+                }
+               ],
+               "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                 {
+                  "color": "red",
+                  "value": null
+                 },
+                 {
+                  "color": "green",
+                  "value": 1
+                 }
+                ]
+               }
+              },
+              "overrides": []
+             },
+             "targets": [
+              {
+               "refId": "A",
+               "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+               },
+               "expr": "pg_up{job=\"postgres-exporter\"}",
+               "instant": true,
+               "range": false
+              }
+             ]
+            },
+            {
+             "id": 2,
+             "type": "stat",
+             "title": "Соединения от предела",
+             "description": "Открытые соединения всех баз и ролей, доля от max_connections. Выше 80% дольше 10 минут - алерт.",
+             "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus"
+             },
+             "gridPos": {
+              "h": 4,
+              "w": 4,
+              "x": 4,
+              "y": 0
+             },
+             "options": {
+              "reduceOptions": {
+               "calcs": [
+                "lastNotNull"
+               ],
+               "fields": "",
+               "values": false
+              },
+              "colorMode": "value",
+              "graphMode": "area",
+              "textMode": "value",
+              "justifyMode": "center"
+             },
+             "fieldConfig": {
+              "defaults": {
+               "unit": "percentunit",
+               "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                 {
+                  "color": "green",
+                  "value": null
+                 },
+                 {
+                  "color": "orange",
+                  "value": 0.6
+                 },
+                 {
+                  "color": "red",
+                  "value": 0.8
+                 }
+                ]
+               }
+              },
+              "overrides": []
+             },
+             "targets": [
+              {
+               "refId": "A",
+               "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+               },
+               "expr": "sum(pg_stat_activity_count{job=\"postgres-exporter\"}) / max(pg_settings_max_connections{job=\"postgres-exporter\"})",
+               "instant": true,
+               "range": false
+              }
+             ]
+            },
+            {
+             "id": 3,
+             "type": "stat",
+             "title": "Попадание в кэш (bf)",
+             "description": "Доля чтений страниц из памяти, а не с диска, за 5 минут. Ниже 99% на рабочей нагрузке - базе мало памяти или запрос читает лишнее. Пусто, пока базу никто не читает.",
+             "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus"
+             },
+             "gridPos": {
+              "h": 4,
+              "w": 4,
+              "x": 8,
+              "y": 0
+             },
+             "options": {
+              "reduceOptions": {
+               "calcs": [
+                "lastNotNull"
+               ],
+               "fields": "",
+               "values": false
+              },
+              "colorMode": "value",
+              "graphMode": "area",
+              "textMode": "value",
+              "justifyMode": "center"
+             },
+             "fieldConfig": {
+              "defaults": {
+               "unit": "percentunit",
+               "decimals": 2,
+               "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                 {
+                  "color": "red",
+                  "value": null
+                 },
+                 {
+                  "color": "orange",
+                  "value": 0.95
+                 },
+                 {
+                  "color": "green",
+                  "value": 0.99
+                 }
+                ]
+               }
+              },
+              "overrides": []
+             },
+             "targets": [
+              {
+               "refId": "A",
+               "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+               },
+               "expr": "sum(rate(pg_stat_database_blks_hit{job=\"postgres-exporter\", datname=\"bf\"}[5m])) / (sum(rate(pg_stat_database_blks_hit{job=\"postgres-exporter\", datname=\"bf\"}[5m])) + sum(rate(pg_stat_database_blks_read{job=\"postgres-exporter\", datname=\"bf\"}[5m])))",
+               "instant": true,
+               "range": false
+              }
+             ]
+            },
+            {
+             "id": 4,
+             "type": "stat",
+             "title": "Размер базы bf",
+             "description": "pg_database_size базы приложения: таблицы, индексы, TOAST.",
+             "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus"
+             },
+             "gridPos": {
+              "h": 4,
+              "w": 4,
+              "x": 12,
+              "y": 0
+             },
+             "options": {
+              "reduceOptions": {
+               "calcs": [
+                "lastNotNull"
+               ],
+               "fields": "",
+               "values": false
+              },
+              "colorMode": "value",
+              "graphMode": "area",
+              "textMode": "value",
+              "justifyMode": "center"
+             },
+             "fieldConfig": {
+              "defaults": {
+               "unit": "bytes",
+               "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                 {
+                  "color": "blue",
+                  "value": null
+                 }
+                ]
+               }
+              },
+              "overrides": []
+             },
+             "targets": [
+              {
+               "refId": "A",
+               "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+               },
+               "expr": "pg_database_size_bytes{job=\"postgres-exporter\", datname=\"bf\"}",
+               "instant": true,
+               "range": false
+              }
+             ]
+            },
+            {
+             "id": 5,
+             "type": "stat",
+             "title": "Самая долгая транзакция",
+             "description": "Возраст самой старой открытой транзакции. Долгая транзакция держит старые версии строк (VACUUM их не уберёт) и блокировки.",
+             "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus"
+             },
+             "gridPos": {
+              "h": 4,
+              "w": 4,
+              "x": 16,
+              "y": 0
+             },
+             "options": {
+              "reduceOptions": {
+               "calcs": [
+                "lastNotNull"
+               ],
+               "fields": "",
+               "values": false
+              },
+              "colorMode": "value",
+              "graphMode": "area",
+              "textMode": "value",
+              "justifyMode": "center"
+             },
+             "fieldConfig": {
+              "defaults": {
+               "unit": "s",
+               "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                 {
+                  "color": "green",
+                  "value": null
+                 },
+                 {
+                  "color": "orange",
+                  "value": 300
+                 },
+                 {
+                  "color": "red",
+                  "value": 3600
+                 }
+                ]
+               }
+              },
+              "overrides": []
+             },
+             "targets": [
+              {
+               "refId": "A",
+               "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+               },
+               "expr": "max(pg_stat_activity_max_tx_duration{job=\"postgres-exporter\"})",
+               "instant": true,
+               "range": false
+              }
+             ]
+            },
+            {
+             "id": 6,
+             "type": "stat",
+             "title": "WAL в слотах репликации",
+             "description": "Сколько WAL держат слоты репликации (pg_wal_lsn_diff). Слот Debezium появится в CDC-2; до тех пор 0. Остановленный потребитель копит WAL на диске базы без предела (ADR-021), алерт - CDC-3.",
+             "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus"
+             },
+             "gridPos": {
+              "h": 4,
+              "w": 4,
+              "x": 20,
+              "y": 0
+             },
+             "options": {
+              "reduceOptions": {
+               "calcs": [
+                "lastNotNull"
+               ],
+               "fields": "",
+               "values": false
+              },
+              "colorMode": "value",
+              "graphMode": "area",
+              "textMode": "value",
+              "justifyMode": "center"
+             },
+             "fieldConfig": {
+              "defaults": {
+               "unit": "bytes",
+               "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                 {
+                  "color": "green",
+                  "value": null
+                 },
+                 {
+                  "color": "orange",
+                  "value": 1073741824
+                 },
+                 {
+                  "color": "red",
+                  "value": 5368709120
+                 }
+                ]
+               }
+              },
+              "overrides": []
+             },
+             "targets": [
+              {
+               "refId": "A",
+               "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+               },
+               "expr": "sum(pg_replication_slots_pg_wal_lsn_diff{job=\"postgres-exporter\"}) or vector(0)",
+               "instant": true,
+               "range": false
+              }
+             ]
+            },
+            {
+             "id": 7,
+             "type": "timeseries",
+             "title": "Соединения по состояниям",
+             "description": "active - выполняет запрос; idle - открыто и ждёт; idle in transaction - открыта транзакция, но запроса нет (держит блокировки). Линия «предел» - max_connections.",
+             "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus"
+             },
+             "gridPos": {
+              "h": 8,
+              "w": 12,
+              "x": 0,
+              "y": 4
+             },
+             "fieldConfig": {
+              "defaults": {
+               "unit": "short",
+               "min": 0,
+               "custom": {
+                "fillOpacity": 10,
+                "showPoints": "never"
+               }
+              },
+              "overrides": []
+             },
+             "options": {
+              "legend": {
+               "displayMode": "table",
+               "placement": "right",
+               "calcs": [
+                "lastNotNull",
+                "max"
+               ]
+              },
+              "tooltip": {
+               "mode": "multi",
+               "sort": "desc"
+              }
+             },
+             "targets": [
+              {
+               "refId": "A",
+               "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+               },
+               "expr": "sum by (state) (pg_stat_activity_count{job=\"postgres-exporter\"})",
+               "legendFormat": "{{`{{state}}`}}"
+              },
+              {
+               "refId": "B",
+               "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+               },
+               "expr": "max(pg_settings_max_connections{job=\"postgres-exporter\"})",
+               "legendFormat": "предел"
+              }
+             ]
+            },
+            {
+             "id": 8,
+             "type": "timeseries",
+             "title": "Транзакции в секунду",
+             "description": "Завершённые (commit) и откаченные (rollback) транзакции по базам, за 5 минут.",
+             "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus"
+             },
+             "gridPos": {
+              "h": 8,
+              "w": 12,
+              "x": 12,
+              "y": 4
+             },
+             "fieldConfig": {
+              "defaults": {
+               "unit": "ops",
+               "min": 0,
+               "custom": {
+                "fillOpacity": 10,
+                "showPoints": "never"
+               }
+              },
+              "overrides": []
+             },
+             "options": {
+              "legend": {
+               "displayMode": "table",
+               "placement": "right",
+               "calcs": [
+                "lastNotNull",
+                "max"
+               ]
+              },
+              "tooltip": {
+               "mode": "multi",
+               "sort": "desc"
+              }
+             },
+             "targets": [
+              {
+               "refId": "A",
+               "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+               },
+               "expr": "sum by (datname) (rate(pg_stat_database_xact_commit{job=\"postgres-exporter\"}[5m]))",
+               "legendFormat": "{{`{{datname}}`}} commit"
+              },
+              {
+               "refId": "B",
+               "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+               },
+               "expr": "sum by (datname) (rate(pg_stat_database_xact_rollback{job=\"postgres-exporter\"}[5m]))",
+               "legendFormat": "{{`{{datname}}`}} rollback"
+              }
+             ]
+            },
+            {
+             "id": 9,
+             "type": "timeseries",
+             "title": "Строки в секунду (bf)",
+             "description": "Сколько строк база отдала запросам (fetched) и сколько вставила, изменила, удалила.",
+             "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus"
+             },
+             "gridPos": {
+              "h": 8,
+              "w": 12,
+              "x": 0,
+              "y": 12
+             },
+             "fieldConfig": {
+              "defaults": {
+               "unit": "ops",
+               "min": 0,
+               "custom": {
+                "fillOpacity": 10,
+                "showPoints": "never"
+               }
+              },
+              "overrides": []
+             },
+             "options": {
+              "legend": {
+               "displayMode": "table",
+               "placement": "right",
+               "calcs": [
+                "lastNotNull",
+                "max"
+               ]
+              },
+              "tooltip": {
+               "mode": "multi",
+               "sort": "desc"
+              }
+             },
+             "targets": [
+              {
+               "refId": "A",
+               "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+               },
+               "expr": "rate(pg_stat_database_tup_fetched{job=\"postgres-exporter\", datname=\"bf\"}[5m])",
+               "legendFormat": "прочитано"
+              },
+              {
+               "refId": "B",
+               "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+               },
+               "expr": "rate(pg_stat_database_tup_inserted{job=\"postgres-exporter\", datname=\"bf\"}[5m])",
+               "legendFormat": "вставлено"
+              },
+              {
+               "refId": "C",
+               "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+               },
+               "expr": "rate(pg_stat_database_tup_updated{job=\"postgres-exporter\", datname=\"bf\"}[5m])",
+               "legendFormat": "изменено"
+              },
+              {
+               "refId": "D",
+               "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+               },
+               "expr": "rate(pg_stat_database_tup_deleted{job=\"postgres-exporter\", datname=\"bf\"}[5m])",
+               "legendFormat": "удалено"
+              }
+             ]
+            },
+            {
+             "id": 10,
+             "type": "timeseries",
+             "title": "Попадание в кэш (bf)",
+             "description": "Доля чтений страниц из памяти за 5 минут.",
+             "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus"
+             },
+             "gridPos": {
+              "h": 8,
+              "w": 12,
+              "x": 12,
+              "y": 12
+             },
+             "fieldConfig": {
+              "defaults": {
+               "unit": "percentunit",
+               "min": 0,
+               "custom": {
+                "fillOpacity": 10,
+                "showPoints": "never"
+               }
+              },
+              "overrides": []
+             },
+             "options": {
+              "legend": {
+               "displayMode": "table",
+               "placement": "right",
+               "calcs": [
+                "lastNotNull",
+                "max"
+               ]
+              },
+              "tooltip": {
+               "mode": "multi",
+               "sort": "desc"
+              }
+             },
+             "targets": [
+              {
+               "refId": "A",
+               "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+               },
+               "expr": "sum(rate(pg_stat_database_blks_hit{job=\"postgres-exporter\", datname=\"bf\"}[5m])) / (sum(rate(pg_stat_database_blks_hit{job=\"postgres-exporter\", datname=\"bf\"}[5m])) + sum(rate(pg_stat_database_blks_read{job=\"postgres-exporter\", datname=\"bf\"}[5m])))",
+               "legendFormat": "кэш"
+              }
+             ]
+            },
+            {
+             "id": 11,
+             "type": "timeseries",
+             "title": "Размер баз",
+             "description": "pg_database_size каждой базы, кроме служебной _dodb и шаблонов.",
+             "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus"
+             },
+             "gridPos": {
+              "h": 8,
+              "w": 12,
+              "x": 0,
+              "y": 20
+             },
+             "fieldConfig": {
+              "defaults": {
+               "unit": "bytes",
+               "min": 0,
+               "custom": {
+                "fillOpacity": 10,
+                "showPoints": "never"
+               }
+              },
+              "overrides": []
+             },
+             "options": {
+              "legend": {
+               "displayMode": "table",
+               "placement": "right",
+               "calcs": [
+                "lastNotNull",
+                "max"
+               ]
+              },
+              "tooltip": {
+               "mode": "multi",
+               "sort": "desc"
+              }
+             },
+             "targets": [
+              {
+               "refId": "A",
+               "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+               },
+               "expr": "pg_database_size_bytes{job=\"postgres-exporter\"}",
+               "legendFormat": "{{`{{datname}}`}}"
+              }
+             ]
+            },
+            {
+             "id": 12,
+             "type": "timeseries",
+             "title": "Блокировки по режимам",
+             "description": "Удерживаемые блокировки по режиму. Рост ExclusiveLock и AccessExclusiveLock вместе с долгими транзакциями - запросы ждут друг друга.",
+             "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus"
+             },
+             "gridPos": {
+              "h": 8,
+              "w": 12,
+              "x": 12,
+              "y": 20
+             },
+             "fieldConfig": {
+              "defaults": {
+               "unit": "short",
+               "min": 0,
+               "custom": {
+                "fillOpacity": 10,
+                "showPoints": "never"
+               }
+              },
+              "overrides": []
+             },
+             "options": {
+              "legend": {
+               "displayMode": "table",
+               "placement": "right",
+               "calcs": [
+                "lastNotNull",
+                "max"
+               ]
+              },
+              "tooltip": {
+               "mode": "multi",
+               "sort": "desc"
+              }
+             },
+             "targets": [
+              {
+               "refId": "A",
+               "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+               },
+               "expr": "sum by (mode) (pg_locks_count{job=\"postgres-exporter\"})",
+               "legendFormat": "{{`{{mode}}`}}"
+              }
+             ]
+            },
+            {
+             "id": 13,
+             "type": "timeseries",
+             "title": "Deadlocks и временные файлы",
+             "description": "Deadlocks за 5 минут (должно быть 0) и байты, которые запросы записали во временные файлы: сортировке или хешу не хватило work_mem.",
+             "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus"
+             },
+             "gridPos": {
+              "h": 8,
+              "w": 12,
+              "x": 0,
+              "y": 28
+             },
+             "fieldConfig": {
+              "defaults": {
+               "unit": "short",
+               "min": 0,
+               "custom": {
+                "fillOpacity": 10,
+                "showPoints": "never"
+               }
+              },
+              "overrides": []
+             },
+             "options": {
+              "legend": {
+               "displayMode": "table",
+               "placement": "right",
+               "calcs": [
+                "lastNotNull",
+                "max"
+               ]
+              },
+              "tooltip": {
+               "mode": "multi",
+               "sort": "desc"
+              }
+             },
+             "targets": [
+              {
+               "refId": "A",
+               "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+               },
+               "expr": "sum by (datname) (increase(pg_stat_database_deadlocks{job=\"postgres-exporter\"}[5m]))",
+               "legendFormat": "{{`{{datname}}`}} deadlocks"
+              },
+              {
+               "refId": "B",
+               "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+               },
+               "expr": "sum by (datname) (rate(pg_stat_database_temp_bytes{job=\"postgres-exporter\"}[5m]))",
+               "legendFormat": "{{`{{datname}}`}} временные файлы, байт/с"
+              }
+             ]
+            },
+            {
+             "id": 14,
+             "type": "timeseries",
+             "title": "WAL в слотах репликации",
+             "description": "WAL, который держит каждый слот. Слот Debezium появится в CDC-2.",
+             "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus"
+             },
+             "gridPos": {
+              "h": 8,
+              "w": 12,
+              "x": 12,
+              "y": 28
+             },
+             "fieldConfig": {
+              "defaults": {
+               "unit": "bytes",
+               "min": 0,
+               "custom": {
+                "fillOpacity": 10,
+                "showPoints": "never"
+               }
+              },
+              "overrides": []
+             },
+             "options": {
+              "legend": {
+               "displayMode": "table",
+               "placement": "right",
+               "calcs": [
+                "lastNotNull",
+                "max"
+               ]
+              },
+              "tooltip": {
+               "mode": "multi",
+               "sort": "desc"
+              }
+             },
+             "targets": [
+              {
+               "refId": "A",
+               "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+               },
+               "expr": "pg_replication_slots_pg_wal_lsn_diff{job=\"postgres-exporter\"}",
+               "legendFormat": "{{`{{slot_name}}`}}"
+              }
+             ]
+            },
+            {
+             "id": 15,
+             "type": "timeseries",
+             "title": "Самая долгая транзакция по состояниям",
+             "description": "Возраст самой старой транзакции по базе и состоянию соединения.",
+             "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus"
+             },
+             "gridPos": {
+              "h": 8,
+              "w": 12,
+              "x": 0,
+              "y": 36
+             },
+             "fieldConfig": {
+              "defaults": {
+               "unit": "s",
+               "min": 0,
+               "custom": {
+                "fillOpacity": 10,
+                "showPoints": "never"
+               }
+              },
+              "overrides": []
+             },
+             "options": {
+              "legend": {
+               "displayMode": "table",
+               "placement": "right",
+               "calcs": [
+                "lastNotNull",
+                "max"
+               ]
+              },
+              "tooltip": {
+               "mode": "multi",
+               "sort": "desc"
+              }
+             },
+             "targets": [
+              {
+               "refId": "A",
+               "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+               },
+               "expr": "max by (datname, state) (pg_stat_activity_max_tx_duration{job=\"postgres-exporter\"})",
+               "legendFormat": "{{`{{datname}}`}} {{`{{state}}`}}"
               }
              ]
             }

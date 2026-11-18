@@ -107,6 +107,34 @@ backups` (только чтение) и SELECT-запросы к `pg_catalog` ч
 
 Пароли лежат только на ноутбуке владельца, в `apps/backend/.env.migrator.production` (`migrator`) и `apps/backend/.env.production` (`app`), права файла 600, оба файла в `.gitignore`; в каждом семь полей `DB_*` (ADR-061): приватный хост, порт 25060, `bf`, схема `app`, `verify-full`. Запечатываются в DEPLOY-2 вместе с CA и Job миграции: до этого backend выкатывается без базы. Если файл потерян - новый пароль `doctl databases user reset <id> <роль>`, файл пишется заново. `CONNECTION LIMIT` ролей не задан, решается в DEPLOY-2 (ADR-053 п. 9).
 
+## Метрики: роль `monitor` и эндпоинт DO (ADR-086, 2026-11-18)
+
+Что собирается и куда смотреть - ADR-086 и дашборд «Postgres» в Grafana. Здесь - что сделано руками и как это повторить.
+
+| Что | Состояние |
+|---|---|
+| Роль `monitor` | создана `doctl databases user create`; `LOGIN`, без SUPERUSER, CREATEROLE, CREATEDB, REPLICATION, BYPASSRLS; `CONNECT` на `bf`; из встроенных ролей - только `pg_read_all_stats`: `pg_monitor`, `pg_read_all_settings` и `pg_stat_scan_tables` `doadmin` выдать не может (`permission denied to grant role`) |
+| Чего нет без двух ролей | параметры, видимые только суперпользователю (`max_connections` виден всем), и функции `pgstattuple`; экспортёр по умолчанию их не использует |
+| Эндпоинт метрик DO | `https://bfdb-do-user-48015624-0.i.db.ondigitalocean.com:9273/metrics` (публичный хост из `metrics_endpoints`), базовая аутентификация, CA проекта; из пода кластера без пароля - `401` за 0.06 с, то есть правило `k8s` в доверенных источниках пускает и на этот порт |
+| CA проекта | `CN=3c2fc18c-71f4-4f2f-8987-b43a7ddfa6b7 Project CA`, до 2036-11-03, ConfigMap `bfdb-ca` (`deploy/monitoring/bfdb/bfdb-ca.yaml`) |
+| Секрет | SealedSecret `bfdb-monitoring` (`deploy/monitoring/bfdb/bfdb-monitoring.yaml`): `DATA_SOURCE_PASS`, `DO_METRICS_USERNAME`, `DO_METRICS_PASSWORD`; исходник - `deploy/monitoring/.env.bfdb-monitoring.production` на ноутбуке владельца, в git не попадает |
+
+### Как собрать файл секрета заново (смена пароля, потерянный файл)
+
+`doctl` маскирует пароли (`********`) даже в `-o json`, поэтому значения берутся из API тем же токеном, что у `doctl`. Ни одно значение не выводится на экран; одна команда, потому что каждая `!`-команда агента - новая оболочка:
+
+```
+F=deploy/monitoring/.env.bfdb-monitoring.production; T=$(awk '/^access-token:/{print $2}' "$HOME/Library/Application Support/doctl/config.yaml"); P=$(curl -s -H "Authorization: Bearer $T" https://api.digitalocean.com/v2/databases/f74f65e6-0691-4550-bdad-a9fa5e108bc1/users/monitor | jq -r .user.password); C=$(curl -s -H "Authorization: Bearer $T" https://api.digitalocean.com/v2/databases/metrics/credentials); printf 'DATA_SOURCE_PASS=%s\nDO_METRICS_USERNAME=%s\nDO_METRICS_PASSWORD=%s\n' "$P" "$(printf '%s' "$C" | jq -r .credentials.basic_auth_username)" "$(printf '%s' "$C" | jq -r .credentials.basic_auth_password)" > $F; chmod 600 $F
+awk -F= '{v=substr($0,length($1)+2); print $1, "length", length(v), (v=="null"||v=="" ? "BAD" : "ok")}' $F
+node scripts/seal-secret.ts --env $F --name bfdb-monitoring --namespace monitoring --out deploy/monitoring/bfdb/bfdb-monitoring.yaml
+```
+
+Новый пароль `monitor` - `POST /v2/databases/<cluster>/users/monitor/reset_auth` (ответ содержит пароль), затем команды выше. Логин эндпоинта общий на аккаунт DO (путь API без кластера): его смена (`PUT /v2/databases/metrics/credentials`) требует того же. После коммита под экспортёра и под Prometheus перечитывают секрет только при перезапуске: `kubectl -n monitoring rollout restart deploy/postgres-exporter deploy/prometheus-server`.
+
+CA: `curl -s -H "Authorization: Bearer $T" https://api.digitalocean.com/v2/databases/<cluster>/ca | jq -r .ca.certificate | base64 -D` (macOS; `doctl databases get-ca` отдаёт другой формат), проверка - `openssl x509 -noout -subject -enddate`.
+
+Подключение `doadmin` для файлов `database/roles/` без ручного ввода пароля: `U=$(curl -s -H "Authorization: Bearer $T" https://api.digitalocean.com/v2/databases/<cluster> | jq -r .database.connection.uri | sed 's#/defaultdb?#/bf?#'); psql "$U" -v ON_ERROR_STOP=1 -f <файл>` (публичный хост, адрес ноутбука должен быть доверенным источником).
+
 ## Паритет с локальной средой
 
 `compose.yaml` и `deploy/local/postgres/init/` повторяют: версию 18.6, UTF8 и `en_US.UTF-8`, `wal_level`, слоты, WAL, `synchronous_commit`, память, планировщик, таймауты и роль `doadmin` с её членством. Сверено запросами к `pg_settings` и `pg_roles` на чистом томе 2026-11-11.

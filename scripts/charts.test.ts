@@ -844,6 +844,7 @@ describe('monitoring Applications (ADR-083, backlog MON-1)', () => {
   const prometheus = byChart('prometheus');
   const blackbox = byChart('prometheus-blackbox-exporter');
   const grafana = byChart('grafana');
+  const postgresExporter = byChart('prometheus-postgres-exporter');
   const sourceOf = (file: string) => readFileSync(`${dir}/${file}`, 'utf8');
   // The lines of a YAML block scalar (`key: |`) in a rendered document, with their common indent removed.
   const blockOf = (doc: string, key: string) => {
@@ -861,11 +862,16 @@ describe('monitoring Applications (ADR-083, backlog MON-1)', () => {
   const grafanaOutput = renderApplication(grafana);
 
   it('pins exact chart versions and puts the whole stack in the namespace monitoring, which it creates', () => {
-    for (const item of [prometheus, blackbox, grafana]) {
+    for (const item of [prometheus, blackbox, grafana, postgresExporter]) {
       assert.match(item.version, /^\d+\.\d+\.\d+$/);
       assert.equal(item.namespace, 'monitoring');
     }
-    for (const file of ['prometheus.yaml', 'blackbox-exporter.yaml', 'grafana.yaml']) {
+    for (const file of [
+      'prometheus.yaml',
+      'blackbox-exporter.yaml',
+      'grafana.yaml',
+      'postgres-exporter.yaml',
+    ]) {
       const source = sourceOf(file);
       assert.match(source, /- CreateNamespace=true/);
       assert.match(source, /prune: false\n/, `${file} never prunes what it deployed`);
@@ -949,19 +955,21 @@ describe('monitoring Applications (ADR-083, backlog MON-1)', () => {
       }
     });
 
-    it('scrapes eight named jobs, found by namespace, pod label and port name, and none by annotation', () => {
+    it('scrapes ten named jobs, found by namespace, pod label and port name or a fixed address, and none by annotation', () => {
       const config = blockOf(
         named(prometheusOutput, 'ConfigMap', 'prometheus-server'),
         'prometheus.yml',
       );
       const jobs = [...config.matchAll(/^- job_name: (\S+)$/gm)].map((match) => match[1]).sort();
       assert.deepEqual(jobs, [
+        'bfdb-do',
         'blackbox-tls',
         'kube-state-metrics',
         'kubernetes-nodes',
         'kubernetes-nodes-cadvisor',
         'nats',
         'node-exporter',
+        'postgres-exporter',
         'prometheus',
         'traefik',
       ]);
@@ -969,6 +977,21 @@ describe('monitoring Applications (ADR-083, backlog MON-1)', () => {
       // The jobs of other namespaces name their namespace, so no job reads pods of the whole cluster.
       for (const ns of ['monitoring', 'traefik', 'bf'])
         assert.match(config, new RegExp(`- ${ns}\\n`));
+    });
+
+    it("reads bfdb's DigitalOcean endpoint over https with basic auth from files and the project's CA (ADR-086)", () => {
+      const config = blockOf(
+        named(prometheusOutput, 'ConfigMap', 'prometheus-server'),
+        'prometheus.yml',
+      );
+      const start = config.indexOf('- job_name: bfdb-do');
+      const job = config.slice(start, config.indexOf('\n- job_name:', start + 1));
+      assert.match(job, /scheme: https/);
+      assert.match(job, /username_file: \/etc\/bfdb-metrics\/username/);
+      assert.match(job, /password_file: \/etc\/bfdb-metrics\/password/);
+      assert.match(job, /ca_file: \/etc\/bfdb-ca\/ca\.crt/);
+      assert.doesNotMatch(job, /insecure_skip_verify/);
+      assert.match(job, /- bfdb-do-user-48015624-0\.i\.db\.ondigitalocean\.com:9273/);
     });
 
     it('probes the certificate of the balancer with the module tls_expiry, once a minute', () => {
@@ -984,6 +1007,54 @@ describe('monitoring Applications (ADR-083, backlog MON-1)', () => {
       assert.match(job, /- malinina\.ca:443/);
       assert.match(job, /scrape_interval: 1m/);
       assert.match(job, /replacement: blackbox-exporter\.monitoring\.svc:9115/);
+    });
+  });
+
+  describe('postgres_exporter (ADR-086)', () => {
+    const output = renderApplication(postgresExporter);
+    const deployment = find(output, 'Deployment');
+
+    it('logs in as monitor over the private host with verify-full, the password from the sealed Secret', () => {
+      assert.match(
+        deployment,
+        /value: "private-bfdb-do-user-48015624-0\.i\.db\.ondigitalocean\.com:25060\/bf\?sslmode=verify-full&sslrootcert=\/etc\/bfdb-ca\/ca\.crt"/,
+      );
+      assert.match(deployment, /name: DATA_SOURCE_USER\n\s+value: monitor\n/);
+      assert.match(deployment, /secretKeyRef:\n\s+name: bfdb-monitoring\n\s+key: DATA_SOURCE_PASS/);
+      assert.match(deployment, /--exclude-databases=_dodb,template0,template1/);
+      assert.match(deployment, /configMap:\n\s+name: bfdb-ca/);
+    });
+
+    it('runs without a service account token, as non-root with a read-only root, and asks for resources', () => {
+      assert.match(deployment, /automountServiceAccountToken: false/);
+      assert.match(deployment, /runAsNonRoot: true/);
+      assert.match(deployment, /readOnlyRootFilesystem: true/);
+      assert.match(deployment, /requests:\n\s+cpu: 10m\n\s+memory: 32Mi/);
+      assert.doesNotMatch(output, /kind: (Cluster)?Role/);
+    });
+
+    it('takes the Secret and the CA from a source of the prometheus Application, whose pod mounts two keys only', () => {
+      assert.match(sourceOf('prometheus.yaml'), /path: deploy\/monitoring\/bfdb\n/);
+      const server = named(prometheusOutput, 'Deployment', 'prometheus-server');
+      assert.match(
+        server,
+        /items:\n\s+- key: DO_METRICS_USERNAME\n\s+path: username\n\s+- key: DO_METRICS_PASSWORD\n\s+path: password\n\s+secretName: bfdb-monitoring\n/,
+      );
+      assert.doesNotMatch(server, /DATA_SOURCE_PASS/);
+    });
+
+    it('has the dashboard Postgres in a provider of its own', () => {
+      assert.match(grafanaOutput, /path: \/var\/lib\/grafana\/dashboards\/postgres/);
+      const dashboard = JSON.parse(
+        blockOf(named(grafanaOutput, 'ConfigMap', 'postgres-dashboard'), 'postgres.json'),
+      ) as { title: string; panels: { targets: { expr: string; legendFormat?: string }[] }[] };
+      assert.equal(dashboard.title, 'Postgres');
+      const targets = dashboard.panels.flatMap((panel) => panel.targets);
+      for (const target of targets) assert.match(target.expr, /job="postgres-exporter"/);
+      assert.ok(
+        targets.some((target) => target.legendFormat === '{{state}}'),
+        'the escape of the template survives',
+      );
     });
   });
 
@@ -1066,11 +1137,13 @@ describe('monitoring Applications (ADR-083, backlog MON-1)', () => {
       assert.match(contact, /chatid: \$\{TELEGRAM_CHAT_ID\}/);
     });
 
-    it('provisions the Prometheus datasource, the six alert rules and a Telegram policy from files', () => {
+    it('provisions the Prometheus datasource, the eight alert rules and a Telegram policy from files', () => {
       const config = named(grafanaOutput, 'ConfigMap', 'grafana');
       assert.match(blockOf(config, 'datasources.yaml'), /uid: prometheus\n/);
       const rules = blockOf(config, 'rules.yaml');
       assert.deepEqual([...rules.matchAll(/^ {4}uid: (\S+)$/gm)].map((match) => match[1]).sort(), [
+        'bfdb-connections-high',
+        'bfdb-unreachable',
         'cert-expiry-critical',
         'cert-expiry-warning',
         'pod-restarting',
@@ -1078,7 +1151,7 @@ describe('monitoring Applications (ADR-083, backlog MON-1)', () => {
         'pvc-filling',
         'scrape-target-down',
       ]);
-      assert.equal(rules.match(/datasourceUid: prometheus\n/g)?.length, 6);
+      assert.equal(rules.match(/datasourceUid: prometheus\n/g)?.length, 8);
       // 30 and 14 days for the certificate (ADR-083), and Prometheus itself failing is an alert, not an "Error".
       assert.match(rules, /params:\n\s+- 14\n\s+- 30\n\s+type: within_range/);
       assert.match(rules, /params:\n\s+- 14\n\s+type: lt/);
@@ -1273,6 +1346,28 @@ describe('monitoring Applications (ADR-083, backlog MON-1)', () => {
       }
     });
   });
+
+  it('keeps the sealed login of bfdb and the public CA in deploy/monitoring/bfdb, no plain value (ADR-086)', () => {
+    const bfdb = `${deploy}/monitoring/bfdb`;
+    const sealed = readFileSync(`${bfdb}/bfdb-monitoring.yaml`, 'utf8');
+    assert.match(sealed, /^kind: SealedSecret$/m);
+    assert.match(sealed, /^ {2}name: bfdb-monitoring$/m);
+    assert.match(sealed, /^ {2}namespace: monitoring$/m);
+    const values = [...sealed.matchAll(/^ {4}([A-Z_0-9]+): (\S+)$/gm)];
+    assert.deepEqual(values.map((match) => match[1]).sort(), [
+      'DATA_SOURCE_PASS',
+      'DO_METRICS_PASSWORD',
+      'DO_METRICS_USERNAME',
+    ]);
+    for (const [, key, value] of values)
+      assert.match(value, /^A[gQ][A-Za-z0-9+/]{298,}={0,2}$/, `${key} is kubeseal ciphertext`);
+    const ca = readFileSync(`${bfdb}/bfdb-ca.yaml`, 'utf8');
+    assert.match(ca, /^kind: ConfigMap$/m);
+    assert.match(ca, /^ {2}name: bfdb-ca$/m);
+    assert.match(ca, /^ {4}-----BEGIN CERTIFICATE-----$/m);
+    assert.doesNotMatch(ca, /PRIVATE KEY/);
+    assert.deepEqual(readdirSync(bfdb).sort(), ['bfdb-ca.yaml', 'bfdb-monitoring.yaml']);
+  });
 });
 
 describe('ArgoCD self-management (ADR-019, ADR-046, backlog ARGOCD-1)', () => {
@@ -1350,6 +1445,7 @@ describe('ArgoCD self-management (ADR-019, ADR-046, backlog ARGOCD-1)', () => {
       'frontend.yaml',
       'grafana.yaml',
       'nats.yaml',
+      'postgres-exporter.yaml',
       'prometheus.yaml',
       'root.yaml',
       'sealed-secrets.yaml',

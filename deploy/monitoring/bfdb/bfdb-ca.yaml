@@ -1,0 +1,35 @@
+# The CA of the DigitalOcean project that signs bfdb's certificates (ADR-086): public, not a secret. The exporter
+# checks the database with it (verify-full) and Prometheus checks the metrics endpoint. Taken on 2026-11-18 from
+# GET /v2/databases/<cluster>/ca; valid until 2036-11-03. Subject: CN=3c2fc18c-71f4-4f2f-8987-b43a7ddfa6b7 Project CA.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: bfdb-ca
+  namespace: monitoring
+data:
+  ca.crt: |
+    -----BEGIN CERTIFICATE-----
+    MIIERDCCAqygAwIBAgIUEnd8dsK8yGLhiVzNgu9YYeHyEIowDQYJKoZIhvcNAQEM
+    BQAwOjE4MDYGA1UEAwwvM2MyZmMxOGMtNzFmNC00ZjJmLTg5ODctYjQzYTdkZGZh
+    NmI3IFByb2plY3QgQ0EwHhcNMjYxMTA2MTQxMzM3WhcNMzYxMTAzMTQxMzM3WjA6
+    MTgwNgYDVQQDDC8zYzJmYzE4Yy03MWY0LTRmMmYtODk4Ny1iNDNhN2RkZmE2Yjcg
+    UHJvamVjdCBDQTCCAaIwDQYJKoZIhvcNAQEBBQADggGPADCCAYoCggGBALZ2f+Jg
+    PanmUbDzAl5JP1ZlW8LO8aJfTAMwdcQwRvEWFpCLvgqP8VMuNetDXowW1erGfbnL
+    wrg6YenDsA/r2121KATv6bEMxyvBQYSiWDgqbisYhjE7d71QlAp01iEc4zSp7xI6
+    ycUYIvnqmBNt5k/a/IixqejAB1ssWL2XPkLn6XCunSQRjbosowBc+1nzRnf/jg8V
+    P8rMExJgtLsYDNyDGPyFwOCZswonjIidgz1cRy12lbXsgnaJHZFHIUGLbH1fLm7U
+    om2PKlalpML2b8r8ZiyRZKbLM6SKVm69PwnO/BnygWKyhJTUfVri5RxI3fYteMD6
+    Tek8pcuMI9MRBQL/SsldLY8Xng4Qu54vV8FpGwKx2sUVEQ9F9480mfrOYpXeXZoE
+    ubyNvWohrFvZffLHpV8z0F+ZPia0hkk+5+JFVPOHQwsRnFPsq7THFuRWqTWP9DuT
+    /lIwcF1ULoRGhNvHsnNB8SaFOweBJCLOXGZitBs1VOkZpr+0UO0XGzM02wIDAQAB
+    o0IwQDAdBgNVHQ4EFgQUOIuJfE0KdCWnjJF0R1oSIwndwLMwEgYDVR0TAQH/BAgw
+    BgEB/wIBADALBgNVHQ8EBAMCAQYwDQYJKoZIhvcNAQEMBQADggGBAIAUkqykqOdo
+    Nxyq9qDJ+eBlYpxV0pp+gBxoCjU9i3Cs1dcAnlIeW0wFaw0+1MEeuPrEf/sVOBqC
+    rz3w+ENB8YiArc/dkt2p5BCUm/Xr7c3MQpgpfTulb6lr4YXxRhh3UZjmWgMAfN5a
+    CHncTkTg2P4APW+56fo03q+veBzp2aDgST/zAK0ItPO1xavtvXY5cDkcbrgTh5Se
+    F/Ga4fgE5YJ1QqD2iOAImCqFF5eAC9+iYN28ufz89L/2lBYe+9Y0r2r4CEkcLHqc
+    Sltyho6f+epOC1EJyIKALu1Kke+U2KspJzToSPtveTRA1qV+hZcXTQByrD/lzn1K
+    cSvB69bdx201TDYmIadO+Q4895mi6c/0xJ70Zezvc4wOXSZ/YXZGmJt2o5WEgzhv
+    abuRaJ5t5ClBCmmx3rDcTMyf4Wiys42QFHxGkvld/GCyxNjy/WAQSdxJAhMh/OPy
+    9FCtMofgMsyjuk3DfLzcMlsurA+8qdLX54tLsBWZvUhSOiLFTbILtw==
+    -----END CERTIFICATE-----

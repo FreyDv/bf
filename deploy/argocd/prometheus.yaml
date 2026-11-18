@@ -29,6 +29,11 @@ spec:
     - repoURL: https://github.com/FreyDv/bf
       targetRevision: main
       ref: values
+    # The sealed login of bfdb's metrics endpoint and the exporter's password (Secret bfdb-monitoring), and the CA of
+    # the DigitalOcean project (ConfigMap bfdb-ca); the Prometheus pod mounts both, the exporter reads both (ADR-086).
+    - repoURL: https://github.com/FreyDv/bf
+      targetRevision: main
+      path: deploy/monitoring/bfdb
   destination:
     server: https://kubernetes.default.svc
     namespace: monitoring
