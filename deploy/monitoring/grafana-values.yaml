@@ -74,8 +74,9 @@ grafana.ini:
     allow_sign_up: false
     viewers_can_edit: false
   auth:
-    # No password form: Google is the only way in. The admin password stays valid for the API and is used through
-    # `kubectl port-forward` only (the runbook), a break-glass key.
+    # No password form: Google is the only way in for a person. The admin password is a break-glass key for the API,
+    # used through `kubectl port-forward` by convention (the runbook); HTTP basic auth is not blocked, so it is valid on
+    # the public /api too, held only by its length, Grafana's brute-force lockout and the rate limit (ADR-083 item 9).
     disable_login_form: true
     # Since Grafana 10.1 an OAuth login finds a user by the provider's id alone, so the user created ahead of the first
     # login (by e-mail, runbook) would not match and sign-up is off: the login would fail. The risk this flag guards
