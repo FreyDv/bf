@@ -6,6 +6,10 @@ All notable changes to this project, in [Keep a Changelog](https://keepachangelo
 
 <!-- A PR describes its change here, one entry per change - never a version heading, never VERSION itself (R18). The maintainer alone promotes this section into a release: https://github.com/repository-standards/core/blob/main/docs/method/changelog-process.md -->
 
+### CDC decisions: everything in the database through migrations, two streams, one slot, volumes bound in git (ADR-088, ADR-089, ADR-090, 2026-11-19)
+
+For the owner: three records hold your answers for the CDC epic. ADR-088: roles, schemas, tables, grants, the replication slot and the publication are all created by migrations under `migrator`; your one manual step under `doadmin` gives `migrator` CREATEROLE and REPLICATION, and the `debezium` role's password comes from a sealed secret. ADR-089: one Debezium and one slot `bf_slot`; business events from the append-only outbox `app.deo` go to stream `BF` (`ORDER.CREATED.PLACED`, deduplicated by `Nats-Msg-Id`), table changes to stream `CDC` (`bf.<schema>.<table>`, REPLICA IDENTITY FULL); the publication is rebuilt from schema `app` after every migration run; a heartbeat table `public.cdc_heartbeat` is updated every minute; the `debezium` role gets only the rights listed there, offsets live in schema `debezium`; WAL alerts at 5 and 15 GB. ADR-090: NATS, Prometheus and Grafana keep their DigitalOcean disks at 10 GiB each, described as PersistentVolumes in git so a rebuilt cluster attaches them itself. Nothing is built yet: CDC-1, CDC-2, CDC-3 and NATS-5 implement it.
+
 ### Technical decisions go to the owner before they are taken (ADR-087, 2026-11-18)
 
 For the owner: from now on the agent brings every technical choice to you before acting on it, with the options, their cost and a recommendation that a "yes" accepts, and waits for your answer. It still gathers the facts itself and does not ask you for them. Push, the pull request and the squash-merge on green CI stay with the agent (ADR-063 item 1). ADR-087 replaces item 2 of ADR-063; the `backlog-burndown` skill ("Who decides", steps 3, 4 and 7) follows it.
